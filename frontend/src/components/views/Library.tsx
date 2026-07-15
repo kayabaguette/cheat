@@ -6,22 +6,19 @@ import { STANDARD_VARS } from '../../lib/theme';
 import { resolve, toParts } from '../../lib/vars';
 import type { Command, Part } from '../../types';
 
-// Library — the fully rendered M0 module. Filters COMMANDS by the active
+// Library — the fully rendered module. Filters COMMANDS by the active
 // category/tool/tag/query from the store, groups the results by category then
 // by tool (mirroring the prototype), and renders each command as a card with a
-// variable-highlighted code block (§5.10) and a copy-to-clipboard button that
-// writes the RESOLVED command (Q99).
+// variable-highlighted code block (§5.10), a copy-to-clipboard button that
+// writes the RESOLVED command (Q99), an "+ Cheatsheet" toggle and a personal
+// note. The tool is shown only as the group sub-header — NOT as a per-card badge
+// (A59; the tool badge belongs to Cheatsheet entries).
 
-// Diacritic-insensitive, case-insensitive fold for accent-tolerant search.
 function fold(s: string): string {
-  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
 
 // Per-part styling for the three render states (§5.10 — the single authority).
-//   resolved  : accent foreground on accent-dim background (highlight)
-//   empty     : neutral/plain, NOT green — placeholder $NAME stays visible
-//   undefined : dimmed/muted with a dotted underline (dangling)
-//   plain     : default code foreground
 function partStyle(state: Part['state']): CSSProperties {
   switch (state) {
     case 'resolved':
@@ -36,8 +33,7 @@ function partStyle(state: Part['state']): CSSProperties {
 
 const catByKey = new Map(CATEGORIES.map((c) => [c.key, c]));
 
-// First-seen tool order per category, computed once from the full seed set so
-// grouping is stable regardless of the active filter (matches the prototype).
+// First-seen tool order per category, computed once from the full seed set.
 const catToolOrder = new Map<string, string[]>();
 for (const c of COMMANDS) {
   const tools = catToolOrder.get(c.category) ?? [];
@@ -140,6 +136,40 @@ const tagBtn: CSSProperties = {
   fontFamily: "'IBM Plex Mono', monospace",
   padding: 0,
 };
+const addBase: CSSProperties = {
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '5px',
+  padding: '4px 10px',
+  fontSize: '11.5px',
+  fontWeight: 600,
+  fontFamily: 'inherit',
+};
+const addOff: CSSProperties = {
+  ...addBase,
+  border: '1px solid var(--border2)',
+  background: 'transparent',
+  color: 'var(--muted)',
+};
+const addOn: CSSProperties = {
+  ...addBase,
+  border: '1px solid var(--acc-line)',
+  background: 'var(--acc-dim)',
+  color: 'var(--acc)',
+};
+const noteArea: CSSProperties = {
+  width: '100%',
+  resize: 'vertical',
+  minHeight: '30px',
+  background: 'var(--code)',
+  border: '1px dashed var(--border2)',
+  color: 'var(--text)',
+  fontFamily: "'IBM Plex Sans', sans-serif",
+  fontSize: '12px',
+  padding: '6px 8px',
+  lineHeight: 1.4,
+};
 const emptyWrap: CSSProperties = { textAlign: 'center', padding: '80px 20px' };
 const emptyMono: CSSProperties = {
   fontFamily: "'IBM Plex Mono', monospace",
@@ -169,7 +199,6 @@ function CopyIcon() {
 interface ToolGroup {
   name: string;
   count: number;
-  color: string;
   commands: Command[];
 }
 interface CatGroup {
@@ -187,11 +216,14 @@ export function Library() {
     activeTool,
     activeTag,
     query,
+    selected,
+    notes,
     setActiveTag,
     clearFilters,
+    toggleSelected,
+    setNote,
   } = useStore();
 
-  // Names considered "defined": the standard variables plus any value key.
   const definedNames = useMemo(
     () => new Set<string>([...STANDARD_VARS.map((v) => v.name), ...Object.keys(values)]),
     [values],
@@ -205,17 +237,13 @@ export function Library() {
       if (activeTag && !c.tags.includes(activeTag)) return false;
       if (tokens.length) {
         const catLabel = catByKey.get(c.category)?.label ?? c.category;
-        const hay = fold(
-          [c.title, c.template, c.desc, c.tool, c.tags.join(' '), catLabel].join(' '),
-        );
-        // Tokenized AND: every token must appear in the haystack.
+        const hay = fold([c.title, c.template, c.desc, c.tool, c.tags.join(' '), catLabel].join(' '));
         if (!tokens.every((t) => hay.includes(t))) return false;
       }
       return true;
     });
   }, [activeCat, activeTool, activeTag, query]);
 
-  // Group by category (seed order), then by tool (first-seen order).
   const groups = useMemo<CatGroup[]>(() => {
     const out: CatGroup[] = [];
     for (const cat of CATEGORIES) {
@@ -224,9 +252,7 @@ export function Library() {
       const tools: ToolGroup[] = [];
       for (const name of catToolOrder.get(cat.key) ?? []) {
         const cs = inCat.filter((c) => c.tool === name);
-        if (cs.length) {
-          tools.push({ name, count: cs.length, color: cat.color, commands: cs });
-        }
+        if (cs.length) tools.push({ name, count: cs.length, commands: cs });
       }
       out.push({ key: cat.key, label: cat.label, color: cat.color, count: inCat.length, tools });
     }
@@ -243,7 +269,7 @@ export function Library() {
     try {
       void navigator.clipboard.writeText(resolve(template, values));
     } catch {
-      /* clipboard unavailable — no-op in M0 */
+      /* clipboard unavailable — no-op */
     }
   };
 
@@ -253,12 +279,9 @@ export function Library() {
     <div style={page}>
       <div style={headRow}>
         <div style={{ fontSize: '12.5px', color: 'var(--muted)' }}>
-          <span style={{ color: 'var(--text)', fontWeight: 600 }}>{filtered.length}</span>{' '}
-          commande(s)
+          <span style={{ color: 'var(--text)', fontWeight: 600 }}>{filtered.length}</span> commande(s)
         </div>
-        {scopeLabel && (
-          <div style={{ fontSize: '12.5px', color: 'var(--faint)' }}>{scopeLabel}</div>
-        )}
+        {scopeLabel && <div style={{ fontSize: '12.5px', color: 'var(--faint)' }}>{scopeLabel}</div>}
         <button
           onClick={clearFilters}
           style={{
@@ -279,18 +302,10 @@ export function Library() {
           {groups.map((g) => (
             <div key={g.key}>
               <div style={groupHead}>
+                <span style={{ width: '10px', height: '10px', flex: 'none', background: g.color }} />
+                <span style={{ fontWeight: 700, fontSize: '14px', letterSpacing: '-.01em' }}>{g.label}</span>
                 <span
-                  style={{ width: '10px', height: '10px', flex: 'none', background: g.color }}
-                />
-                <span style={{ fontWeight: 700, fontSize: '14px', letterSpacing: '-.01em' }}>
-                  {g.label}
-                </span>
-                <span
-                  style={{
-                    fontSize: '11px',
-                    color: 'var(--faint)',
-                    fontFamily: "'IBM Plex Mono', monospace",
-                  }}
+                  style={{ fontSize: '11px', color: 'var(--faint)', fontFamily: "'IBM Plex Mono', monospace" }}
                 >
                   {g.count}
                 </span>
@@ -299,9 +314,7 @@ export function Library() {
                 {g.tools.map((tl) => (
                   <div key={tl.name}>
                     <div style={toolHead}>
-                      <span
-                        style={{ width: '4px', height: '13px', flex: 'none', background: tl.color }}
-                      />
+                      <span style={{ width: '4px', height: '13px', flex: 'none', background: g.color }} />
                       <span
                         style={{
                           fontFamily: "'IBM Plex Mono', monospace",
@@ -325,32 +338,15 @@ export function Library() {
                     <div style={grid}>
                       {tl.commands.map((c) => {
                         const parts = toParts(c.template, values, definedNames);
+                        const inSheet = selected.includes(c.id);
                         return (
                           <div key={c.id} style={card}>
                             <div style={cardHead}>
                               <div style={cardTitle}>{c.title}</div>
-                              <span
-                                style={{
-                                  fontFamily: "'IBM Plex Mono', monospace",
-                                  fontSize: '10.5px',
-                                  fontWeight: 600,
-                                  padding: '2px 7px',
-                                  color: g.color,
-                                  border: `1px solid ${g.color}`,
-                                  whiteSpace: 'nowrap',
-                                  flex: 'none',
-                                }}
-                              >
-                                {c.tool}
-                              </span>
                             </div>
                             {c.desc && <div style={cardDesc}>{c.desc}</div>}
                             <div style={codeWrap}>
-                              <button
-                                onClick={() => copy(c.template)}
-                                title="Copier"
-                                style={copyBtn}
-                              >
+                              <button onClick={() => copy(c.template)} title="Copier" style={copyBtn}>
                                 <CopyIcon />
                               </button>
                               <pre style={pre}>
@@ -368,7 +364,24 @@ export function Library() {
                                   #{t}
                                 </button>
                               ))}
+                              <div style={{ flex: 1 }} />
+                              <button
+                                onClick={() => toggleSelected(c.id)}
+                                style={inSheet ? addOn : addOff}
+                              >
+                                {inSheet ? 'Ajoutée ✓' : '+ Cheatsheet'}
+                              </button>
                             </div>
+                            <textarea
+                              value={notes[c.id] ?? ''}
+                              onChange={(e) => setNote(c.id, e.target.value)}
+                              rows={1}
+                              placeholder="Note personnelle…"
+                              spellCheck="false"
+                              autoCorrect="off"
+                              autoCapitalize="off"
+                              style={noteArea}
+                            />
                           </div>
                         );
                       })}

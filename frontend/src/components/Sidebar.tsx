@@ -4,9 +4,9 @@ import { useStore } from '../store';
 import { STANDARD_VARS } from '../lib/theme';
 import { CATEGORIES, COMMANDS } from '../data/seed';
 
-// Left sidebar (272px): the live Variables panel, the Categories list with
-// per-category command counts, and the Tags chips with counts. Filters drive the
-// store (setActiveCat / setActiveTag). Markup/styles ported from the prototype.
+// Left sidebar (272px): the live Variables panel, the expandable Categories tree
+// (each category unfolds to its tools, which filter the Library by tool), and the
+// Tags chips. Markup/styles ported faithfully from the prototype's catTree.
 
 const labelStyle: CSSProperties = {
   fontSize: '10.5px',
@@ -38,6 +38,49 @@ const rowOn: CSSProperties = {
   border: '1px solid var(--acc-line)',
 };
 
+const subBase: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  width: '100%',
+  cursor: 'pointer',
+  border: '1px solid transparent',
+  background: 'transparent',
+  color: 'var(--muted)',
+  padding: '4px 8px',
+  fontSize: '12px',
+  fontFamily: 'inherit',
+  textAlign: 'left',
+};
+const subOn: CSSProperties = {
+  ...subBase,
+  color: 'var(--text-strong)',
+  background: 'var(--acc-dim)',
+  border: '1px solid var(--acc-line)',
+};
+
+const chevBtn: CSSProperties = {
+  cursor: 'pointer',
+  border: 'none',
+  background: 'transparent',
+  color: 'var(--faint)',
+  width: '16px',
+  height: '26px',
+  fontSize: '10px',
+  flex: 'none',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+};
+
+const ellipsis: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
 const tagBase: CSSProperties = {
   cursor: 'pointer',
   border: '1px solid var(--border2)',
@@ -62,21 +105,46 @@ const countStyle: CSSProperties = {
   fontSize: '11px',
   color: 'var(--faint)',
 };
+const subCountStyle: CSSProperties = {
+  fontFamily: "'IBM Plex Mono',monospace",
+  fontSize: '10.5px',
+  color: 'var(--faint)',
+};
 
 export function Sidebar() {
-  const { values, view, activeCat, activeTag, setView, setValue, setActiveCat, setActiveTool, setActiveTag } =
-    useStore();
+  const {
+    values,
+    view,
+    activeCat,
+    activeTool,
+    activeTag,
+    expanded,
+    setView,
+    setValue,
+    setActiveCat,
+    setActiveTool,
+    setActiveTag,
+    toggleExpand,
+    openCat,
+  } = useStore();
 
   const isLibrary = view === 'library';
 
-  // Per-category command counts, computed once from the seed.
-  const catCount = useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const c of COMMANDS) m[c.category] = (m[c.category] || 0) + 1;
-    return m;
+  // Per-category counts, first-seen tool order, and per-tool counts — computed
+  // once from the full seed (stable regardless of the active filter).
+  const { catCount, catToolOrder, toolCount } = useMemo(() => {
+    const catCount: Record<string, number> = {};
+    const catToolOrder: Record<string, string[]> = {};
+    const toolCount: Record<string, number> = {};
+    for (const c of COMMANDS) {
+      catCount[c.category] = (catCount[c.category] || 0) + 1;
+      toolCount[c.category + '||' + c.tool] = (toolCount[c.category + '||' + c.tool] || 0) + 1;
+      const tools = (catToolOrder[c.category] ??= []);
+      if (!tools.includes(c.tool)) tools.push(c.tool);
+    }
+    return { catCount, catToolOrder, toolCount };
   }, []);
 
-  // Tag counts, sorted alphabetically (matches the prototype's tagList).
   const tagList = useMemo(() => {
     const m: Record<string, number> = {};
     for (const c of COMMANDS) for (const t of c.tags) m[t] = (m[t] || 0) + 1;
@@ -85,18 +153,23 @@ export function Sidebar() {
       .map((name) => ({ name, count: m[name] }));
   }, []);
 
-  // Only categories that actually carry commands are listed (prototype filter).
   const cats = CATEGORIES.filter((c) => catCount[c.key]);
 
-  const selectCat = (key: string) => {
-    setView('library');
-    setActiveCat(key);
-    setActiveTool(null);
-  };
   const selectAll = () => {
     setView('library');
     setActiveCat(null);
     setActiveTool(null);
+  };
+  const selectCat = (key: string) => {
+    setView('library');
+    setActiveCat(key);
+    setActiveTool(null);
+    openCat(key);
+  };
+  const selectTool = (key: string, tool: string) => {
+    setView('library');
+    setActiveCat(key);
+    setActiveTool(tool);
   };
   const toggleTag = (name: string) => {
     setView('library');
@@ -170,33 +243,71 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* Categories */}
+      {/* Categories (expandable → tools) */}
       <div>
         <div style={{ ...labelStyle, marginBottom: '9px' }}>Catégories</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <button onClick={selectAll} style={allActive ? rowOn : rowBase}>
+          <button onClick={selectAll} style={{ ...(allActive ? rowOn : rowBase), marginLeft: '18px' }}>
             <span style={{ width: '8px', height: '8px', flex: 'none', background: 'var(--muted)' }} />
             <span style={{ flex: 1, minWidth: 0 }}>Toutes les commandes</span>
             <span style={countStyle}>{COMMANDS.length}</span>
           </button>
+
           {cats.map((c) => {
-            const active = isLibrary && activeCat === c.key;
+            const catActive = isLibrary && activeCat === c.key && !activeTool;
+            const isOpen = !!expanded[c.key];
+            const tools = catToolOrder[c.key] ?? [];
             return (
-              <button key={c.key} onClick={() => selectCat(c.key)} style={active ? rowOn : rowBase}>
-                <span style={{ width: '8px', height: '8px', flex: 'none', background: c.color }} />
-                <span
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {c.label}
-                </span>
-                <span style={countStyle}>{catCount[c.key]}</span>
-              </button>
+              <div key={c.key} style={{ display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                  <button
+                    onClick={() => toggleExpand(c.key)}
+                    style={chevBtn}
+                    title={isOpen ? 'Replier' : 'Déplier'}
+                  >
+                    {isOpen ? '▾' : '▸'}
+                  </button>
+                  <button onClick={() => selectCat(c.key)} style={catActive ? rowOn : rowBase}>
+                    <span style={{ width: '8px', height: '8px', flex: 'none', background: c.color }} />
+                    <span style={ellipsis}>{c.label}</span>
+                    <span style={countStyle}>{catCount[c.key]}</span>
+                  </button>
+                </div>
+                {isOpen && (
+                  <div
+                    style={{
+                      paddingLeft: '20px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '1px',
+                      margin: '2px 0 4px',
+                    }}
+                  >
+                    {tools.map((name) => {
+                      const toolActive = isLibrary && activeCat === c.key && activeTool === name;
+                      return (
+                        <button
+                          key={name}
+                          onClick={() => selectTool(c.key, name)}
+                          style={toolActive ? subOn : subBase}
+                        >
+                          <span
+                            style={{
+                              width: '3px',
+                              height: '11px',
+                              flex: 'none',
+                              background: c.color,
+                              opacity: toolActive ? 1 : 0.6,
+                            }}
+                          />
+                          <span style={{ ...ellipsis, fontFamily: "'IBM Plex Mono',monospace" }}>{name}</span>
+                          <span style={subCountStyle}>{toolCount[c.key + '||' + name]}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>

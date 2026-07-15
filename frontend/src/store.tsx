@@ -15,6 +15,10 @@ export interface StoreState {
   activeTag: string | null;
   query: string;
   selected: string[];
+  // Which sidebar categories are expanded to reveal their tool list.
+  expanded: Record<string, boolean>;
+  // Per-command personal notes (memory-only in M0).
+  notes: Record<string, string>;
 }
 
 export interface StoreActions {
@@ -27,6 +31,9 @@ export interface StoreActions {
   setQuery: (q: string) => void;
   clearFilters: () => void;
   toggleSelected: (id: string) => void;
+  toggleExpand: (k: string) => void;
+  openCat: (k: string) => void;
+  setNote: (id: string, note: string) => void;
 }
 
 export type Store = StoreState & StoreActions;
@@ -42,6 +49,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [query, setQuery] = useState<string>('');
   const [selected, setSelected] = useState<string[]>([]);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => (t === 'light' ? 'dark' : 'light'));
@@ -62,6 +71,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSelected((sel) => (sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id]));
   }, []);
 
+  const toggleExpand = useCallback((k: string) => {
+    setExpanded((e) => ({ ...e, [k]: !e[k] }));
+  }, []);
+
+  const openCat = useCallback((k: string) => {
+    setExpanded((e) => (e[k] ? e : { ...e, [k]: true }));
+  }, []);
+
+  const setNote = useCallback((id: string, note: string) => {
+    setNotes((n) => ({ ...n, [id]: note }));
+  }, []);
+
   const store = useMemo<Store>(
     () => ({
       theme,
@@ -72,6 +93,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeTag,
       query,
       selected,
+      expanded,
+      notes,
       toggleTheme,
       setView,
       setValue,
@@ -81,6 +104,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setQuery,
       clearFilters,
       toggleSelected,
+      toggleExpand,
+      openCat,
+      setNote,
     }),
     [
       theme,
@@ -91,10 +117,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeTag,
       query,
       selected,
+      expanded,
+      notes,
       toggleTheme,
       setValue,
       clearFilters,
       toggleSelected,
+      toggleExpand,
+      openCat,
+      setNote,
     ],
   );
 
