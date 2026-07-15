@@ -1,0 +1,30 @@
+<!doctype html>
+<!-- CHEAT_DEV_PLACEHOLDER: committed so `go build` compiles standalone.
+     The real SPA is built by `make build` (frontend -> backend/dist) before the
+     production `go build`, and is NOT committed. Do not add asset references here. -->
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cheat — build de dev</title>
+<style>
+  html,body{margin:0;height:100%;background:#0b0c0f;color:#e8e9ed;
+    font-family:ui-monospace,"IBM Plex Mono",monospace;display:flex;
+    align-items:center;justify-content:center}
+  .box{max-width:560px;padding:28px 32px;border:1px solid #1e2029;background:#15171d}
+  h1{font-size:16px;margin:0 0 12px;font-weight:600}
+  .acc{color:#3ddc97}
+  p{font-size:13px;line-height:1.6;color:#8a8e99;margin:8px 0}
+  code{color:#cdd2da;background:#0a0b0e;border:1px solid #1e2029;padding:2px 6px}
+</style>
+</head>
+<body>
+  <div class="box">
+    <h1><span class="acc">💩 Cheat</span> — interface non embarquée</h1>
+    <p>Ce binaire a été compilé sans la SPA. C'est un placeholder de développement.</p>
+    <p>Pour l'UI :</p>
+    <p>• Dev : <code>make dev</code> (Vite sur <span class="acc">http://127.0.0.1:5173</span>, proxy <code>/api</code> vers :8787)</p>
+    <p>• Prod : <code>make build &amp;&amp; ./cheat</code> (SPA embarquée sur <span class="acc">http://127.0.0.1:8787</span>)</p>
+  </div>
+</body>
+</html>

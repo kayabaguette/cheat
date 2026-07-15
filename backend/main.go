@@ -1,0 +1,199 @@
+// Command cheat is the single-binary backend for the Cheat app (M0 scaffold).
+//
+// It embeds the built Vite SPA (frontend/dist) and serves it same-origin
+// alongside a minimal JSON API, bound to the loopback interface only
+// (127.0.0.1). This is the lean M0 server: no database and no entity
+// endpoints yet — only GET /api/health plus the embedded SPA with an
+// history/SPA fallback to index.html.
+//
+// Networking is hard-bound to loopback (SPEC Q168/R1): there is no LAN mode,
+// no TLS, and no auth token. The listen port defaults to 8787 and can be
+// overridden with the --port flag or the CHEAT_PORT environment variable
+// (SPEC Q195); a port clash fails loudly.
+package main
+
+import (
+	"embed"
+	"flag"
+	"io/fs"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+)
+
+// version is the embedded build version, overridable at link time via
+// -ldflags "-X main.version=<v>" (SPEC Q194). No auto-update / update ping.
+var version = "0.0.0-dev"
+
+// defaultPort is the fixed default loopback port (SPEC Q195).
+const defaultPort = "8787"
+
+// devPlaceholderSentinel marks the committed placeholder index.html. A real
+// `vite build` produces an index.html without this marker, so its presence
+// tells the binary it was built without a real SPA (dev / standalone build)
+// and it should serve the "run the Vite dev server" page instead.
+const devPlaceholderSentinel = "CHEAT_DEV_PLACEHOLDER"
+
+// distFS embeds the built SPA. go:embed patterns cannot traverse ".." , so the
+// SPA lives in a `dist/` directory local to this package; the Makefile /
+// Dockerfile copy frontend/dist into it before `go build`. A committed
+// placeholder dist/index.html guarantees this compiles standalone.
+//
+//go:embed all:dist
+var distFS embed.FS
+
+func main() {
+	portFlag := flag.String("port", "", "loopback port to listen on (overrides CHEAT_PORT; default "+defaultPort+")")
+	flag.Parse()
+
+	port := resolvePort(*portFlag)
+	addr := "127.0.0.1:" + port
+
+	spa, realSPA := loadSPA()
+
+	gin.SetMode(gin.ReleaseMode)
+	r := gin.New()
+	r.Use(gin.Recovery())
+	// Minimal access log: method, path, status, latency only — never bodies,
+	// query params, or bound SQL params (SPEC Q178, OPSEC).
+	r.Use(gin.LoggerWithFormatter(minimalLogFormatter))
+
+	api := r.Group("/api")
+	api.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "version": version})
+	})
+
+	if realSPA {
+		serveSPA(r, spa)
+	} else {
+		serveDevPlaceholder(r)
+	}
+
+	log.Printf("cheat %s — serving on http://%s%s", version, addr, spaStatus(realSPA))
+	if err := r.Run(addr); err != nil {
+		log.Fatalf("cheat: failed to bind %s: %v", addr, err)
+	}
+}
+
+// resolvePort picks the listen port: --port flag, then CHEAT_PORT env, then
+// the fixed default (SPEC Q195).
+func resolvePort(flagVal string) string {
+	if flagVal != "" {
+		return flagVal
+	}
+	if env := strings.TrimSpace(os.Getenv("CHEAT_PORT")); env != "" {
+		return env
+	}
+	return defaultPort
+}
+
+// loadSPA returns the embedded SPA filesystem (rooted at dist/) and whether it
+// is a real build (true) or only the committed dev placeholder (false).
+func loadSPA() (fs.FS, bool) {
+	sub, err := fs.Sub(distFS, "dist")
+	if err != nil {
+		log.Fatalf("cheat: cannot open embedded dist: %v", err)
+	}
+	index, err := fs.ReadFile(sub, "index.html")
+	if err != nil {
+		log.Fatalf("cheat: embedded dist/index.html missing: %v", err)
+	}
+	return sub, !strings.Contains(string(index), devPlaceholderSentinel)
+}
+
+// serveSPA wires the embedded SPA: static assets are served from the embed FS,
+// and any other non-/api GET falls back to index.html (SPA history routing).
+func serveSPA(r *gin.Engine, spa fs.FS) {
+	fileServer := http.FileServer(http.FS(spa))
+	r.NoRoute(func(c *gin.Context) {
+		req := c.Request
+		if req.Method != http.MethodGet && req.Method != http.MethodHead {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		if strings.HasPrefix(req.URL.Path, "/api") {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		clean := strings.TrimPrefix(req.URL.Path, "/")
+		if clean == "" {
+			serveFile(c, spa, "index.html")
+			return
+		}
+		if f, err := spa.Open(clean); err == nil {
+			_ = f.Close()
+			fileServer.ServeHTTP(c.Writer, req)
+			return
+		}
+		// Unknown non-/api path → SPA history fallback.
+		serveFile(c, spa, "index.html")
+	})
+}
+
+// serveFile writes a single embedded file (used for the SPA index fallback).
+func serveFile(c *gin.Context, spa fs.FS, name string) {
+	data, err := fs.ReadFile(spa, name)
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+}
+
+// serveDevPlaceholder serves an informational page for every non-/api GET when
+// the binary was built without a real SPA (only the placeholder is embedded).
+func serveDevPlaceholder(r *gin.Engine) {
+	r.NoRoute(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/api") {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(devPlaceholderPage))
+	})
+}
+
+func spaStatus(realSPA bool) string {
+	if realSPA {
+		return ""
+	}
+	return "  (no SPA embedded — run `make dev` / the Vite dev server on :5173)"
+}
+
+// minimalLogFormatter logs only method, path, status and latency (SPEC Q178).
+func minimalLogFormatter(p gin.LogFormatterParams) string {
+	return "[cheat] " + p.TimeStamp.Format("15:04:05") + " " +
+		p.Method + " " + p.Path + " " +
+		http.StatusText(p.StatusCode) + " " +
+		p.Latency.String() + "\n"
+}
+
+const devPlaceholderPage = `<!doctype html>
+<!-- CHEAT_DEV_PLACEHOLDER -->
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Cheat — dev</title>
+<style>
+  body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0e0f13;color:#e6e8ee;
+       margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center}
+  .card{max-width:560px;padding:2rem 2.25rem;border:1px solid #2a2d36;background:#15171d}
+  h1{color:#3ddc97;font-size:1.1rem;margin:0 0 .75rem;letter-spacing:.02em}
+  p{line-height:1.5;color:#a5a9b5;margin:.4rem 0}
+  code{background:#0e0f13;border:1px solid #2a2d36;padding:.15rem .4rem;color:#e6e8ee}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Cheat — SPA non embarquée</h1>
+    <p>Le binaire Go tourne, mais aucun build front n'est embarqué (placeholder seulement).</p>
+    <p>En développement, lance le serveur Vite&nbsp;: <code>make dev</code> puis ouvre
+       <code>http://127.0.0.1:5173</code> (le proxy <code>/api</code> pointe vers ce serveur).</p>
+    <p>Pour un binaire complet&nbsp;: <code>make build</code> puis <code>./cheat</code>.</p>
+    <p>API santé&nbsp;: <code>GET /api/health</code></p>
+  </div>
+</body>
+</html>`

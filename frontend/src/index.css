@@ -1,0 +1,15 @@
+*{box-sizing:border-box}
+body{margin:0}
+::selection{background:color-mix(in srgb, var(--acc) 30%, transparent)}
+.app ::-webkit-scrollbar{width:10px;height:10px}
+.app ::-webkit-scrollbar-thumb{background:var(--border2);border:2px solid transparent;background-clip:content-box}
+.app ::-webkit-scrollbar-thumb:hover{background:var(--faint);background-clip:content-box}
+input:focus,textarea:focus{outline:none}
+a{color:var(--acc);text-decoration:none}
+a:hover{color:var(--acc)}
+.printroot{display:none}
+@media print{
+  .app{display:none!important}
+  .printroot{display:block!important}
+  @page{margin:1.4cm}
+}

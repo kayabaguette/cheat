@@ -23,6 +23,11 @@ node_modules/
 /frontend/dist/
 .vite/
 
+# Backend embed dir: keep only the committed placeholder index.html; the real
+# SPA is copied in at build time (make build / Docker) and must not be committed.
+/backend/dist/*
+!/backend/dist/index.html
+
 # SQLite data
 *.db
 *.db-*
