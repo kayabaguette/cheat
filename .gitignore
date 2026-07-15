@@ -1,0 +1,37 @@
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+*.exe
+*.dll
+*.bin
+*.o
+*.so
+/dist/
+/build/
+/cheat
+/cheat-*
+
+# Go
+*.test
+/backend/tmp/
+
+# Node / frontend
+node_modules/
+/frontend/dist/
+.vite/
+
+# SQLite data
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+
+# OS / editor
+.DS_Store
+*.swp
+__pycache__/
+.idea/
+.vscode/
