@@ -69,6 +69,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setActiveTool(null);
     setActiveTag(null);
     setQuery('');
+    // Reset also collapses the whole category tree and returns to
+    // « Toutes les commandes » (activeCat = null).
+    setExpanded({});
   }, []);
 
   const toggleSelected = useCallback((id: string) => {
