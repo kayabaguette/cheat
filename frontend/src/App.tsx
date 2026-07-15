@@ -7,6 +7,7 @@ import { Library } from './components/views/Library';
 import { Methodology } from './components/views/Methodology';
 import { References } from './components/views/References';
 import { Cheatsheet } from './components/views/Cheatsheet';
+import { Toast } from './components/Toast';
 
 // Root application shell. Faithful port of the prototype's three-region layout:
 // a fixed 53px top bar, then a flex row of the 272px sidebar + the routed content
@@ -46,6 +47,7 @@ export default function App() {
           </div>
         </div>
       </div>
+      <Toast />
     </div>
   );
 }

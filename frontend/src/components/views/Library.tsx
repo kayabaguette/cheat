@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../../store';
 import { CATEGORIES, COMMANDS } from '../../data/seed';
@@ -93,19 +93,8 @@ const cardDesc: CSSProperties = {
   marginTop: '-2px',
 };
 const codeWrap: CSSProperties = { position: 'relative' };
-const copyBtn: CSSProperties = {
-  position: 'absolute',
-  top: '7px',
-  right: '7px',
-  cursor: 'pointer',
-  border: '1px solid var(--border2)',
-  background: 'var(--surface2)',
-  color: 'var(--muted)',
-  padding: '4px 5px',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-};
+// Copy button styling lives in the .copy-btn CSS class (index.css) so :hover and
+// :active feedback apply (inline styles would override the class rules).
 const pre: CSSProperties = {
   margin: 0,
   background: 'var(--code)',
@@ -196,6 +185,23 @@ function CopyIcon() {
   );
 }
 
+function CheckIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
 interface ToolGroup {
   name: string;
   count: number;
@@ -222,7 +228,10 @@ export function Library() {
     clearFilters,
     toggleSelected,
     setNote,
+    flash,
   } = useStore();
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const definedNames = useMemo(
     () => new Set<string>([...STANDARD_VARS.map((v) => v.name), ...Object.keys(values)]),
@@ -265,11 +274,23 @@ export function Library() {
       ? '#' + activeTag
       : '';
 
-  const copy = (template: string) => {
+  const copy = (id: string, template: string) => {
+    const done = () => {
+      setCopiedId(id);
+      // Revert the check icon after a short beat.
+      setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1200);
+      flash('Copié dans le presse-papier');
+    };
     try {
-      void navigator.clipboard.writeText(resolve(template, values));
+      const p = navigator.clipboard?.writeText(resolve(template, values));
+      // Toast reflects the real clipboard result (Q53).
+      if (p && typeof p.then === 'function') {
+        p.then(done, () => flash('Échec de la copie'));
+      } else {
+        done();
+      }
     } catch {
-      /* clipboard unavailable — no-op */
+      flash('Échec de la copie');
     }
   };
 
@@ -346,8 +367,12 @@ export function Library() {
                             </div>
                             {c.desc && <div style={cardDesc}>{c.desc}</div>}
                             <div style={codeWrap}>
-                              <button onClick={() => copy(c.template)} title="Copier" style={copyBtn}>
-                                <CopyIcon />
+                              <button
+                                onClick={() => copy(c.id, c.template)}
+                                title="Copier"
+                                className={copiedId === c.id ? 'copy-btn copied' : 'copy-btn'}
+                              >
+                                {copiedId === c.id ? <CheckIcon /> : <CopyIcon />}
                               </button>
                               <pre style={pre}>
                                 <span style={prompt}>$ </span>

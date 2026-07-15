@@ -125,7 +125,6 @@ export function Sidebar() {
     setActiveTool,
     setActiveTag,
     toggleExpand,
-    openCat,
   } = useStore();
 
   const isLibrary = view === 'library';
@@ -164,7 +163,9 @@ export function Sidebar() {
     setView('library');
     setActiveCat(key);
     setActiveTool(null);
-    openCat(key);
+    // Clicking the category row toggles its tool list: expand on first click,
+    // collapse on re-click (the chevron does the same).
+    toggleExpand(key);
   };
   const selectTool = (key: string, tool: string) => {
     setView('library');

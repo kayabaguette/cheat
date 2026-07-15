@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ThemeName, ViewKey } from './types';
 import { INITIAL_VALUES } from './data/seed';
@@ -19,6 +19,8 @@ export interface StoreState {
   expanded: Record<string, boolean>;
   // Per-command personal notes (memory-only in M0).
   notes: Record<string, string>;
+  // Transient status message (auto-dismisses); shown by <Toast>.
+  toast: string;
 }
 
 export interface StoreActions {
@@ -32,8 +34,8 @@ export interface StoreActions {
   clearFilters: () => void;
   toggleSelected: (id: string) => void;
   toggleExpand: (k: string) => void;
-  openCat: (k: string) => void;
   setNote: (id: string, note: string) => void;
+  flash: (msg: string) => void;
 }
 
 export type Store = StoreState & StoreActions;
@@ -51,6 +53,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [toast, setToast] = useState<string>('');
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => (t === 'light' ? 'dark' : 'light'));
@@ -75,12 +79,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setExpanded((e) => ({ ...e, [k]: !e[k] }));
   }, []);
 
-  const openCat = useCallback((k: string) => {
-    setExpanded((e) => (e[k] ? e : { ...e, [k]: true }));
-  }, []);
-
   const setNote = useCallback((id: string, note: string) => {
     setNotes((n) => ({ ...n, [id]: note }));
+  }, []);
+
+  const flash = useCallback((msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(''), 1700);
   }, []);
 
   const store = useMemo<Store>(
@@ -95,6 +101,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       selected,
       expanded,
       notes,
+      toast,
       toggleTheme,
       setView,
       setValue,
@@ -105,8 +112,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       clearFilters,
       toggleSelected,
       toggleExpand,
-      openCat,
       setNote,
+      flash,
     }),
     [
       theme,
@@ -119,13 +126,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       selected,
       expanded,
       notes,
+      toast,
       toggleTheme,
       setValue,
       clearFilters,
       toggleSelected,
       toggleExpand,
-      openCat,
       setNote,
+      flash,
     ],
   );
 
