@@ -1,59 +1,57 @@
-# Cheat — build & delivery.
-# Default flow runs the app through a container engine (podman preferred, docker
-# fallback). Native targets remain for local builds/CI without a container.
+# Cheat — container-only build & delivery.
+# The app runs exclusively through a container engine (podman preferred, docker
+# fallback). Typical loop:  make down && make build && make up   (or: make rebuild)
 # The server is loopback-only by design (SPEC R1/Q168); see NET below.
 
 SHELL       := /bin/bash
 ROOT        := $(CURDIR)
 FRONTEND    := $(ROOT)/frontend
 BACKEND     := $(ROOT)/backend
-EMBED_DIST  := $(BACKEND)/dist
-BIN         := $(ROOT)/cheat
 VERSION     ?= 0.0.0-dev
 CHEAT_PORT  ?= 8787
-# Release flags: strip debug symbols/metadata (OPSEC), stamp version.
-LDFLAGS     := -s -w -X main.version=$(VERSION)
 
 # Container engine: prefer podman, fall back to docker.
 ENGINE      ?= $(shell if command -v podman >/dev/null 2>&1; then echo podman; elif command -v docker >/dev/null 2>&1; then echo docker; fi)
 IMAGE       ?= cheat
 TAG         ?= $(VERSION)
 NAME        ?= cheat
-# Loopback-only by design: the container joins the host network namespace so the
-# process binds the host's 127.0.0.1 directly. A plain `-p` mapping cannot reach
-# a 127.0.0.1 listener, and publishing to 0.0.0.0 would expose it to the LAN
-# (forbidden by R1). Nothing is exposed beyond host loopback.
+# Loopback-only: the container joins the host network namespace so the process
+# binds the host's 127.0.0.1 directly. A plain `-p` mapping cannot reach a
+# 127.0.0.1 listener, and publishing to 0.0.0.0 would expose it to the LAN
+# (forbidden by R1). Nothing is reachable beyond host loopback.
 NET         ?= host
 GO_IMAGE    ?= golang:1.25-alpine
 NODE_IMAGE  ?= node:22-alpine
 
 .DEFAULT_GOAL := help
-.PHONY: help require-engine image run up down logs dev \
-        install build build-frontend build-backend run-native clean
+.PHONY: help require-engine build up run down rebuild logs dev clean
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
-	 awk 'BEGIN{FS=":.*?## "}{printf "  \033[1m%-16s\033[0m %s\n", $$1, $$2}'
+	 awk 'BEGIN{FS=":.*?## "}{printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}'
 
 require-engine:
 	@if [ -z "$(ENGINE)" ]; then \
 	  echo "error: no container engine found — install podman or docker (or set ENGINE=)"; exit 1; fi
 
-## ---- Containerized (default) ------------------------------------------------
-
-image: require-engine ## Build the container image ($(IMAGE):$(TAG)) with $(ENGINE)
+build: require-engine ## Build the container image ($(IMAGE):$(TAG)) with $(ENGINE)
 	$(ENGINE) build -t $(IMAGE):$(TAG) -t $(IMAGE):latest --build-arg VERSION=$(VERSION) $(ROOT)
 
-run: image ## Build + run the app in a container (http://127.0.0.1:$(CHEAT_PORT); Ctrl-C to stop)
+up: require-engine ## Run the built image, detached (http://127.0.0.1:$(CHEAT_PORT))
+	$(ENGINE) run -d --rm --network $(NET) --name $(NAME) -e CHEAT_PORT=$(CHEAT_PORT) $(IMAGE):$(TAG)
+	@echo ">> up  ->  http://127.0.0.1:$(CHEAT_PORT)   (make logs | make down)"
+
+run: require-engine ## Run the built image in the foreground (Ctrl-C to stop)
 	@echo ">> $(ENGINE) run --network $(NET)  ->  http://127.0.0.1:$(CHEAT_PORT)"
 	$(ENGINE) run --rm --network $(NET) --name $(NAME) -e CHEAT_PORT=$(CHEAT_PORT) $(IMAGE):$(TAG)
 
-up: image ## Build + run detached (use `make logs` / `make down`)
-	$(ENGINE) run -d --rm --network $(NET) --name $(NAME) -e CHEAT_PORT=$(CHEAT_PORT) $(IMAGE):$(TAG)
-	@echo ">> detached  ->  http://127.0.0.1:$(CHEAT_PORT)   (make logs | make down)"
-
 down: require-engine ## Stop & remove the running container
 	-$(ENGINE) rm -f $(NAME) 2>/dev/null
+
+rebuild: ## down + build + up (the usual one-shot)
+	@$(MAKE) --no-print-directory down
+	@$(MAKE) --no-print-directory build
+	@$(MAKE) --no-print-directory up
 
 logs: require-engine ## Follow container logs
 	$(ENGINE) logs -f $(NAME)
@@ -70,30 +68,7 @@ dev: require-engine ## Containerized dev: Vite HMR (:5173) + Go (:$(CHEAT_PORT))
 	   $(NODE_IMAGE) sh -c "npm install --no-audit --no-fund --silent && npm run dev" & \
 	 wait
 
-## ---- Native (no container) --------------------------------------------------
-
-install: ## (native) Install frontend dependencies
-	cd $(FRONTEND) && npm install
-
-build-frontend: ## (native) Build the SPA (frontend/dist)
-	cd $(FRONTEND) && npm ci && npm run build
-
-build-backend: ## (native) Copy dist into the embed path and compile the binary
-	rm -rf $(EMBED_DIST) && mkdir -p $(EMBED_DIST)
-	cp -R $(FRONTEND)/dist/. $(EMBED_DIST)/
-	cd $(BACKEND) && go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) .
-
-build: build-frontend build-backend ## (native) Build SPA + compile the single binary
-	@echo ">> built $(BIN)"
-
-run-native: ## (native) Run the compiled binary directly (127.0.0.1:$(CHEAT_PORT))
-	CHEAT_PORT=$(CHEAT_PORT) $(BIN)
-
-clean: ## Remove build artifacts + container image/volumes
-	rm -f $(BIN)
-	rm -rf $(FRONTEND)/dist
-	git -C $(ROOT) checkout -- backend/dist/index.html 2>/dev/null || true
-	find $(EMBED_DIST) -mindepth 1 ! -name index.html -delete 2>/dev/null || true
+clean: require-engine ## Remove the container, image and dev volumes
 	-$(ENGINE) rm -f $(NAME) $(NAME)-api $(NAME)-web 2>/dev/null
 	-$(ENGINE) rmi $(IMAGE):$(TAG) $(IMAGE):latest 2>/dev/null
 	-$(ENGINE) volume rm cheat-go-cache cheat-web-modules 2>/dev/null
