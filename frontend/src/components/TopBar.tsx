@@ -29,13 +29,20 @@ const segBase: CSSProperties = {
 const segOn: CSSProperties = { ...segBase, background: 'var(--border2)', color: 'var(--text)' };
 
 export function TopBar() {
-  const { view, query, selected, setView, setQuery, toggleTheme, theme } = useStore();
+  const { view, query, selected, setView, setQuery, toggleTheme, theme, setNewRmOpen, setAddingRef } =
+    useStore();
 
   const selectedCount = selected.length;
-  // Add button is contextual and shown everywhere except the cheatsheet. It is a
-  // placeholder no-op in M0 (the create dialogs land in later milestones).
+  // Add button is contextual and shown everywhere except the cheatsheet. In
+  // methodology it opens the new-roadmap inline form; in references it opens the
+  // add-reference modal. Library stays a no-op until commands move to the store (M2).
   const showAdd = view === 'library' || view === 'refs' || view === 'method';
   const addLabel = view === 'refs' ? 'Référence' : view === 'method' ? 'Méthodologie' : 'Commande';
+  const onAdd = () => {
+    if (view === 'method') setNewRmOpen(true);
+    else if (view === 'refs') setAddingRef(true);
+    // library: create dialog lands in M2.
+  };
   const themeIcon = theme === 'light' ? '☾' : '☀';
 
   return (
@@ -143,9 +150,7 @@ export function TopBar() {
 
       {showAdd && (
         <button
-          onClick={() => {
-            /* M0: create dialogs are implemented in later milestones. */
-          }}
+          onClick={onAdd}
           style={{
             cursor: 'pointer',
             display: 'flex',

@@ -119,15 +119,19 @@ export function Sidebar() {
     activeTool,
     activeTag,
     expanded,
+    references,
+    activeRefTag,
     setView,
     setValue,
     setActiveCat,
     setActiveTool,
     setActiveTag,
+    setActiveRefTag,
     toggleExpand,
   } = useStore();
 
   const isLibrary = view === 'library';
+  const isRefs = view === 'refs';
 
   // Per-category counts, first-seen tool order, and per-tool counts — computed
   // once from the full seed (stable regardless of the active filter).
@@ -152,6 +156,16 @@ export function Sidebar() {
       .map((name) => ({ name, count: m[name] }));
   }, []);
 
+  // Distinct tags across references, with per-tag counts — the References view's
+  // own Tags facet (replaces the library Categories/Tags sections).
+  const refTagList = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const r of references) for (const t of r.tags) m[t] = (m[t] || 0) + 1;
+    return Object.keys(m)
+      .sort()
+      .map((name) => ({ name, count: m[name] }));
+  }, [references]);
+
   const cats = CATEGORIES.filter((c) => catCount[c.key]);
 
   const selectAll = () => {
@@ -175,6 +189,9 @@ export function Sidebar() {
   const toggleTag = (name: string) => {
     setView('library');
     setActiveTag(activeTag === name ? null : name);
+  };
+  const toggleRefTag = (name: string) => {
+    setActiveRefTag(activeRefTag === name ? null : name);
   };
 
   const allActive = isLibrary && !activeCat;
@@ -244,7 +261,30 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* Categories (expandable → tools) */}
+      {/* References view: a references-specific Tags facet in place of the
+          library Categories/Tags sections. */}
+      {isRefs && (
+        <div>
+          <div style={{ ...labelStyle, marginBottom: '9px' }}>Tags</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {refTagList.map((tg) => (
+              <button
+                key={tg.name}
+                onClick={() => toggleRefTag(tg.name)}
+                style={activeRefTag === tg.name ? tagOn : tagBase}
+              >
+                #{tg.name}
+                <span style={{ color: 'var(--faint)', fontFamily: "'IBM Plex Mono',monospace" }}>
+                  {tg.count}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Categories (expandable → tools) — library view only */}
+      {!isRefs && (
       <div>
         <div style={{ ...labelStyle, marginBottom: '9px' }}>Catégories</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -313,8 +353,10 @@ export function Sidebar() {
           })}
         </div>
       </div>
+      )}
 
-      {/* Tags */}
+      {/* Tags — library view only */}
+      {!isRefs && (
       <div>
         <div style={{ ...labelStyle, marginBottom: '9px' }}>Tags</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -330,6 +372,7 @@ export function Sidebar() {
           ))}
         </div>
       </div>
+      )}
     </div>
   );
 }
