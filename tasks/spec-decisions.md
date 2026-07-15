@@ -103,3 +103,20 @@ Toutes les recos de `tasks/spec-questions.md` pour les thèmes 4→12 sont **ado
 ### Question ouverte mineure (non bloquante)
 
 - Licence du dépôt (MIT / propriétaire-privé / autre) — défaut proposé : privé/propriétaire.
+
+---
+
+## Ajustements de revue — TOUS appliqués → SPEC v1.1
+
+Une revue critique adversariale (8 lentilles) a produit **69 ajustements** (`tasks/spec-adjustments.md`, A1–A64 + R1–R5). L'utilisateur a répondu **« applique tout »**. Les 69 ont été appliqués à `SPEC.md` (régénération par section + intégration + vérification ID-par-ID + correctifs) → **SPEC passe en v1.1 (final, review-adjusted)**. **Ces ajustements PRIMENT sur les entrées ci-dessus en cas de conflit.**
+
+Reversals de décisions verrouillées (R1–R5) :
+- **R1** — plus de mode LAN / TLS runtime / token API ; **bind `127.0.0.1` dur** ; allowlist Host + Origin/Sec-Fetch conservés ; accès distant = tunnel SSH (hors code).
+- **R2** — plus d'autosave optimiste + file de retry + temp-IDs ; **créations attendues** (vrai ULID) + debounce ~500 ms sur les PATCH texte ; bannière d'erreur persistante + retry au prochain edit/focus (esprit D3, pas de bouton Save).
+- **R3** — mémoire-pur par défaut **+ opt-in `sessionStorage`** (défaut OFF, `$PASS` exclu, purgé à la fermeture, jamais exporté) **+ collage en masse** `KEY=value`.
+- **R4** — min-width dur **900 px** appliqué à la **zone de contenu** (le collapse sidebar récupère 272 px d'abord).
+- **R5** — **chiffrement at-rest OPTIONNEL** (défaut OFF, passphrase ; SQLCipher ou chiffrement applicatif de notes/target/url).
+
+Cross-cutting notables : **A11** rationale de D7 requalifié (seules les *valeurs* de variables ne sont jamais persistées) · **A12** import **REPLACE seulement** (MERGE→v2) · **A1** fix GORM zero-value (PATCH par map) · **A10** `spellcheck=false` partout (canal d'exfiltration) · **A15** `step.expanded` = état React en mémoire · cuts : seed-pack, `PUT /settings`, sync cross-tab, file de notifs bornée, colonnes réservées, factory-reset/backup endpoints. Déferrés v2 : MERGE, gestion globale de tags, duplicate/restore-defaults, mode masqué, profils de valeurs par cible, notes par entrée de cheatsheet.
+
+**Reste ouvert (non bloquant) :** licence du dépôt.
