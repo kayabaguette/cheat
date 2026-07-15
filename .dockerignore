@@ -1,0 +1,27 @@
+# Keep the build context small and correct. In particular, NEVER ship the host
+# node_modules (glibc) into the Alpine build stage — npm ci re-installs musl deps.
+**/node_modules
+frontend/dist
+backend/dist
+/cheat
+/cheat-*
+*.test
+
+# VCS / tooling / docs — not needed to build the image
+.git
+.gitignore
+.dockerignore
+.claude
+.vscode
+.idea
+tasks
+*.md
+!README.md
+
+# QA / local artifacts
+.playwright-mcp
+*.png
+data
+*.db
+*.db-*
+*.sqlite*

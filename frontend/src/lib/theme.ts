@@ -1,0 +1,65 @@
+import type { ThemeName, VariableDef } from '../types';
+
+// Accent green — dresses only active states, selections, and resolved variables.
+export const ACCENT = '#3ddc97';
+
+// The 6 standard (built-in) variables, in the canonical seed order (SPEC §3.2.7,
+// positions 0–5). All built-in; only PASS is sensitive. This order supersedes the
+// prototype's varMeta order (…USER, PASS, DOMAIN).
+export const STANDARD_VARS: VariableDef[] = [
+  { name: 'IP', isBuiltin: true, sensitive: false },
+  { name: 'LHOST', isBuiltin: true, sensitive: false },
+  { name: 'LPORT', isBuiltin: true, sensitive: false },
+  { name: 'USER', isBuiltin: true, sensitive: false },
+  { name: 'DOMAIN', isBuiltin: true, sensitive: false },
+  { name: 'PASS', isBuiltin: true, sensitive: true },
+];
+
+// Reproduces the prototype's renderVals() token maps and accent derivations verbatim.
+// Returns the CSS custom properties that the root element applies to drive the theme.
+export function themeTokens(theme: ThemeName, accent: string = ACCENT): Record<string, string> {
+  const dark: Record<string, string> = {
+    '--bg': '#0b0c0f',
+    '--surface': '#0f1015',
+    '--surface2': '#14161c',
+    '--card': '#15171d',
+    '--elev': '#181a21',
+    '--code': '#0a0b0e',
+    '--code-text': '#cdd2da',
+    '--border': '#1e2029',
+    '--border2': '#262932',
+    '--text': '#e8e9ed',
+    '--text-strong': '#f2f3f5',
+    '--muted': '#8a8e99',
+    '--faint': '#565a66',
+  };
+  const light: Record<string, string> = {
+    '--bg': '#eceef2',
+    '--surface': '#ffffff',
+    '--surface2': '#f1f2f6',
+    '--card': '#ffffff',
+    '--elev': '#ffffff',
+    '--code': '#f5f6f9',
+    '--code-text': '#1e2530',
+    '--border': '#e2e4ea',
+    '--border2': '#d2d5de',
+    '--text': '#1a1d24',
+    '--text-strong': '#0b0d11',
+    '--muted': '#5b6270',
+    '--faint': '#8b909c',
+  };
+
+  const isLight = theme === 'light';
+  const tok = isLight ? light : dark;
+  // In light mode the accent is darkened so it stays legible on white surfaces.
+  const accVis = isLight ? `color-mix(in srgb, ${accent} 55%, #04140b)` : accent;
+
+  return {
+    ...tok,
+    '--acc': accVis,
+    '--acc-dim': `color-mix(in srgb, ${accVis} ${isLight ? '13' : '15'}%, transparent)`,
+    '--acc-line': `color-mix(in srgb, ${accVis} 42%, transparent)`,
+    '--on-acc': isLight ? '#ffffff' : '#08110c',
+    '--pad': '10px',
+  };
+}
