@@ -1,18 +1,18 @@
 import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../../store';
-import { CATEGORIES, COMMANDS } from '../../data/seed';
 import { STANDARD_VARS } from '../../lib/theme';
 import { resolve, toParts } from '../../lib/vars';
 import type { Command, Part } from '../../types';
 
-// Library — the fully rendered module. Filters COMMANDS by the active
+// Library — the fully rendered module. Filters store.commands by the active
 // category/tool/tag/query from the store, groups the results by category then
 // by tool (mirroring the prototype), and renders each command as a card with a
 // variable-highlighted code block (§5.10), a copy-to-clipboard button that
-// writes the RESOLVED command (Q99), an "+ Cheatsheet" toggle and a personal
-// note. The tool is shown only as the group sub-header — NOT as a per-card badge
-// (A59; the tool badge belongs to Cheatsheet entries).
+// writes the RESOLVED command (Q99), an "+ Cheatsheet" toggle (membership of the
+// ACTIVE sheet — D1/D2), a personal note, and edit/delete actions (D6). The tool
+// is shown only as the group sub-header — NOT as a per-card badge (A59; the tool
+// badge belongs to Cheatsheet entries).
 
 function fold(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -29,16 +29,6 @@ function partStyle(state: Part['state']): CSSProperties {
     default:
       return {};
   }
-}
-
-const catByKey = new Map(CATEGORIES.map((c) => [c.key, c]));
-
-// First-seen tool order per category, computed once from the full seed set.
-const catToolOrder = new Map<string, string[]>();
-for (const c of COMMANDS) {
-  const tools = catToolOrder.get(c.category) ?? [];
-  if (!tools.includes(c.tool)) tools.push(c.tool);
-  catToolOrder.set(c.category, tools);
 }
 
 // --- static style objects -------------------------------------------------
@@ -79,6 +69,25 @@ const card: CSSProperties = {
   gap: '9px',
 };
 const cardHead: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: '8px' };
+// Per-card edit / delete actions (D6 full command CRUD). Styled as the small
+// square icon buttons used elsewhere (phase/step controls) — border shorthand so
+// no stale border-color, transparent base.
+const cardIconBtn: CSSProperties = {
+  cursor: 'pointer',
+  border: '1px solid var(--border2)',
+  background: 'transparent',
+  color: 'var(--muted)',
+  width: '24px',
+  height: '24px',
+  fontSize: '12px',
+  lineHeight: 1,
+  fontFamily: 'inherit',
+  flex: 'none',
+  padding: 0,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+};
 const cardTitle: CSSProperties = {
   fontWeight: 600,
   fontSize: '13.5px',
@@ -222,11 +231,16 @@ export function Library() {
     activeTool,
     activeTag,
     query,
-    selected,
+    commands,
+    categories,
+    cheatsheets,
+    activeSheet,
     notes,
     setActiveTag,
     clearFilters,
-    toggleSelected,
+    toggleInSheet,
+    openEditCommand,
+    deleteCommand,
     setNote,
     flash,
   } = useStore();
@@ -238,9 +252,28 @@ export function Library() {
     [values],
   );
 
+  // Category lookup + first-seen tool order per category, derived live from the
+  // store so added/edited/deleted commands and custom categories are reflected.
+  const catByKey = useMemo(() => new Map(categories.map((c) => [c.key, c])), [categories]);
+  const catToolOrder = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const c of commands) {
+      const tools = m.get(c.category) ?? [];
+      if (!tools.includes(c.tool)) tools.push(c.tool);
+      m.set(c.category, tools);
+    }
+    return m;
+  }, [commands]);
+
+  // The membership set of the active cheatsheet (D1/D2) — drives the toggle.
+  const sheetIds = useMemo(() => {
+    const s = cheatsheets.find((x) => x.id === activeSheet);
+    return new Set(s ? s.commandIds : []);
+  }, [cheatsheets, activeSheet]);
+
   const filtered = useMemo<Command[]>(() => {
     const tokens = fold(query).split(/\s+/).filter(Boolean);
-    return COMMANDS.filter((c) => {
+    return commands.filter((c) => {
       if (activeCat && c.category !== activeCat) return false;
       if (activeTool && c.tool !== activeTool) return false;
       if (activeTag && !c.tags.includes(activeTag)) return false;
@@ -251,11 +284,11 @@ export function Library() {
       }
       return true;
     });
-  }, [activeCat, activeTool, activeTag, query]);
+  }, [commands, catByKey, activeCat, activeTool, activeTag, query]);
 
   const groups = useMemo<CatGroup[]>(() => {
     const out: CatGroup[] = [];
-    for (const cat of CATEGORIES) {
+    for (const cat of categories) {
       const inCat = filtered.filter((c) => c.category === cat.key);
       if (!inCat.length) continue;
       const tools: ToolGroup[] = [];
@@ -266,7 +299,7 @@ export function Library() {
       out.push({ key: cat.key, label: cat.label, color: cat.color, count: inCat.length, tools });
     }
     return out;
-  }, [filtered]);
+  }, [filtered, categories, catToolOrder]);
 
   const scopeLabel = activeCat
     ? (catByKey.get(activeCat)?.label ?? activeCat) + (activeTool ? ' › ' + activeTool : '')
@@ -295,6 +328,11 @@ export function Library() {
   };
 
   const toggleTag = (t: string) => setActiveTag(activeTag === t ? null : t);
+
+  // Destructive delete (D6/Q13) — confirm, then cascade-delete via the store.
+  const askDelete = (c: Command) => {
+    if (window.confirm('Supprimer la commande « ' + c.title + ' » ?')) deleteCommand(c.id);
+  };
 
   return (
     <div style={page}>
@@ -359,11 +397,25 @@ export function Library() {
                     <div style={grid}>
                       {tl.commands.map((c) => {
                         const parts = toParts(c.template, values, definedNames);
-                        const inSheet = selected.includes(c.id);
+                        const inSheet = sheetIds.has(c.id);
                         return (
                           <div key={c.id} style={card}>
                             <div style={cardHead}>
                               <div style={cardTitle}>{c.title}</div>
+                              <button
+                                onClick={() => openEditCommand(c.id)}
+                                title="Modifier"
+                                style={cardIconBtn}
+                              >
+                                ✎
+                              </button>
+                              <button
+                                onClick={() => askDelete(c)}
+                                title="Supprimer"
+                                style={cardIconBtn}
+                              >
+                                ✕
+                              </button>
                             </div>
                             {c.desc && <div style={cardDesc}>{c.desc}</div>}
                             <div style={codeWrap}>
@@ -391,7 +443,7 @@ export function Library() {
                               ))}
                               <div style={{ flex: 1 }} />
                               <button
-                                onClick={() => toggleSelected(c.id)}
+                                onClick={() => toggleInSheet(c.id)}
                                 style={inSheet ? addOn : addOff}
                               >
                                 {inSheet ? 'Ajoutée ✓' : '+ Cheatsheet'}

@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { STANDARD_VARS } from '../lib/theme';
-import { CATEGORIES, COMMANDS } from '../data/seed';
 
 // Left sidebar (272px): the live Variables panel, the expandable Categories tree
 // (each category unfolds to its tools, which filter the Library by tool), and the
@@ -121,6 +120,8 @@ export function Sidebar() {
     activeTool,
     activeTag,
     expanded,
+    commands,
+    categories,
     references,
     activeRefTag,
     setView,
@@ -135,28 +136,28 @@ export function Sidebar() {
   const isLibrary = view === 'library';
   const isRefs = view === 'refs';
 
-  // Per-category counts, first-seen tool order, and per-tool counts — computed
-  // once from the full seed (stable regardless of the active filter).
+  // Per-category counts, first-seen tool order, and per-tool counts — derived
+  // live from store.commands so added/edited/deleted commands are reflected.
   const { catCount, catToolOrder, toolCount } = useMemo(() => {
     const catCount: Record<string, number> = {};
     const catToolOrder: Record<string, string[]> = {};
     const toolCount: Record<string, number> = {};
-    for (const c of COMMANDS) {
+    for (const c of commands) {
       catCount[c.category] = (catCount[c.category] || 0) + 1;
       toolCount[c.category + '||' + c.tool] = (toolCount[c.category + '||' + c.tool] || 0) + 1;
       const tools = (catToolOrder[c.category] ??= []);
       if (!tools.includes(c.tool)) tools.push(c.tool);
     }
     return { catCount, catToolOrder, toolCount };
-  }, []);
+  }, [commands]);
 
   const tagList = useMemo(() => {
     const m: Record<string, number> = {};
-    for (const c of COMMANDS) for (const t of c.tags) m[t] = (m[t] || 0) + 1;
+    for (const c of commands) for (const t of c.tags) m[t] = (m[t] || 0) + 1;
     return Object.keys(m)
       .sort()
       .map((name) => ({ name, count: m[name] }));
-  }, []);
+  }, [commands]);
 
   // Distinct tags across references, with per-tag counts — the References view's
   // own Tags facet (replaces the library Categories/Tags sections).
@@ -168,7 +169,7 @@ export function Sidebar() {
       .map((name) => ({ name, count: m[name] }));
   }, [references]);
 
-  const cats = CATEGORIES.filter((c) => catCount[c.key]);
+  const cats = categories.filter((c) => catCount[c.key]);
 
   const selectAll = () => {
     setView('library');
@@ -293,7 +294,7 @@ export function Sidebar() {
           <button onClick={selectAll} style={{ ...(allActive ? rowOn : rowBase), marginLeft: '18px' }}>
             <span style={{ width: '8px', height: '8px', flex: 'none', background: 'var(--muted)' }} />
             <span style={{ flex: 1, minWidth: 0 }}>Toutes les commandes</span>
-            <span style={countStyle}>{COMMANDS.length}</span>
+            <span style={countStyle}>{commands.length}</span>
           </button>
 
           {cats.map((c) => {

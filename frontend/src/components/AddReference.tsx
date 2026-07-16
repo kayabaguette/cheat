@@ -1,13 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { TagPicker, mergeTags } from './TagPicker';
 
-// « Nouvelle référence » modal — faithful port of the prototype's addRef dialog
-// (~lines 461-492). Opened by store.addingRef, driven by local draft state
-// (title / url / desc / tags). Title + URL are required and the URL must be
-// parseable; on submit the draft is handed to store.addReference (which
-// normalizes + sanitizes the URL, mints the id and closes the modal on success).
+// « Nouvelle référence » / « Modifier la référence » modal — faithful port of the
+// prototype's addRef dialog (~lines 461-492), extended with an edit mode.
+// Opened by store.addingRef, driven by local draft state (title / url / desc /
+// tags). When store.editingRefId is set the form PREFILLS from that reference and
+// submits via updateReference; otherwise it submits via addReference. Both store
+// actions normalize + sanitize the URL and close the modal on success.
 
 const overlay: CSSProperties = {
   position: 'fixed',
@@ -111,7 +112,8 @@ function validate(title: string, url: string): string | null {
 }
 
 export function AddReference() {
-  const { addingRef, setAddingRef, addReference, references } = useStore();
+  const { addingRef, editingRefId, setAddingRef, addReference, updateReference, references } =
+    useStore();
 
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
@@ -128,21 +130,33 @@ export function AddReference() {
   const toggleTag = (t: string) =>
     setTagsSel((sel) => (sel.includes(t) ? sel.filter((x) => x !== t) : [...sel, t]));
 
-  if (!addingRef) return null;
-
-  const reset = () => {
-    setTitle('');
-    setUrl('');
-    setDesc('');
-    setTagsSel([]);
+  // Prefill on open: edit mode hydrates from the target reference, add mode
+  // resets to empty. Keyed only on the open transition (references cannot change
+  // while the modal is open — add/update both close it).
+  useEffect(() => {
+    if (!addingRef) return;
+    const ref = editingRefId ? references.find((r) => r.id === editingRefId) : null;
+    if (ref) {
+      setTitle(ref.title);
+      setUrl(ref.url);
+      setDesc(ref.desc);
+      setTagsSel(ref.tags.slice());
+    } else {
+      setTitle('');
+      setUrl('');
+      setDesc('');
+      setTagsSel([]);
+    }
     setTagsText('');
     setError(null);
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addingRef, editingRefId]);
 
-  const close = () => {
-    reset();
-    setAddingRef(false);
-  };
+  if (!addingRef) return null;
+
+  // setAddingRef(false) also clears editingRefId in the store, so the modal
+  // re-opens in add mode next time.
+  const close = () => setAddingRef(false);
 
   const submit = () => {
     const err = validate(title, url);
@@ -150,22 +164,19 @@ export function AddReference() {
       setError(err);
       return;
     }
-    const ok = addReference({
-      title,
-      url,
-      desc,
-      tags: mergeTags(tagsSel, tagsText),
-    });
-    // addReference closes the modal (store) on success; reset local draft too.
-    if (ok) reset();
-    else setError('URL invalide.');
+    const payload = { title, url, desc, tags: mergeTags(tagsSel, tagsText) };
+    // add/updateReference close the modal (store) on success.
+    const ok = editingRefId ? updateReference(editingRefId, payload) : addReference(payload);
+    if (!ok) setError('URL invalide.');
   };
 
   return (
     <div onClick={close} style={overlay}>
       <div onClick={(e) => e.stopPropagation()} style={panel}>
         <div style={header}>
-          <div style={{ fontWeight: 600, fontSize: '14px' }}>Nouvelle référence</div>
+          <div style={{ fontWeight: 600, fontSize: '14px' }}>
+            {editingRefId ? 'Modifier la référence' : 'Nouvelle référence'}
+          </div>
           <button onClick={close} style={closeBtn}>
             ✕
           </button>
@@ -224,7 +235,7 @@ export function AddReference() {
             Annuler
           </button>
           <button onClick={submit} style={submitBtn}>
-            Ajouter
+            {editingRefId ? 'Enregistrer' : 'Ajouter'}
           </button>
         </div>
       </div>

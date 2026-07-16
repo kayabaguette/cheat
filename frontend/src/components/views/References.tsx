@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../../store';
 import type { Reference } from '../../types';
@@ -55,6 +55,22 @@ const card: CSSProperties = {
   gap: '8px',
 };
 const cardHead: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: '8px' };
+const cardIconBtn: CSSProperties = {
+  cursor: 'pointer',
+  border: '1px solid var(--border2)',
+  background: 'transparent',
+  color: 'var(--muted)',
+  width: '24px',
+  height: '24px',
+  fontSize: '12px',
+  lineHeight: 1,
+  fontFamily: 'inherit',
+  flex: 'none',
+  padding: 0,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+};
 const titleLink: CSSProperties = {
   fontWeight: 600,
   fontSize: '14px',
@@ -97,6 +113,34 @@ const emptyMono: CSSProperties = {
   color: 'var(--faint)',
 };
 const emptySub: CSSProperties = { fontSize: '13px', marginTop: '6px', color: 'var(--muted)' };
+// Undo toast (Q16) — same bottom-center chrome as the store <Toast>, above it
+// (zIndex 101), with an « Annuler » action that restores the deleted reference.
+const undoToast: CSSProperties = {
+  position: 'fixed',
+  bottom: '22px',
+  left: '50%',
+  transform: 'translateX(-50%)',
+  background: 'var(--elev)',
+  border: '1px solid var(--acc-line)',
+  color: 'var(--text)',
+  padding: '9px 16px',
+  fontSize: '12.5px',
+  boxShadow: '0 8px 30px rgba(0,0,0,.35)',
+  zIndex: 101,
+  display: 'flex',
+  alignItems: 'center',
+  gap: '12px',
+};
+const undoBtn: CSSProperties = {
+  cursor: 'pointer',
+  border: 'none',
+  background: 'transparent',
+  color: 'var(--acc)',
+  fontSize: '12.5px',
+  fontWeight: 700,
+  fontFamily: 'inherit',
+  padding: 0,
+};
 
 function ExternalIcon() {
   return (
@@ -118,7 +162,31 @@ function ExternalIcon() {
 }
 
 export function References() {
-  const { references, query, activeRefTag, setActiveRefTag } = useStore();
+  const { references, query, activeRefTag, setActiveRefTag, openEditRef, deleteReference, restoreReference } =
+    useStore();
+
+  // Undo affordance: the just-removed reference + its original index, kept until
+  // the toast expires (~5 s) or « Annuler » restores it.
+  const [undo, setUndo] = useState<{ ref: Reference; index: number } | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+  }, []);
+
+  const del = (id: string) => {
+    const index = references.findIndex((r) => r.id === id);
+    const removed = deleteReference(id);
+    if (!removed) return;
+    setUndo({ ref: removed, index });
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = setTimeout(() => setUndo(null), 5000);
+  };
+
+  const doUndo = () => {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    if (undo) restoreReference(undo.ref, undo.index);
+    setUndo(null);
+  };
 
   const filtered = useMemo<Reference[]>(() => {
     const tokens = fold(query).split(/\s+/).filter(Boolean);
@@ -137,6 +205,7 @@ export function References() {
   const toggleTag = (t: string) => setActiveRefTag(activeRefTag === t ? null : t);
 
   return (
+    <>
     <div style={page}>
       <div style={{ fontSize: '12.5px', color: 'var(--muted)', marginBottom: '20px' }}>
         <span style={{ color: 'var(--text)', fontWeight: 600 }}>{filtered.length}</span> référence(s)
@@ -168,6 +237,12 @@ export function References() {
                       <ExternalIcon />
                     </a>
                   )}
+                  <button onClick={() => openEditRef(r.id)} title="Modifier" style={cardIconBtn}>
+                    ✎
+                  </button>
+                  <button onClick={() => del(r.id)} title="Supprimer" style={cardIconBtn}>
+                    ✕
+                  </button>
                 </div>
                 {href ? (
                   <a href={href} target="_blank" rel="noopener noreferrer" style={domainStyle}>
@@ -201,5 +276,15 @@ export function References() {
         </div>
       )}
     </div>
+    {undo && (
+      <div style={undoToast}>
+        <span style={{ width: '7px', height: '7px', flex: 'none', background: 'var(--acc)' }} />
+        Référence supprimée
+        <button onClick={doUndo} style={undoBtn}>
+          Annuler
+        </button>
+      </div>
+    )}
+    </>
   );
 }

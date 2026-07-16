@@ -7,7 +7,9 @@ import { Library } from './components/views/Library';
 import { Methodology } from './components/views/Methodology';
 import { References } from './components/views/References';
 import { Cheatsheet } from './components/views/Cheatsheet';
+import { AddCommand } from './components/AddCommand';
 import { AddReference } from './components/AddReference';
+import { PrintRoot } from './components/PrintRoot';
 import { Toast } from './components/Toast';
 
 // Root application shell. Faithful port of the prototype's three-region layout:
@@ -48,7 +50,9 @@ export default function App() {
           </div>
         </div>
       </div>
+      <AddCommand />
       <AddReference />
+      <PrintRoot />
       <Toast />
     </div>
   );

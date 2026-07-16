@@ -25,6 +25,13 @@ export interface Reference {
   tags: string[];
 }
 
+export interface Cheatsheet {
+  id: string;
+  title: string;
+  target: string;
+  commandIds: string[];
+}
+
 export interface Step {
   id: string;
   text: string;
