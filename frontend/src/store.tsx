@@ -1,7 +1,17 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { Category, Cheatsheet, Command, Reference, Roadmap, ThemeName, ViewKey } from './types';
+import type {
+  AppState,
+  Category,
+  Cheatsheet,
+  Command,
+  Reference,
+  Roadmap,
+  ThemeName,
+  ViewKey,
+} from './types';
 import { CATEGORIES, COMMANDS, INITIAL_VALUES, REFERENCES, ROADMAPS } from './data/seed';
+import { getState, putState } from './lib/api';
 
 // Palette used to color a user-created custom category (ported from the
 // prototype `addCommand` extra-category palette). Indexed by the count of
@@ -37,12 +47,12 @@ function cleanTags(tags: string[]): string[] {
   return [...new Set(tags.map((t) => t.trim()).filter(Boolean))];
 }
 
-// Monotonic id source for user-minted roadmaps/phases/steps/references. A module
-// counter is used instead of Date.now() (unavailable/non-deterministic in some
-// contexts). Prefixes are distinct from the seeded ids (services / *-p0 / *-p0-s0
-// / r1…) so minted ids can never collide with them.
-let idCounter = 0;
-const mint = (prefix: string): string => prefix + ++idCounter;
+// Id source for user-minted roadmaps/phases/steps/references. Uses
+// crypto.randomUUID() so client-minted ids stay STABLE & UNIQUE across reloads:
+// a per-session counter would restart at 0 each load and collide with ids
+// already persisted in the DB. The readable prefix is kept for legibility; seed
+// ids stay literal and are never regenerated.
+const mint = (prefix: string): string => prefix + crypto.randomUUID();
 
 // Deep-ish clone: new roadmap + phase objects and fresh step arrays, so a
 // mutation never aliases the previous state (mirrors the prototype's _mutRoadmaps).
@@ -68,6 +78,10 @@ const clamp = (n: number, max: number): number => Math.max(0, Math.min(n, max));
 // DB, localStorage, or the JSON export (SPEC §2.6, D2/D7). They are seeded with
 // the prototype's demo values so variable resolution is visible immediately.
 export interface StoreState {
+  // M3: false until the initial GET /api/state completes (success OR error).
+  // The app renders a loading placeholder while false so seed data is never
+  // flashed and then overwritten by the hydrated DB state.
+  hydrated: boolean;
   theme: ThemeName;
   view: ViewKey;
   values: Record<string, string>;
@@ -194,6 +208,7 @@ export type Store = StoreState & StoreActions;
 const StoreContext = createContext<Store | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  const [hydrated, setHydrated] = useState<boolean>(false);
   const [theme, setTheme] = useState<ThemeName>('dark');
   const [view, setView] = useState<ViewKey>('library');
   const [values, setValues] = useState<Record<string, string>>(() => ({ ...INITIAL_VALUES }));
@@ -715,8 +730,95 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  // --- M3: persistence (hydrate on mount, then debounced autosave) ---
+
+  // The single canonical persistable snapshot (STATE CONTRACT). Ephemeral,
+  // memory-only slices (values/view/query/filters/expanded/modal & edit flags/
+  // toast/hydrated) are intentionally excluded — only durable data is sent.
+  const persistableState = useMemo<AppState>(
+    () => ({
+      categories,
+      commands,
+      references,
+      roadmaps,
+      cheatsheets,
+      notes,
+      checks,
+      openSteps,
+      settings: { theme, activeRoadmap, activeSheet },
+    }),
+    [
+      categories,
+      commands,
+      references,
+      roadmaps,
+      cheatsheets,
+      notes,
+      checks,
+      openSteps,
+      theme,
+      activeRoadmap,
+      activeSheet,
+    ],
+  );
+
+  // Always-fresh view of the snapshot so the one-shot hydration effect can
+  // persist the seed without depending on (and re-running for) every slice.
+  const persistableRef = useRef(persistableState);
+  persistableRef.current = persistableState;
+
+  // On mount, once: load persisted state. If initialized, hydrate every
+  // persistable slice from the response; otherwise keep the seed defaults and
+  // immediately persist them (seeding the DB + flipping initialized). On any
+  // error we still flip hydrated so the app works offline from the seed.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { initialized, state } = await getState();
+        if (cancelled) return;
+        if (initialized) {
+          setCategories(state.categories);
+          setCommands(state.commands);
+          setReferences(state.references);
+          setRoadmaps(state.roadmaps);
+          setCheatsheets(state.cheatsheets);
+          setNotes(state.notes ?? {});
+          setChecks(state.checks ?? {});
+          setOpenSteps(state.openSteps ?? {});
+          setTheme(state.settings.theme);
+          setActiveRoadmap(state.settings.activeRoadmap);
+          setActiveSheetState(state.settings.activeSheet);
+        } else {
+          await putState(persistableRef.current);
+        }
+      } catch {
+        // Offline / backend unavailable: fall back to seed defaults.
+      } finally {
+        if (!cancelled) setHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Debounced autosave: whenever any persistable slice changes, PUT the whole
+  // snapshot ~500 ms later. Guarded on `hydrated` so we never clobber the DB
+  // with seed defaults before the initial load has completed.
+  useEffect(() => {
+    if (!hydrated) return;
+    const t = setTimeout(() => {
+      void putState(persistableState).catch(() => {
+        /* transient save failure — retried on the next change */
+      });
+    }, 500);
+    return () => clearTimeout(t);
+  }, [hydrated, persistableState]);
+
   const store = useMemo<Store>(
     () => ({
+      hydrated,
       theme,
       view,
       values,
@@ -792,6 +894,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       restoreReference,
     }),
     [
+      hydrated,
       theme,
       view,
       values,

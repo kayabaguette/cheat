@@ -60,6 +60,25 @@ export type ViewKey = 'library' | 'method' | 'refs' | 'cheatsheet';
 
 export type ThemeName = 'dark' | 'light';
 
+// M3 — the canonical persisted state contract exchanged with the Go backend.
+// Variable VALUES are intentionally excluded (memory-only, D7). Field names are
+// exact and must match the backend's GORM-backed JSON shape.
+export interface AppState {
+  categories: Category[];
+  commands: Command[];
+  references: Reference[];
+  roadmaps: Roadmap[];
+  cheatsheets: Cheatsheet[];
+  notes: Record<string, string>;
+  checks: Record<string, boolean>;
+  openSteps: Record<string, boolean>;
+  settings: {
+    theme: ThemeName;
+    activeRoadmap: string | null;
+    activeSheet: string;
+  };
+}
+
 // A5 — the three variable render states, plus untouched literal text.
 //   resolved : name is defined AND has a non-empty value
 //   empty    : name is defined but its value is empty

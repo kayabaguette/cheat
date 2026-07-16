@@ -31,6 +31,10 @@ var version = "0.0.0-dev"
 // defaultPort is the fixed default loopback port (SPEC Q195).
 const defaultPort = "8787"
 
+// defaultDBPath is the SQLite path used when CHEAT_DB is unset. In the container
+// this is overridden to a persistent volume (see Makefile CHEAT_DB=/data/...).
+const defaultDBPath = "./cheat.db"
+
 // devPlaceholderSentinel marks the committed placeholder index.html. A real
 // `vite build` produces an index.html without this marker, so its presence
 // tells the binary it was built without a real SPA (dev / standalone build)
@@ -52,6 +56,9 @@ func main() {
 	port := resolvePort(*portFlag)
 	addr := "127.0.0.1:" + port
 
+	// Open the persistence DB first; a missing/unopenable DB is fatal (fail loud).
+	db := mustOpenDB(resolveDBPath())
+
 	spa, realSPA := loadSPA()
 
 	gin.SetMode(gin.ReleaseMode)
@@ -61,10 +68,13 @@ func main() {
 	// query params, or bound SQL params (SPEC Q178, OPSEC).
 	r.Use(gin.LoggerWithFormatter(minimalLogFormatter))
 
+	// All /api routes are registered BEFORE the SPA fallback so /api/* never
+	// falls through to index.html.
 	api := r.Group("/api")
 	api.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "version": version})
 	})
+	registerAPI(api, db)
 
 	if realSPA {
 		serveSPA(r, spa)
@@ -88,6 +98,14 @@ func resolvePort(flagVal string) string {
 		return env
 	}
 	return defaultPort
+}
+
+// resolveDBPath picks the SQLite path: CHEAT_DB env, then the fixed default.
+func resolveDBPath() string {
+	if env := strings.TrimSpace(os.Getenv("CHEAT_DB")); env != "" {
+		return env
+	}
+	return defaultDBPath
 }
 
 // loadSPA returns the embedded SPA filesystem (rooted at dist/) and whether it

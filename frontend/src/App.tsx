@@ -17,7 +17,7 @@ import { Toast } from './components/Toast';
 // region. The root element carries the theme token CSS custom properties so every
 // descendant can reference var(--bg), var(--acc)… exactly like the prototype root.
 export default function App() {
-  const { theme, view } = useStore();
+  const { hydrated, theme, view } = useStore();
 
   // themeTokens returns the CSS custom properties (--bg, --acc, --pad…). They are
   // spread onto the root element's inline style, which is how the prototype's
@@ -30,6 +30,26 @@ export default function App() {
     fontFamily: "'IBM Plex Sans',system-ui,sans-serif",
     fontSize: '14px',
   } as CSSProperties;
+
+  // M3: until the initial GET /api/state resolves, render a minimal themed
+  // placeholder rather than the app — this prevents flashing seed data that
+  // would then be overwritten by the hydrated DB state.
+  if (!hydrated) {
+    return (
+      <div
+        style={{
+          ...rootStyle,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100vh',
+          color: 'var(--muted)',
+        }}
+      >
+        …
+      </div>
+    );
+  }
 
   return (
     <div style={rootStyle}>
