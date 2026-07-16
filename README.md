@@ -26,8 +26,12 @@ authoritative specification. UI language is **French**; in-repo docs are English
 - **Cheatsheet** — multiple named cheatsheets, ordered entries, editable
   title/target, **Markdown export** (raw `$TOKEN`s by default, opt-in resolve)
   and **PDF export** (browser print).
-- **Variables** — live substitution, three render states (resolved / empty /
-  undefined); values are **memory-only** (never persisted).
+- **Variables** — live substitution with three render states (resolved / empty /
+  undefined). The 7 built-ins (`$RHOST`, `$RPORT`, `$LHOST`, `$LPORT`, `$USER`,
+  `$DOMAIN`, `$PASS`) plus **custom variables**: unknown `$TOKEN`s used in
+  commands are **auto-detected** (a "Détectées" strip) and can be adopted,
+  **renamed** — cascading the `$OLD`→`$NEW` rewrite across every command — or
+  deleted (the token reverts to raw/undefined). Values are **memory-only**.
 - **Theme** — dark / light, terminal-dense, self-hosted IBM Plex fonts.
 - **Persistence** — everything (except variable values) persists to a local
   SQLite database and survives reloads.
