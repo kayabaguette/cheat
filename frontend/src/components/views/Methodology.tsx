@@ -1,7 +1,6 @@
 import { Fragment, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../../store';
-import { COMMANDS } from '../../data/seed';
 import { STANDARD_VARS } from '../../lib/theme';
 import { resolve, toParts } from '../../lib/vars';
 import type { Part } from '../../types';
@@ -24,8 +23,6 @@ import type { Part } from '../../types';
 // prototype renders step text as a plain (struck-through when checked) div even
 // in edit mode — so step text is NOT an inline input here. It matches the
 // prototype exactly; a rename action + inline field can be added later.
-
-const cmdById = new Map(COMMANDS.map((c) => [c.id, c]));
 
 // Per-part styling for the three A5 render states (§5.10 — the single authority),
 // identical to the Library code blocks.
@@ -418,6 +415,7 @@ interface DragOver {
 export function Methodology() {
   const {
     values,
+    commands,
     roadmaps,
     activeRoadmap,
     methodEdit,
@@ -456,6 +454,10 @@ export function Methodology() {
     () => new Set<string>([...STANDARD_VARS.map((v) => v.name), ...Object.keys(values)]),
     [values],
   );
+
+  // Command lookup for step→command links, derived live from the store so
+  // added/edited/deleted commands are reflected in the select and the panels.
+  const cmdById = useMemo(() => new Map(commands.map((c) => [c.id, c])), [commands]);
 
   const rm = roadmaps.find((r) => r.id === activeRoadmap) ?? roadmaps[0] ?? null;
 
@@ -899,7 +901,7 @@ export function Methodology() {
                                     style={addStepSelect}
                                   >
                                     <option value="">— aucune commande liée —</option>
-                                    {COMMANDS.map((c) => (
+                                    {commands.map((c) => (
                                       <option key={c.id} value={c.id}>
                                         {c.tool} — {c.title}
                                       </option>

@@ -29,19 +29,40 @@ const segBase: CSSProperties = {
 const segOn: CSSProperties = { ...segBase, background: 'var(--border2)', color: 'var(--text)' };
 
 export function TopBar() {
-  const { view, query, selected, setView, setQuery, toggleTheme, theme, setNewRmOpen, setAddingRef } =
-    useStore();
+  const {
+    view,
+    query,
+    cheatsheets,
+    activeSheet,
+    setView,
+    setQuery,
+    toggleTheme,
+    theme,
+    setAdding,
+    setNewRmOpen,
+    setAddingRef,
+    addCheatsheet,
+  } = useStore();
 
-  const selectedCount = selected.length;
-  // Add button is contextual and shown everywhere except the cheatsheet. In
-  // methodology it opens the new-roadmap inline form; in references it opens the
-  // add-reference modal. Library stays a no-op until commands move to the store (M2).
-  const showAdd = view === 'library' || view === 'refs' || view === 'method';
-  const addLabel = view === 'refs' ? 'Référence' : view === 'method' ? 'Méthodologie' : 'Commande';
+  // Cheatsheet tab badge = command count of the ACTIVE sheet.
+  const selectedCount = cheatsheets.find((s) => s.id === activeSheet)?.commandIds.length ?? 0;
+  // The add button is contextual to the active view: library opens the add-command
+  // modal, methodology the new-roadmap inline form, references the add-reference
+  // modal, and cheatsheet creates a new sheet (A60).
+  const showAdd = true;
+  const addLabel =
+    view === 'refs'
+      ? 'Référence'
+      : view === 'method'
+        ? 'Méthodologie'
+        : view === 'cheatsheet'
+          ? 'Cheatsheet'
+          : 'Commande';
   const onAdd = () => {
     if (view === 'method') setNewRmOpen(true);
     else if (view === 'refs') setAddingRef(true);
-    // library: create dialog lands in M2.
+    else if (view === 'cheatsheet') addCheatsheet();
+    else setAdding(true);
   };
   const themeIcon = theme === 'light' ? '☾' : '☀';
 
