@@ -37,13 +37,19 @@ require-engine:
 build: require-engine ## Build the container image ($(IMAGE):$(TAG)) with $(ENGINE)
 	$(ENGINE) build -t $(IMAGE):$(TAG) -t $(IMAGE):latest --build-arg VERSION=$(VERSION) $(ROOT)
 
+# Persist the SQLite DB in a named volume so it survives container restarts.
+# `:U` makes podman chown the volume to the (nonroot) container user. Docker does
+# NOT support `:U` — Docker users should swap this for a bind mount they own,
+# e.g. `-v $(ROOT)/data:/data -e CHEAT_DB=/data/cheat.db` (host dir writable).
+DB_VOL      ?= -v cheat-data:/data:U -e CHEAT_DB=/data/cheat.db
+
 up: require-engine ## Run the built image, detached (http://127.0.0.1:$(CHEAT_PORT))
-	$(ENGINE) run -d --rm --network $(NET) --name $(NAME) -e CHEAT_PORT=$(CHEAT_PORT) $(IMAGE):$(TAG)
+	$(ENGINE) run -d --rm --network $(NET) --name $(NAME) -e CHEAT_PORT=$(CHEAT_PORT) $(DB_VOL) $(IMAGE):$(TAG)
 	@echo ">> up  ->  http://127.0.0.1:$(CHEAT_PORT)   (make logs | make down)"
 
 run: require-engine ## Run the built image in the foreground (Ctrl-C to stop)
 	@echo ">> $(ENGINE) run --network $(NET)  ->  http://127.0.0.1:$(CHEAT_PORT)"
-	$(ENGINE) run --rm --network $(NET) --name $(NAME) -e CHEAT_PORT=$(CHEAT_PORT) $(IMAGE):$(TAG)
+	$(ENGINE) run --rm --network $(NET) --name $(NAME) -e CHEAT_PORT=$(CHEAT_PORT) $(DB_VOL) $(IMAGE):$(TAG)
 
 down: require-engine ## Stop & remove the running container
 	-$(ENGINE) rm -f $(NAME) 2>/dev/null
@@ -71,4 +77,4 @@ dev: require-engine ## Containerized dev: Vite HMR (:5173) + Go (:$(CHEAT_PORT))
 clean: require-engine ## Remove the container, image and dev volumes
 	-$(ENGINE) rm -f $(NAME) $(NAME)-api $(NAME)-web 2>/dev/null
 	-$(ENGINE) rmi $(IMAGE):$(TAG) $(IMAGE):latest 2>/dev/null
-	-$(ENGINE) volume rm cheat-go-cache cheat-web-modules 2>/dev/null
+	-$(ENGINE) volume rm cheat-go-cache cheat-web-modules cheat-data 2>/dev/null
