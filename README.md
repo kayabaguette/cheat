@@ -77,6 +77,48 @@ make clean      # remove container, image and volumes
   (stored in cleartext — rely on OS full-disk encryption). Markdown/PDF exports
   emit raw `$TOKEN`s by default.
 
+## Dataset format (import / export)
+
+Export produces — and import expects — a **single JSON object** (`AppState`).
+Import is a **full REPLACE** (it overwrites everything, so export first to back
+up). Variable *values* are never part of the file. The simplest way to obtain a
+valid file is to **Export** one and edit it. Every top-level key must be present
+(arrays may be empty, maps `{}`); import rejects a file whose `commands` is not
+an array.
+
+```json
+{
+  "categories":  [{ "key": "infogathering", "label": "Information gathering", "color": "#5e9bff" }],
+  "commands":    [{ "id": "n1", "category": "infogathering", "tool": "nmap", "title": "Scan complet TCP", "template": "nmap -p- $IP", "desc": "Tous les ports", "tags": ["recon"] }],
+  "references":  [{ "id": "r1", "title": "HackTricks", "url": "https://book.hacktricks.xyz", "desc": "", "tags": ["general"] }],
+  "roadmaps":    [{ "id": "services", "label": "Machine — Services", "phases": [{ "id": "p1", "label": "Reconnaissance", "steps": [{ "id": "s1", "text": "Scan TCP complet", "commandId": "n1" }] }] }],
+  "cheatsheets": [{ "id": "cs1", "title": "Cheatsheet — HTB Lab", "target": "", "commandIds": ["n1"] }],
+  "notes":       { "n1": "note perso attachée à la commande n1" },
+  "checks":      { "s1": true },
+  "openSteps":   { "s1": false },
+  "settings":    { "theme": "dark", "activeRoadmap": "services", "activeSheet": "cs1" }
+}
+```
+
+Field reference:
+
+| Key | Shape | Notes |
+|---|---|---|
+| `categories[]` | `{ key, label, color }` | `color` is a CSS hex; the 18 built-ins keep their canonical keys/labels. |
+| `commands[]` | `{ id, category, tool, title, template, desc, tags[] }` | `category` is a `categories[].key`; `template` may contain `$VAR` tokens. |
+| `references[]` | `{ id, title, url, desc, tags[] }` | `url` should be `http(s)`/`mailto`. |
+| `roadmaps[]` | `{ id, label, phases[] }` | `phases[] = { id, label, steps[] }`, `steps[] = { id, text, commandId? }`. |
+| `cheatsheets[]` | `{ id, title, target, commandIds[] }` | each `commandIds` entry → a `commands[].id`. |
+| `notes` | `{ [commandId]: string }` | per-command note. |
+| `checks` / `openSteps` | `{ [stepId]: boolean }` | methodology progress / expanded state. |
+| `settings` | `{ theme, activeRoadmap, activeSheet }` | `theme` = `"dark"`\|`"light"`; `activeRoadmap` = a roadmap id or `null`; `activeSheet` = a cheatsheet id. |
+
+- **IDs** are arbitrary unique strings. Keep cross-references consistent
+  (`steps[].commandId`, `cheatsheets[].commandIds`, and the `notes`/`checks`/
+  `openSteps` keys); references to a missing id are dropped/ignored.
+- Variable **values** (`$IP`, `$PASS`, …) are **not** stored in the file — they
+  are memory-only and reset on load.
+
 ## Repository layout
 
 - `frontend/` — Vite + React + TypeScript SPA.
