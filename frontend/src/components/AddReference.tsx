@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
+import { TagPicker, mergeTags } from './TagPicker';
 
 // « Nouvelle référence » modal — faithful port of the prototype's addRef dialog
 // (~lines 461-492). Opened by store.addingRef, driven by local draft state
@@ -49,7 +50,6 @@ const body: CSSProperties = {
   gap: '14px',
 };
 const fieldLabel: CSSProperties = { fontSize: '11px', color: 'var(--muted)', marginBottom: '6px' };
-const hint: CSSProperties = { color: 'var(--faint)', fontFamily: "'IBM Plex Mono', monospace" };
 const inputBase: CSSProperties = {
   width: '100%',
   background: 'var(--code)',
@@ -111,13 +111,22 @@ function validate(title: string, url: string): string | null {
 }
 
 export function AddReference() {
-  const { addingRef, setAddingRef, addReference } = useStore();
+  const { addingRef, setAddingRef, addReference, references } = useStore();
 
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
   const [desc, setDesc] = useState('');
-  const [tags, setTags] = useState('');
+  const [tagsSel, setTagsSel] = useState<string[]>([]);
+  const [tagsText, setTagsText] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  // Existing reference tags, offered as reusable clickable chips.
+  const existingTags = useMemo(
+    () => [...new Set(references.flatMap((r) => r.tags))].sort(),
+    [references],
+  );
+  const toggleTag = (t: string) =>
+    setTagsSel((sel) => (sel.includes(t) ? sel.filter((x) => x !== t) : [...sel, t]));
 
   if (!addingRef) return null;
 
@@ -125,7 +134,8 @@ export function AddReference() {
     setTitle('');
     setUrl('');
     setDesc('');
-    setTags('');
+    setTagsSel([]);
+    setTagsText('');
     setError(null);
   };
 
@@ -144,7 +154,7 @@ export function AddReference() {
       title,
       url,
       desc,
-      tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+      tags: mergeTags(tagsSel, tagsText),
     });
     // addReference closes the modal (store) on success; reset local draft too.
     if (ok) reset();
@@ -199,20 +209,13 @@ export function AddReference() {
               style={descInput}
             />
           </div>
-          <div>
-            <div style={fieldLabel}>
-              Tags <span style={hint}>— séparés par des virgules</span>
-            </div>
-            <input
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              placeholder="web, privesc"
-              spellCheck="false"
-              autoCorrect="off"
-              autoCapitalize="off"
-              style={inputBase}
-            />
-          </div>
+          <TagPicker
+            all={existingTags}
+            selected={tagsSel}
+            onToggle={toggleTag}
+            text={tagsText}
+            onText={setTagsText}
+          />
         </div>
 
         <div style={footer}>
