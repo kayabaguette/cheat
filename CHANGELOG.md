@@ -4,6 +4,35 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.2.0] — 2026-07-17
+
+Variable-system overhaul: custom variables become first-class, and the default
+variable set adopts the RHOST/RPORT pentest convention.
+
+### Added
+- **Variable auto-detection** — any `$TOKEN` used in a command template but not
+  yet defined is surfaced in a **« Détectées »** strip in the sidebar; click `+`
+  to adopt it (assign a value) so it resolves live everywhere.
+- **Custom-variable rename (cascade)** — renaming a variable rewrites `$OLD` →
+  `$NEW` across **every** command template (escaped `\$` and longer tokens left
+  intact), carries its value over, and toasts the number of commands updated.
+- **Custom-variable delete** — removes the variable so its `$TOKEN` reverts to
+  the "undefined" render state in commands and returns to the detected strip.
+
+### Changed
+- **Default variables** — the standard set is now `$RHOST`, `$RPORT`, `$LHOST`,
+  `$LPORT`, `$USER`, `$DOMAIN`, `$PASS` (paired remote/local + credentials).
+  `$RHOST` supersedes the former `$IP`; `$RPORT` mirrors `$LPORT`
+  (msfvenom/pentest convention). Seed commands, the `AddCommand` hint, cheatsheet
+  metadata chips and the README were updated accordingly; existing datasets
+  migrate `$IP` → `$RHOST`.
+
+### Notes
+- Variables remain **frontend-only and memory-only**: definitions are not
+  persisted and are not part of the import/export `AppState`, and values reset on
+  reload. Auto-detection therefore re-surfaces tokens from the (persisted)
+  command templates after a reload — the intended, OPSEC-consistent behavior.
+
 ## [0.1.0] — 2026-07-16
 
 First functionally-complete build: the four modules, theming, SQLite

@@ -35,7 +35,7 @@ export const COMMANDS: Command[] = [
     tool: 'nmap',
     title: 'Scan complet TCP',
     desc: 'Tous les ports, détection service + scripts par défaut.',
-    template: `nmap -p- --min-rate 5000 -sV -sC -oN nmap_full.txt $IP`,
+    template: `nmap -p- --min-rate 5000 -sV -sC -oN nmap_full.txt $RHOST`,
     tags: ['recon', 'initial'],
   },
   {
@@ -44,7 +44,7 @@ export const COMMANDS: Command[] = [
     tool: 'nmap',
     title: 'Scan initial rapide',
     desc: 'Top 1000 ports pour démarrer l’énumération.',
-    template: `nmap -sC -sV -oN nmap_init.txt $IP`,
+    template: `nmap -sC -sV -oN nmap_init.txt $RHOST`,
     tags: ['recon'],
   },
   {
@@ -53,7 +53,7 @@ export const COMMANDS: Command[] = [
     tool: 'nmap',
     title: 'Scan UDP',
     desc: 'Top 100 ports UDP.',
-    template: `nmap -sU --top-ports 100 -oN nmap_udp.txt $IP`,
+    template: `nmap -sU --top-ports 100 -oN nmap_udp.txt $RHOST`,
     tags: ['recon'],
   },
   {
@@ -62,7 +62,7 @@ export const COMMANDS: Command[] = [
     tool: 'enum4linux',
     title: 'Énumération SMB complète',
     desc: 'Énumération SMB exhaustive.',
-    template: `enum4linux -a $IP`,
+    template: `enum4linux -a $RHOST`,
     tags: ['enum', 'smb'],
   },
   {
@@ -71,7 +71,7 @@ export const COMMANDS: Command[] = [
     tool: 'smbclient',
     title: 'Lister les partages (null)',
     desc: 'Session nulle pour lister les partages.',
-    template: `smbclient -L //$IP/ -N`,
+    template: `smbclient -L //$RHOST/ -N`,
     tags: ['enum', 'smb'],
   },
   {
@@ -80,7 +80,7 @@ export const COMMANDS: Command[] = [
     tool: 'smbmap',
     title: 'Droits sur les partages',
     desc: 'Droits sur les partages avec des creds.',
-    template: `smbmap -H $IP -u $USER -p $PASS`,
+    template: `smbmap -H $RHOST -u $USER -p $PASS`,
     tags: ['enum', 'smb', 'creds'],
   },
   {
@@ -89,7 +89,7 @@ export const COMMANDS: Command[] = [
     tool: 'nmap',
     title: 'Scripts de vulnérabilités',
     desc: 'Détection de failles connues côté web.',
-    template: `nmap -p 80,443 --script vuln -oN nmap_vuln.txt $IP`,
+    template: `nmap -p 80,443 --script vuln -oN nmap_vuln.txt $RHOST`,
     tags: ['recon', 'web'],
   },
   {
@@ -98,7 +98,7 @@ export const COMMANDS: Command[] = [
     tool: 'ffuf',
     title: 'Fuzzing de répertoires',
     desc: 'Découverte de répertoires web cachés.',
-    template: `ffuf -u http://$IP/FUZZ -w /usr/share/seclists/Discovery/Web-Content/common.txt -mc 200,301,302,403`,
+    template: `ffuf -u http://$RHOST/FUZZ -w /usr/share/seclists/Discovery/Web-Content/common.txt -mc 200,301,302,403`,
     tags: ['web', 'recon'],
   },
   {
@@ -107,7 +107,7 @@ export const COMMANDS: Command[] = [
     tool: 'ffuf',
     title: 'Fuzzing de vhosts',
     desc: 'Recherche de virtual hosts.',
-    template: `ffuf -u http://$IP -H "Host: FUZZ.$DOMAIN" -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -fs 0`,
+    template: `ffuf -u http://$RHOST -H "Host: FUZZ.$DOMAIN" -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -fs 0`,
     tags: ['web', 'recon'],
   },
   {
@@ -116,7 +116,7 @@ export const COMMANDS: Command[] = [
     tool: 'gobuster',
     title: 'Gobuster avec extensions',
     desc: 'Brute force de fichiers php/txt/html.',
-    template: `gobuster dir -u http://$IP -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -x php,txt,html`,
+    template: `gobuster dir -u http://$RHOST -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -x php,txt,html`,
     tags: ['web', 'recon'],
   },
   {
@@ -125,7 +125,7 @@ export const COMMANDS: Command[] = [
     tool: 'hydra',
     title: 'Brute force SSH',
     desc: 'Attaque par dictionnaire sur SSH.',
-    template: `hydra -l $USER -P /usr/share/wordlists/rockyou.txt ssh://$IP`,
+    template: `hydra -l $USER -P /usr/share/wordlists/rockyou.txt ssh://$RHOST`,
     tags: ['brute', 'creds'],
   },
   {
@@ -134,7 +134,7 @@ export const COMMANDS: Command[] = [
     tool: 'hydra',
     title: 'Brute force formulaire HTTP',
     desc: 'Brute force d’un login web.',
-    template: `hydra -l $USER -P /usr/share/wordlists/rockyou.txt $IP http-post-form "/login:user=^USER^&pass=^PASS^:F=incorrect"`,
+    template: `hydra -l $USER -P /usr/share/wordlists/rockyou.txt $RHOST http-post-form "/login:user=^USER^&pass=^PASS^:F=incorrect"`,
     tags: ['brute', 'web'],
   },
   {
@@ -197,7 +197,7 @@ export const COMMANDS: Command[] = [
     tool: 'crackmapexec',
     title: 'Énumération des partages',
     desc: 'Énumération des partages via CME.',
-    template: `crackmapexec smb $IP -u $USER -p $PASS --shares`,
+    template: `crackmapexec smb $RHOST -u $USER -p $PASS --shares`,
     tags: ['enum', 'smb', 'ad'],
   },
   {
@@ -215,7 +215,7 @@ export const COMMANDS: Command[] = [
     tool: 'impacket',
     title: 'secretsdump distant',
     desc: 'Dump des hash via impacket.',
-    template: `secretsdump.py $DOMAIN/$USER:$PASS@$IP`,
+    template: `secretsdump.py $DOMAIN/$USER:$PASS@$RHOST`,
     tags: ['creds', 'ad'],
   },
   {
@@ -448,7 +448,8 @@ export const ROADMAPS: Roadmap[] = [
 
 // Initial variable VALUES — ported verbatim from the prototype `state.vars`.
 export const INITIAL_VALUES: Record<string, string> = {
-  IP: '10.10.10.5',
+  RHOST: '10.10.10.5',
+  RPORT: '',
   LHOST: '10.10.14.7',
   LPORT: '4444',
   USER: 'admin',

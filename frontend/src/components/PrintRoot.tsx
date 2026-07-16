@@ -13,7 +13,7 @@ import type { Command } from '../types';
 
 // Meta variables surfaced as a chip strip — the non-sensitive subset shown on
 // screen too (PASS/LPORT excluded). Identical to Cheatsheet.tsx.
-const META_KEYS = ['IP', 'LHOST', 'USER', 'DOMAIN'] as const;
+const META_KEYS = ['RHOST', 'LHOST', 'USER', 'DOMAIN'] as const;
 
 const root: CSSProperties = {
   background: '#fff',

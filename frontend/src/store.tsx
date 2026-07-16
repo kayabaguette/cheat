@@ -12,6 +12,10 @@ import type {
 } from './types';
 import { CATEGORIES, COMMANDS, INITIAL_VALUES, REFERENCES, ROADMAPS } from './data/seed';
 import { getState, putState } from './lib/api';
+import { STANDARD_VARS } from './lib/theme';
+
+// Names of the 6 built-in variables — value-editable only (never renamed/deleted).
+const STD_NAMES = new Set(STANDARD_VARS.map((v) => v.name));
 
 // Palette used to color a user-created custom category (ported from the
 // prototype `addCommand` extra-category palette). Indexed by the count of
@@ -126,6 +130,12 @@ export interface StoreActions {
   toggleTheme: () => void;
   setView: (v: ViewKey) => void;
   setValue: (name: string, val: string) => void;
+  // Variables: adopt a detected token, delete a custom var, or rename one
+  // (cascades $OLD -> $NEW across all command templates). Standard vars are
+  // value-only (adopt/delete/rename are no-ops on them). All memory-only.
+  adoptVar: (name: string) => void;
+  deleteVar: (name: string) => void;
+  renameVar: (oldName: string, next: string) => number;
   setActiveCat: (k: string | null) => void;
   setActiveTool: (t: string | null) => void;
   setActiveTag: (t: string | null) => void;
@@ -258,6 +268,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   activeSheetRef.current = activeSheet;
   const referencesRef = useRef(references);
   referencesRef.current = references;
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => (t === 'light' ? 'dark' : 'light'));
@@ -290,6 +302,64 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(''), 1700);
   }, []);
+
+  // Adopt a detected token: create an (empty-valued) key so it becomes a defined
+  // variable. No-op if it already exists (standard or already adopted).
+  const adoptVar = useCallback((name: string) => {
+    setValues((v) => (name in v ? v : { ...v, [name]: '' }));
+  }, []);
+
+  // Delete a custom variable: drop its value key so the $TOKEN reverts to the
+  // "undefined" render state in commands (and returns to the detected strip).
+  // Standard variables are never deletable.
+  const deleteVar = useCallback((name: string) => {
+    if (STD_NAMES.has(name)) return;
+    setValues((v) => {
+      if (!(name in v)) return v;
+      const { [name]: _drop, ...rest } = v;
+      return rest;
+    });
+  }, []);
+
+  // Rename a custom variable, cascading $OLD -> $NEW across every command
+  // template (escaped \$OLD and $OLDER left intact). Carries the value over.
+  // Returns the number of commands rewritten, or -1 if the rename was rejected.
+  const renameVar = useCallback(
+    (oldName: string, nextRaw: string): number => {
+      const next = nextRaw.trim().toUpperCase();
+      if (STD_NAMES.has(oldName)) {
+        flash('Variable standard non renommable');
+        return -1;
+      }
+      if (!/^[A-Z_][A-Z0-9_]*$/.test(next)) {
+        flash('Nom de variable invalide');
+        return -1;
+      }
+      if (next === oldName) return 0;
+      const defined = new Set<string>([...STD_NAMES, ...Object.keys(valuesRef.current)]);
+      if (defined.has(next)) {
+        flash('Ce nom existe déjà');
+        return -1;
+      }
+      const re = new RegExp('(?<!\\\\)\\$' + oldName + '(?![A-Z0-9_])', 'g');
+      let n = 0;
+      const rewritten = commandsRef.current.map((c) => {
+        const nt = c.template.replace(re, '$' + next);
+        if (nt === c.template) return c;
+        n++;
+        return { ...c, template: nt };
+      });
+      if (n > 0) setCommands(rewritten);
+      setValues((v) => {
+        const val = v[oldName] ?? '';
+        const { [oldName]: _drop, ...rest } = v;
+        return { ...rest, [next]: val };
+      });
+      flash(`${n} commande(s) mise(s) à jour`);
+      return n;
+    },
+    [flash],
+  );
 
   // --- M1: Methodology actions (ported from DCLogic, adapted to id-keyed state) ---
 
@@ -848,6 +918,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleTheme,
       setView,
       setValue,
+      adoptVar,
+      deleteVar,
+      renameVar,
       setActiveCat,
       setActiveTool,
       setActiveTag,
@@ -923,6 +996,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       editingRefId,
       toggleTheme,
       setValue,
+      adoptVar,
+      deleteVar,
+      renameVar,
       clearFilters,
       toggleExpand,
       setNote,

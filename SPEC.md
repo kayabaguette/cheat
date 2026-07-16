@@ -11,6 +11,11 @@
 
 > **How to read this document.** Sections 1–12 are the specification. Cross-cutting rules resolved during review are reconciled consistently across every section: loopback-only networking with **no LAN mode, TLS, or API token** (R1); **awaited creates + debounced text PATCH** with no temp-ID/retry-queue (R2); the **three variable render states** `resolved` / `empty` / `undefined` (A5); **REPLACE-only import** with MERGE deferred to v2 (A12); a **single `formatVersion`** with no `schemaVersion`/`seedVersion`/`migratedFrom` in the envelope (A20/A49); and the **D7 rationale requalified to variable-values-only** (A11). **Open Items** collects the remaining non-blocking questions plus the explicit v2 deferrals; **Traceability** maps each locked decision and applied adjustment to its section(s).
 
+> **Implementation status — v0.2 (2026-07-17).** The shipped build deliberately diverges from parts of this spec; where they conflict, the following **supersedes** the text below:
+> 1. **Standard variable set.** Now **7** variables in the order `RHOST, RPORT, LHOST, LPORT, USER, DOMAIN, PASS`. `RHOST` supersedes the former `IP`; `RPORT` mirrors `LPORT` (msfvenom/pentest convention). This overrides the canonical `IP, LHOST, LPORT, USER, DOMAIN, PASS` order stated throughout §3.2.7, §5.4 and §11. Existing datasets migrate `$IP` → `$RHOST`.
+> 2. **Variables are frontend-only and memory-only.** There is **no persisted `VariableDefinition` table and no `/variables` REST surface** — §3.2.7 and §8's variable endpoints describe a model that was not built (consistent with the lean whole-`AppState` API; see the §12 note). Definitions live in the SPA (`STANDARD_VARS` + a `values` map); they are **not** part of import/export, and values reset on reload.
+> 3. **Two v2-deferrals are now shipped.** Because definitions are client-side, the previously deferred unknown-`$TOKEN` **auto-detection** and variable **rename cascade** (A27; Open Items) **are implemented**: detected tokens appear in a « Détectées » strip for one-click adoption; rename rewrites `$OLD`→`$NEW` across all command templates (escaped `\$` / longer tokens preserved) and reports the count; delete returns the token to the undefined render state. This overrides the "rename allowed only when unreferenced / cascade deferred" wording in §3.2.7, §4.x, §5 and §8.
+
 ---
 
 ## Table of Contents
@@ -36,7 +41,7 @@
 
 ### 1.1 Product Purpose
 
-**Cheat** is a single-user, offline desktop web application that centralizes the operational knowledge of a penetration test into one workspace: reusable **commands**, step-by-step **methodologies**, external **references**, and the generation of target-scoped **cheatsheets**. Its defining feature is a set of **live variables** (`$IP`, `$LHOST`, `$LPORT`, `$USER`, `$DOMAIN`, `$PASS`, plus user-defined ones) that resolve identically everywhere a command is displayed — Bibliothèque, Méthodologie and Cheatsheet — so a value entered once propagates across the whole app.
+**Cheat** is a single-user, offline desktop web application that centralizes the operational knowledge of a penetration test into one workspace: reusable **commands**, step-by-step **methodologies**, external **references**, and the generation of target-scoped **cheatsheets**. Its defining feature is a set of **live variables** (`$RHOST`, `$RPORT`, `$LHOST`, `$LPORT`, `$USER`, `$DOMAIN`, `$PASS`, plus user-defined ones) that resolve identically everywhere a command is displayed — Bibliothèque, Méthodologie and Cheatsheet — so a value entered once propagates across the whole app.
 
 The product ships as a **single self-contained binary**: a React + TypeScript SPA embedded (`go:embed`) into a Go/Gin/GORM/SQLite backend that serves both the UI and a same-origin REST API, bound to `127.0.0.1`. It is designed to run entirely on the operator's own machine with **zero network egress**.
 
