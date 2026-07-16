@@ -165,8 +165,9 @@ export function Sidebar() {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
 
-  // Per-category counts, first-seen tool order, and per-tool counts — derived
-  // live from store.commands so added/edited/deleted commands are reflected.
+  // Per-category counts, tools sorted alphabetically (case-insensitive,
+  // locale-aware), and per-tool counts — derived live from store.commands so
+  // added/edited/deleted commands are reflected.
   const { catCount, catToolOrder, toolCount } = useMemo(() => {
     const catCount: Record<string, number> = {};
     const catToolOrder: Record<string, string[]> = {};
@@ -176,6 +177,9 @@ export function Sidebar() {
       toolCount[c.category + '||' + c.tool] = (toolCount[c.category + '||' + c.tool] || 0) + 1;
       const tools = (catToolOrder[c.category] ??= []);
       if (!tools.includes(c.tool)) tools.push(c.tool);
+    }
+    for (const tools of Object.values(catToolOrder)) {
+      tools.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     }
     return { catCount, catToolOrder, toolCount };
   }, [commands]);
