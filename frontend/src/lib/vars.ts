@@ -17,6 +17,23 @@ export function resolve(template: string, values: Record<string, string>): strin
   });
 }
 
+// Distinct $TOKEN names referenced in a template (escaped \$ ignored), in
+// first-seen order. Used to auto-detect variables that are not yet defined.
+export function extractTokens(template: string): string[] {
+  const re = new RegExp(TOKEN_RE.source, 'g');
+  const seen = new Set<string>();
+  const out: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(template)) !== null) {
+    const name = m[1];
+    if (name !== undefined && !seen.has(name)) {
+      seen.add(name);
+      out.push(name);
+    }
+  }
+  return out;
+}
+
 // Splits a template into typed parts implementing the A5 three render states.
 //   resolved : name is defined AND has a non-empty value  -> text = value
 //   empty    : name is defined but value is empty          -> text = literal $TOKEN

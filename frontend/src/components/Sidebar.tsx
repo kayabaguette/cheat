@@ -1,7 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { STANDARD_VARS } from '../lib/theme';
+import { extractTokens } from '../lib/vars';
+
+// Names of the 6 built-in variables (value-only; not renamable/deletable).
+const STD = new Set(STANDARD_VARS.map((v) => v.name));
 
 // Left sidebar (272px): the live Variables panel, the expandable Categories tree
 // (each category unfolds to its tools, which filter the Library by tool), and the
@@ -131,10 +135,35 @@ export function Sidebar() {
     setActiveTag,
     setActiveRefTag,
     toggleExpand,
+    adoptVar,
+    deleteVar,
+    renameVar,
   } = useStore();
 
   const isLibrary = view === 'library';
   const isRefs = view === 'refs';
+
+  // Adopted custom variables (a value key that is not one of the 6 built-ins).
+  const customVars = useMemo(() => Object.keys(values).filter((k) => !STD.has(k)), [values]);
+  // Tokens used in command templates but not yet defined -> the "Détectées" strip.
+  const detected = useMemo(() => {
+    const known = new Set<string>([...STD, ...Object.keys(values)]);
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const c of commands) {
+      for (const tok of extractTokens(c.template)) {
+        if (!known.has(tok) && !seen.has(tok)) {
+          seen.add(tok);
+          out.push(tok);
+        }
+      }
+    }
+    return out;
+  }, [commands, values]);
+
+  // Inline rename state for a custom variable (no modal, SPEC Q26).
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
 
   // Per-category counts, first-seen tool order, and per-tool counts — derived
   // live from store.commands so added/edited/deleted commands are reflected.
@@ -261,7 +290,133 @@ export function Sidebar() {
               />
             </label>
           ))}
+
+          {/* Adopted custom variables: value-editable + inline rename + delete. */}
+          {customVars.map((name) => (
+            <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {renaming === name ? (
+                <input
+                  autoFocus
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      if (renameVar(name, draft) !== -1) setRenaming(null);
+                    } else if (e.key === 'Escape') {
+                      setRenaming(null);
+                    }
+                  }}
+                  onBlur={() => setRenaming(null)}
+                  spellCheck="false"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  style={{
+                    width: '60px',
+                    flex: 'none',
+                    background: 'var(--code)',
+                    border: '1px solid var(--acc-line)',
+                    color: 'var(--acc)',
+                    fontFamily: "'IBM Plex Mono',monospace",
+                    fontSize: '11.5px',
+                    padding: '4px',
+                  }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRenaming(name);
+                    setDraft(name);
+                  }}
+                  title="Renommer (répercuté dans les commandes)"
+                  style={{
+                    width: '60px',
+                    flex: 'none',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--acc)',
+                    fontFamily: "'IBM Plex Mono',monospace",
+                    fontSize: '11.5px',
+                    padding: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  ${name}
+                </button>
+              )}
+              <input
+                value={values[name] ?? ''}
+                onChange={(e) => setValue(name, e.target.value)}
+                spellCheck="false"
+                autoCorrect="off"
+                autoCapitalize="off"
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  background: 'var(--code)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text)',
+                  fontFamily: "'IBM Plex Mono',monospace",
+                  fontSize: '11.5px',
+                  padding: '5px 8px',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => deleteVar(name)}
+                title="Supprimer la variable"
+                style={{
+                  flex: 'none',
+                  cursor: 'pointer',
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--faint)',
+                  fontSize: '13px',
+                  lineHeight: 1,
+                  padding: '2px 4px',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
         </div>
+
+        {/* Auto-detected tokens not yet defined — click + to adopt as a variable. */}
+        {detected.length > 0 && (
+          <div style={{ marginTop: '11px' }}>
+            <div style={{ ...labelStyle, fontSize: '9.5px', marginBottom: '7px' }}>Détectées</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {detected.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => adoptVar(name)}
+                  title="Ajouter cette variable"
+                  style={{
+                    cursor: 'pointer',
+                    border: '1px dashed var(--border2)',
+                    background: 'transparent',
+                    color: 'var(--faint)',
+                    padding: '3px 8px',
+                    fontSize: '11px',
+                    fontFamily: "'IBM Plex Mono',monospace",
+                    display: 'inline-flex',
+                    gap: '6px',
+                    alignItems: 'center',
+                  }}
+                >
+                  ${name}
+                  <span style={{ color: 'var(--acc)', fontWeight: 700 }}>+</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* References view: a references-specific Tags facet in place of the
