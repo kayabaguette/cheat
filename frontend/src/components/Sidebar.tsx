@@ -97,7 +97,9 @@ const tagOn: CSSProperties = {
   ...tagBase,
   background: 'var(--acc-dim)',
   color: 'var(--text-strong)',
-  borderColor: 'var(--acc-line)',
+  // Use the `border` shorthand (not the borderColor longhand): mixing them makes
+  // React leave a stale border-color when toggling back to tagBase.
+  border: '1px solid var(--acc-line)',
 };
 
 const countStyle: CSSProperties = {

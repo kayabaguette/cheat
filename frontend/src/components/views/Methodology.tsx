@@ -77,7 +77,7 @@ const pillOn: CSSProperties = {
   ...pillBase,
   background: 'var(--acc-dim)',
   color: 'var(--acc)',
-  borderColor: 'var(--acc-line)',
+  border: '1px solid var(--acc-line)',
 };
 
 const newRmRow: CSSProperties = { display: 'flex', gap: '8px', marginBottom: '18px' };
@@ -133,7 +133,7 @@ const editBtnOn: CSSProperties = {
   ...editBtnBase,
   background: 'var(--acc-dim)',
   color: 'var(--acc)',
-  borderColor: 'var(--acc-line)',
+  border: '1px solid var(--acc-line)',
 };
 const resetBtn: CSSProperties = { ...editBtnBase };
 
