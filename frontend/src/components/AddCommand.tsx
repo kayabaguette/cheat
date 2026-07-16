@@ -315,13 +315,13 @@ export function AddCommand() {
 
           <div>
             <div style={fieldLabel}>
-              Commande <span style={hint}>— utilise $IP, $LHOST…</span>
+              Commande <span style={hint}>— utilise $RHOST, $LHOST…</span>
             </div>
             <textarea
               value={template}
               onChange={(e) => setTemplate(e.target.value)}
               rows={2}
-              placeholder="nmap -sC -sV $IP"
+              placeholder="nmap -sC -sV $RHOST"
               spellCheck="false"
               autoCorrect="off"
               autoCapitalize="off"

@@ -3,11 +3,12 @@ import type { ThemeName, VariableDef } from '../types';
 // Accent green — dresses only active states, selections, and resolved variables.
 export const ACCENT = '#3ddc97';
 
-// The 6 standard (built-in) variables, in the canonical seed order (SPEC §3.2.7,
-// positions 0–5). All built-in; only PASS is sensitive. This order supersedes the
-// prototype's varMeta order (…USER, PASS, DOMAIN).
+// The 7 standard (built-in) variables, paired remote/local then credentials.
+// All built-in; only PASS is sensitive. RHOST replaces the former IP and RPORT
+// mirrors LPORT (msfvenom/pentest convention).
 export const STANDARD_VARS: VariableDef[] = [
-  { name: 'IP', isBuiltin: true, sensitive: false },
+  { name: 'RHOST', isBuiltin: true, sensitive: false },
+  { name: 'RPORT', isBuiltin: true, sensitive: false },
   { name: 'LHOST', isBuiltin: true, sensitive: false },
   { name: 'LPORT', isBuiltin: true, sensitive: false },
   { name: 'USER', isBuiltin: true, sensitive: false },

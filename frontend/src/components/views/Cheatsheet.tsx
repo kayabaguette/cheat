@@ -35,7 +35,7 @@ function partStyle(state: Part['state']): CSSProperties {
 
 // Non-sensitive meta variables surfaced as chips (PASS/LPORT excluded, matching
 // the prototype's cheatsheet meta strip).
-const META_KEYS = ['IP', 'LHOST', 'USER', 'DOMAIN'] as const;
+const META_KEYS = ['RHOST', 'LHOST', 'USER', 'DOMAIN'] as const;
 
 // Bare, fence-length-safe code fence: at least ``` but always one backtick longer
 // than the longest backtick run inside the code, so templates containing fences

@@ -4,7 +4,7 @@
 **localhost-only** desktop web app that centralizes the operational knowledge of
 a penetration test — reusable **commands**, step-by-step **methodologies**,
 external **references**, and target-scoped **cheatsheets** — with live
-**variables** (`$IP`, `$LHOST`, `$LPORT`, `$USER`, `$DOMAIN`, `$PASS`, …) resolved
+**variables** (`$RHOST`, `$RPORT`, `$LHOST`, `$LPORT`, `$USER`, `$DOMAIN`, `$PASS`, …) resolved
 identically wherever a command is shown.
 
 Ported faithfully from a validated Claude Design prototype; `SPEC.md` is the
@@ -89,7 +89,7 @@ an array.
 ```json
 {
   "categories":  [{ "key": "infogathering", "label": "Information gathering", "color": "#5e9bff" }],
-  "commands":    [{ "id": "n1", "category": "infogathering", "tool": "nmap", "title": "Scan complet TCP", "template": "nmap -p- $IP", "desc": "Tous les ports", "tags": ["recon"] }],
+  "commands":    [{ "id": "n1", "category": "infogathering", "tool": "nmap", "title": "Scan complet TCP", "template": "nmap -p- $RHOST", "desc": "Tous les ports", "tags": ["recon"] }],
   "references":  [{ "id": "r1", "title": "HackTricks", "url": "https://book.hacktricks.xyz", "desc": "", "tags": ["general"] }],
   "roadmaps":    [{ "id": "services", "label": "Machine — Services", "phases": [{ "id": "p1", "label": "Reconnaissance", "steps": [{ "id": "s1", "text": "Scan TCP complet", "commandId": "n1" }] }] }],
   "cheatsheets": [{ "id": "cs1", "title": "Cheatsheet — HTB Lab", "target": "", "commandIds": ["n1"] }],
@@ -116,7 +116,7 @@ Field reference:
 - **IDs** are arbitrary unique strings. Keep cross-references consistent
   (`steps[].commandId`, `cheatsheets[].commandIds`, and the `notes`/`checks`/
   `openSteps` keys); references to a missing id are dropped/ignored.
-- Variable **values** (`$IP`, `$PASS`, …) are **not** stored in the file — they
+- Variable **values** (`$RHOST`, `$PASS`, …) are **not** stored in the file — they
   are memory-only and reset on load.
 
 ## Repository layout
