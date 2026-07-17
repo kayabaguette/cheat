@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from './store';
 import { themeTokens } from './lib/theme';
@@ -18,6 +19,12 @@ import { Toast } from './components/Toast';
 // descendant can reference var(--bg), var(--acc)… exactly like the prototype root.
 export default function App() {
   const { hydrated, theme, view } = useStore();
+
+  // Export resolution preference — memory-only, session-scoped, default RAW.
+  // Lifted here so the Cheatsheet toolbar toggle and the print-only <PrintRoot>
+  // (PDF) share one source of truth: exports never substitute $TOKEN values
+  // unless explicitly opted in (SPEC §9.6, OPSEC "no values on disk by default").
+  const [exportResolve, setExportResolve] = useState(false);
 
   // themeTokens returns the CSS custom properties (--bg, --acc, --pad…). They are
   // spread onto the root element's inline style, which is how the prototype's
@@ -65,14 +72,16 @@ export default function App() {
               {view === 'library' && <Library />}
               {view === 'method' && <Methodology />}
               {view === 'refs' && <References />}
-              {view === 'cheatsheet' && <Cheatsheet />}
+              {view === 'cheatsheet' && (
+                <Cheatsheet exportResolve={exportResolve} setExportResolve={setExportResolve} />
+              )}
             </div>
           </div>
         </div>
       </div>
       <AddCommand />
       <AddReference />
-      <PrintRoot />
+      <PrintRoot resolveValues={exportResolve} />
       <Toast />
     </div>
   );

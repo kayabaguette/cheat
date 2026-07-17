@@ -9,8 +9,10 @@ import type { Command } from '../types';
 // index.css toggle `.app` off / this block on), so « Exporter en PDF » —
 // window.print() from the Cheatsheet toolbar — produces a clean, light-themed
 // document. Faithful port of the prototype's `.printroot` block (~lines 391-407):
-// fixed #fff/#111 colours (never the theme tokens), numbered RESOLVED entries.
-// Variables resolve on the GLOBAL store.values (D2).
+// fixed #fff/#111 colours (never the theme tokens), numbered entries.
+// OPSEC (SPEC §9.6): commands are emitted RAW ($TOKEN) by default; `resolveValues`
+// (driven by the shared Cheatsheet export toggle) opts in to substituting the
+// GLOBAL store.values, and the value meta strip is shown only then.
 
 // Meta variables surfaced as a chip strip — the non-sensitive subset shown on
 // screen too (PASS/LPORT excluded). Identical to Cheatsheet.tsx.
@@ -54,7 +56,7 @@ const entryNote: CSSProperties = {
   paddingLeft: '8px',
 };
 
-export function PrintRoot() {
+export function PrintRoot({ resolveValues = false }: { resolveValues?: boolean }) {
   const { values, commands, notes, categories, cheatsheets, activeSheet } = useStore();
 
   const sheet = cheatsheets.find((s) => s.id === activeSheet) ?? null;
@@ -74,13 +76,15 @@ export function PrintRoot() {
       <div style={inner}>
         <h1 style={h1}>{sheet ? sheet.title : ''}</h1>
         {sheet && sheet.target && <div style={target}>{sheet.target}</div>}
-        <div style={metaRow}>
-          {metaChips.map((mc) => (
-            <span key={mc.k} style={metaItem}>
-              ${mc.k} = {mc.v}
-            </span>
-          ))}
-        </div>
+        {resolveValues && metaChips.length > 0 && (
+          <div style={metaRow}>
+            {metaChips.map((mc) => (
+              <span key={mc.k} style={metaItem}>
+                ${mc.k} = {mc.v}
+              </span>
+            ))}
+          </div>
+        )}
         <hr style={rule} />
         {items.map((c, i) => {
           const catLabel = catByKey.get(c.category)?.label ?? c.category;
@@ -92,7 +96,7 @@ export function PrintRoot() {
                 {i + 1}. {c.title} <span style={entryBadge}>— {catLabel} / {c.tool}</span>
               </div>
               {c.desc && <div style={entryDesc}>{c.desc}</div>}
-              <pre style={entryPre}>{resolve(c.template, values)}</pre>
+              <pre style={entryPre}>{resolveValues ? resolve(c.template, values) : c.template}</pre>
               {hasNote && <div style={entryNote}>Note : {note.trim()}</div>}
             </div>
           );
