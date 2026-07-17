@@ -208,6 +208,10 @@ and whole-state: `GET`/`PUT /api/state`, `POST /api/import`, `GET /api/export`,
 
 ## License
 
-Proprietary — all rights reserved by KnackyCorp. The source is published for
-reference; no license to use, copy, modify or distribute is granted. See
-[`LICENSE`](./LICENSE).
+**GNU General Public License v3.0** — Copyright © 2026 KnackyCorp.
+
+Cheat is free software: you can redistribute it and/or modify it under the terms
+of the GNU General Public License as published by the Free Software Foundation,
+either version 3 of the License or (at your option) any later version. It is
+distributed in the hope that it will be useful, but **without any warranty**. See
+[`LICENSE`](./LICENSE) for the full text.

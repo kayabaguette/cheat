@@ -24,6 +24,9 @@ development (pre-1.0).
   grouping. The tool is now stripped from a command's tags on add/edit and on
   load. Service/protocol tags that merely share a name with a tool (`ssh`,
   `git`, `ftp`, `mysql`, carried by commands of *other* tools) are kept.
+- **License — now open source (GPL-3.0).** Relicensed from the previous
+  proprietary / all-rights-reserved terms to the **GNU General Public License
+  v3.0** ahead of publishing the repository. Copyright © 2026 KnackyCorp.
 
 ### Security / OPSEC
 - **The app is now reachable on the LAN with no authentication and no TLS.**
