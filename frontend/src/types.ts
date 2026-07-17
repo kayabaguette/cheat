@@ -15,6 +15,8 @@ export interface Command {
   template: string;
   desc: string;
   tags: string[];
+  // Pinned to the top of its tool group in the Library. Optional/absent = not a favorite.
+  favorite?: boolean;
 }
 
 export interface Reference {

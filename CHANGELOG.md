@@ -4,6 +4,16 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.5.0] — 2026-07-17
+
+### Added
+- **Command favorites.** A star toggle on each command card in the Bibliothèque
+  pins the command to the top of its **tool** group. The flag is **persisted** —
+  it is part of the `commands` import/export shape as an optional `favorite`
+  boolean and survives reload; existing datasets default to not-favorite (the
+  SQLite column is added automatically on startup). Sorting is stable, so the
+  relative order of non-favorite commands is unchanged.
+
 ## [0.4.0] — 2026-07-17
 
 Security-review pass. A full read-only audit (backend, frontend, delivery,

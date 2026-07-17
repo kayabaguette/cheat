@@ -205,6 +205,7 @@ export interface StoreActions {
     },
   ) => boolean;
   deleteCommand: (id: string) => void;
+  toggleFavorite: (id: string) => void;
   // --- M2: Cheatsheets ---
   setActiveSheet: (id: string) => void;
   addCheatsheet: (title?: string) => void;
@@ -727,6 +728,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [flash],
   );
 
+  // Toggle a command's favorite flag — pins it to the top of its tool group in
+  // the Library. Persisted via persistableState like any other command field.
+  const toggleFavorite = useCallback((id: string) => {
+    setCommands((cs) => cs.map((c) => (c.id === id ? { ...c, favorite: !c.favorite } : c)));
+  }, []);
+
   // --- M2: Cheatsheet actions ---
 
   const addCheatsheet = useCallback((title?: string) => {
@@ -941,6 +948,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addCommand,
       updateCommand,
       deleteCommand,
+      toggleFavorite,
       setActiveSheet: setActiveSheetState,
       addCheatsheet,
       renameCheatsheet,
@@ -1015,6 +1023,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addCommand,
       updateCommand,
       deleteCommand,
+      toggleFavorite,
       addCheatsheet,
       renameCheatsheet,
       setCheatsheetTarget,

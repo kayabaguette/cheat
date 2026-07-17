@@ -47,7 +47,7 @@ across notes.
   (tools sorted alphabetically). Tokenized, accent-insensitive search; filter by
   category, tool or tag; full create/edit/delete with on-the-fly
   categories/tools/tags; per-command notes; one-click copy of the *resolved*
-  command.
+  command; **star a command** to pin it to the top of its tool group.
 - **Méthodologie** — reusable **roadmaps** of phases and checkable steps with
   per-phase and global progress. A step can link a command, shown expanded and
   resolved inline. Edit mode with drag-and-drop reordering (including across
@@ -165,7 +165,7 @@ may be empty, maps `{}`); import rejects a file whose `commands` is not an array
 ```json
 {
   "categories":  [{ "key": "infogathering", "label": "Information gathering", "color": "#5e9bff" }],
-  "commands":    [{ "id": "n1", "category": "infogathering", "tool": "nmap", "title": "Scan complet TCP", "template": "nmap -p- $RHOST", "desc": "Tous les ports", "tags": ["recon"] }],
+  "commands":    [{ "id": "n1", "category": "infogathering", "tool": "nmap", "title": "Scan complet TCP", "template": "nmap -p- $RHOST", "desc": "Tous les ports", "tags": ["recon"], "favorite": true }],
   "references":  [{ "id": "r1", "title": "HackTricks", "url": "https://book.hacktricks.xyz", "desc": "", "tags": ["general"] }],
   "roadmaps":    [{ "id": "services", "label": "Machine — Services", "phases": [{ "id": "p1", "label": "Reconnaissance", "steps": [{ "id": "s1", "text": "Scan TCP complet", "commandId": "n1" }] }] }],
   "cheatsheets": [{ "id": "cs1", "title": "Cheatsheet — HTB Lab", "target": "", "commandIds": ["n1"] }],
@@ -179,7 +179,7 @@ may be empty, maps `{}`); import rejects a file whose `commands` is not an array
 | Key | Shape | Notes |
 |---|---|---|
 | `categories[]` | `{ key, label, color }` | `color` is a CSS hex; the 18 built-ins keep their canonical keys/labels. |
-| `commands[]` | `{ id, category, tool, title, template, desc, tags[] }` | `category` is a `categories[].key`; `template` may contain `$VAR` tokens; a command's own tool is never one of its tags. |
+| `commands[]` | `{ id, category, tool, title, template, desc, tags[], favorite? }` | `category` is a `categories[].key`; `template` may contain `$VAR` tokens; a command's own tool is never one of its tags; `favorite` (optional bool, default `false`) pins the command to the top of its tool group. |
 | `references[]` | `{ id, title, url, desc, tags[] }` | `url` should be `http(s)`/`mailto`. |
 | `roadmaps[]` | `{ id, label, phases[] }` | `phases[] = { id, label, steps[] }`, `steps[] = { id, text, commandId? }`. |
 | `cheatsheets[]` | `{ id, title, target, commandIds[] }` | each `commandIds` entry → a `commands[].id`. |
