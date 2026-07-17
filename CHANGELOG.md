@@ -6,14 +6,24 @@ development (pre-1.0).
 
 ## [0.3.0] — 2026-07-17
 
+### Added
+- **Alphabetical tool ordering** — the sidebar's category → tool tree now sorts
+  each category's tools alphabetically (case- and accent-insensitive) instead of
+  by first-seen/insertion order.
+
 ### Changed
 - **Networking — LAN exposure (overrides the loopback-only R1 posture).** The
   container no longer uses `--network host`: it runs on a normal bridge network
   with the port published on `0.0.0.0` (`-p 0.0.0.0:8787:8787`), and the server
   binds `0.0.0.0` by default. The bind host is configurable via `CHEAT_HOST`
-  (or `--host`); the publish mapping via the `PUBLISH` make variable.
-- Also alphabetically sorted the sidebar tools per category, and stopped
-  seeding a command's own tool name as one of its tags.
+  (or `--host`); the publish mapping via the `PUBLISH` make variable. `make dev`
+  moves to a shared user-defined network with the Vite proxy retargeted to the
+  API container.
+- **A tool name is never one of a command's tags** — the OSCP import had seeded
+  each command with its own tool as a tag, duplicating the category → tool
+  grouping. The tool is now stripped from a command's tags on add/edit and on
+  load. Service/protocol tags that merely share a name with a tool (`ssh`,
+  `git`, `ftp`, `mysql`, carried by commands of *other* tools) are kept.
 
 ### Security / OPSEC
 - **The app is now reachable on the LAN with no authentication and no TLS.**

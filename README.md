@@ -10,14 +10,14 @@ identically wherever a command is shown.
 Ported faithfully from a validated Claude Design prototype; `SPEC.md` is the
 authoritative specification. UI language is **French**; in-repo docs are English.
 
-> **Status:** functionally complete (v0.1.0) — see [`CHANGELOG.md`](./CHANGELOG.md).
+> **Status:** functionally complete (v0.3.0) — see [`CHANGELOG.md`](./CHANGELOG.md).
 
 ## Features
 
-- **Bibliothèque** — commands grouped by category → tool, tokenized
-  accent-insensitive search, category/tool/tag filters, full CRUD with
-  on-the-fly categories/tools/tags, per-command notes, resolved copy-to-clipboard,
-  add-to-cheatsheet.
+- **Bibliothèque** — commands grouped by category → **alphabetically-sorted**
+  tools, tokenized accent-insensitive search, category/tool/tag filters, full
+  CRUD with on-the-fly categories/tools/tags (a command's tool name is never one
+  of its tags), per-command notes, resolved copy-to-clipboard, add-to-cheatsheet.
 - **Méthodologie** — multiple roadmaps of phases and checkable steps with
   per-phase/global progress, a step's linked command expanded & resolved inline,
   edit mode with drag-and-drop reorder (incl. cross-phase), progress reset.
