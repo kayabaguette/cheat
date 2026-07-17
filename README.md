@@ -55,8 +55,10 @@ across notes.
 - **Références** — external links with auto-extracted domain and tags, full-text
   and tag filtering, and URL validation on add/edit.
 - **Cheatsheet** — assemble named, target-scoped cheatsheets from library
-  commands, then **export to Markdown** (raw `$TOKEN`s by default, opt-in to
-  resolve) or **PDF**.
+  commands, then **export to Markdown or PDF** — both emit raw `$TOKEN`s by
+  default; a single opt-in toggle resolves the values into either format, and a
+  confirmation guards any resolved export that would write a sensitive value
+  (`$PASS`) to disk.
 - **Live variables** — substituted everywhere, with three clear states and
   auto-detection of new ones (see below).
 - **Themeable & dense** — dark / light, terminal-style, self-hosted fonts.
@@ -143,7 +145,9 @@ run on a machine you control.
   on reload.
 - **No at-rest encryption** — the database stores your commands, methodology,
   references and free-text notes/targets/URLs in cleartext. Rely on OS full-disk
-  encryption. Markdown/PDF exports emit raw `$TOKEN`s by default.
+  encryption. **Markdown and PDF exports emit raw `$TOKEN`s by default** —
+  resolving values into an export is an explicit opt-in that warns before writing
+  a sensitive value (`$PASS`) to disk.
 - **Zero network egress** — no CDN, self-hosted fonts, no telemetry, no
   auto-update. Inputs set `spellcheck="false"` / `autocorrect="off"` to stop the
   browser or extensions from shipping field contents to remote services;

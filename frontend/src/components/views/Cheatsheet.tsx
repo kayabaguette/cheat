@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, Dispatch, SetStateAction } from 'react';
 import { useStore } from '../../store';
-import { resolve } from '../../lib/vars';
+import { resolve, extractTokens } from '../../lib/vars';
 import { definedNames as buildDefinedNames } from '../../lib/varsets';
+import { STANDARD_VARS } from '../../lib/theme';
 import { dateStamp } from '../../lib/format';
 import { codeWrap, tabBar, pillBase, pillOn } from '../../lib/ui';
 import { CodeBlock } from '../CodeBlock';
@@ -35,6 +36,14 @@ function fence(code: string): string {
   const runs = code.match(/`+/g) ?? [];
   const longest = runs.reduce((m, r) => Math.max(m, r.length), 0);
   return '`'.repeat(Math.max(3, longest + 1));
+}
+
+// HTML-neutralize prose interpolated into the Markdown export so self-authored
+// content (titles, descriptions, notes, tags…) cannot inject raw HTML when the
+// .md is opened in a viewer that renders embedded HTML. Fenced code blocks are
+// left intact (fence() already guarantees they cannot break out).
+function mdEsc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ASCII slug of a title for the export filename (diacritics stripped, non
@@ -234,7 +243,14 @@ function badgeStyle(color: string): CSSProperties {
   };
 }
 
-export function Cheatsheet() {
+interface CheatsheetProps {
+  // Shared export-resolution preference (lifted to <App>): governs BOTH the
+  // Markdown and the PDF export so they stay raw-by-default in lockstep.
+  exportResolve: boolean;
+  setExportResolve: Dispatch<SetStateAction<boolean>>;
+}
+
+export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps) {
   const {
     values,
     commands,
@@ -252,9 +268,8 @@ export function Cheatsheet() {
     flash,
   } = useStore();
 
-  // Per-export opt-in: resolve $TOKENS in the Markdown output (Q99 — raw by
-  // default). Clipboard copy stays resolved regardless.
-  const [resolveMd, setResolveMd] = useState(false);
+  // Export opt-in (`exportResolve`) resolves $TOKENS in the Markdown AND PDF
+  // output (Q99/§9.6 — raw by default). Clipboard copy stays resolved regardless.
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const definedNames = useMemo(() => buildDefinedNames(values), [values]);
@@ -321,33 +336,51 @@ export function Cheatsheet() {
     copyText(items.map((c) => resolve(c.template, values)).join('\n'));
   };
 
+  // A resolved export that would substitute a sensitive variable value (e.g.
+  // $PASS) into the on-disk artifact requires explicit confirmation (SPEC §9.6).
+  // Raw exports — or resolved exports with no sensitive value in play — pass through.
+  const confirmSensitiveExport = (): boolean => {
+    if (!exportResolve) return true;
+    const sensitive = STANDARD_VARS.filter((v) => v.sensitive).map((v) => v.name);
+    const used = new Set(items.flatMap((c) => extractTokens(c.template)));
+    const leaks = sensitive.filter((n) => used.has(n) && (values[n] ?? '').trim() !== '');
+    if (leaks.length === 0) return true;
+    return window.confirm(
+      'Cet export résolu inscrira des valeurs sensibles en clair sur le disque (' +
+        leaks.map((n) => '$' + n).join(', ') +
+        '). Continuer ?',
+    );
+  };
+
   // « Markdown » — build the document then download via a Blob object-URL anchor
-  // (zero egress). RAW $TOKENS by default; resolved when the toggle is on.
+  // (zero egress). RAW $TOKENS by default; resolved only when the toggle is on,
+  // and the variable-value meta block is emitted ONLY in resolved mode (§9.6).
   const exportMd = () => {
     if (!sheet || !items.length) {
       flash('Cheatsheet vide');
       return;
     }
+    if (!confirmSensitiveExport()) return;
     const title = sheet.title.trim() || 'Cheatsheet';
-    let md = '# ' + title + '\n\n';
+    let md = '# ' + mdEsc(title) + '\n\n';
     const meta: string[] = [];
-    if (sheet.target.trim()) meta.push('Cible : ' + sheet.target.trim());
-    for (const mc of metaChips) meta.push(mc.k + ' : ' + mc.v);
+    if (sheet.target.trim()) meta.push('Cible : ' + mdEsc(sheet.target.trim()));
+    if (exportResolve) for (const mc of metaChips) meta.push(mc.k + ' : ' + mdEsc(mc.v));
     if (meta.length) md += '> ' + meta.join('  ·  ') + '\n\n';
     md += '---\n\n';
     items.forEach((c, i) => {
       const catLabel = catByKey.get(c.category)?.label ?? c.category;
-      md += '## ' + (i + 1) + '. ' + c.title + '\n';
+      md += '## ' + (i + 1) + '. ' + mdEsc(c.title) + '\n';
       md +=
         '`' + catLabel + ' / ' + c.tool + '`' +
-        (c.tags.length ? '  ·  ' + c.tags.map((t) => '#' + t).join(' ') : '') +
+        (c.tags.length ? '  ·  ' + c.tags.map((t) => '#' + mdEsc(t)).join(' ') : '') +
         '\n\n';
-      if (c.desc) md += c.desc + '\n\n';
-      const code = resolveMd ? resolve(c.template, values) : c.template;
+      if (c.desc) md += mdEsc(c.desc) + '\n\n';
+      const code = exportResolve ? resolve(c.template, values) : c.template;
       const f = fence(code);
       md += f + '\n' + code + '\n' + f + '\n';
       const note = notes[c.id];
-      if (note && note.trim()) md += '\n> Note : ' + note.trim() + '\n';
+      if (note && note.trim()) md += '\n> Note : ' + mdEsc(note.trim()) + '\n';
       md += '\n';
     });
     const blob = new Blob([md], { type: 'text/markdown' });
@@ -369,6 +402,7 @@ export function Cheatsheet() {
       flash('Cheatsheet vide');
       return;
     }
+    if (!confirmSensitiveExport()) return;
     setTimeout(() => window.print(), 60);
   };
 
@@ -409,11 +443,11 @@ export function Cheatsheet() {
                 sélectionnée(s)
               </div>
               <button
-                onClick={() => setResolveMd((v) => !v)}
-                title="Résoudre les variables dans l'export Markdown"
-                style={resolveMd ? resolveToggleOn : resolveToggleBase}
+                onClick={() => setExportResolve((v) => !v)}
+                title="Résoudre les variables dans les exports Markdown et PDF"
+                style={exportResolve ? resolveToggleOn : resolveToggleBase}
               >
-                {resolveMd ? '☑' : '☐'} résoudre les variables
+                {exportResolve ? '☑' : '☐'} résoudre les variables
               </button>
               <button onClick={copyAll} style={outlineBtn}>
                 Copier tout
