@@ -1,99 +1,161 @@
 # 💩 Cheat
 
-**OSCP notes, cheatsheets & methodology workshop.** A single-user, offline,
-**localhost-only** desktop web app that centralizes the operational knowledge of
-a penetration test — reusable **commands**, step-by-step **methodologies**,
-external **references**, and target-scoped **cheatsheets** — with live
-**variables** (`$RHOST`, `$RPORT`, `$LHOST`, `$LPORT`, `$USER`, `$DOMAIN`, `$PASS`, …) resolved
-identically wherever a command is shown.
+> **The operational memory of a pentest — commands, methodology, references and
+> cheatsheets in one offline workshop, with live variables threaded through
+> everything.**
 
-Ported faithfully from a validated Claude Design prototype; `SPEC.md` is the
-authoritative specification. UI language is **French**; in-repo docs are English.
+**Cheat** keeps everything you reach for during a penetration test in one place —
+reusable **commands**, step-by-step **methodologies**, external **references**,
+and target-scoped **cheatsheets** — and resolves **live variables**
+(`$RHOST`, `$LHOST`, `$USER`, …) identically everywhere a command appears. Type a
+target once and every command, in every view, shows the concrete, copy-ready
+line.
 
-> **Status:** functionally complete (v0.3.0) — see [`CHANGELOG.md`](./CHANGELOG.md).
+It's built for **OSCP** prep (the Offensive Security Certified Professional exam)
+and hands-on pentest work, and runs as a **single self-contained binary** on your
+own machine — no cloud, no accounts, no telemetry. The UI is in **French**.
 
-## Features
+![Cheat — the Bibliothèque view](docs/screenshot.png)
 
-- **Bibliothèque** — commands grouped by category → **alphabetically-sorted**
-  tools, tokenized accent-insensitive search, category/tool/tag filters, full
-  CRUD with on-the-fly categories/tools/tags (a command's tool name is never one
-  of its tags), per-command notes, resolved copy-to-clipboard, add-to-cheatsheet.
-- **Méthodologie** — multiple roadmaps of phases and checkable steps with
-  per-phase/global progress, a step's linked command expanded & resolved inline,
-  edit mode with drag-and-drop reorder (incl. cross-phase), progress reset.
+## Contents
+
+- [Why Cheat?](#why-cheat)
+- [Highlights](#highlights)
+- [Live variables](#live-variables)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [Security & OPSEC](#security--opsec)
+- [Import / export](#import--export)
+- [Tech stack](#tech-stack)
+- [Project layout](#project-layout)
+- [License](#license)
+
+## Why Cheat?
+
+During an engagement your knowledge is scattered: commands live in a dozen
+cheatsheets, methodology in a notepad, useful links in the browser — and you
+retype the same target IP, listener, and credentials into every one of them.
+
+Cheat pulls it into a single workshop and makes the target **a variable**. Set
+`$RHOST` once and it propagates to every command in the library, every linked
+step in a methodology, and every entry in a cheatsheet. No more find-and-replace
+across notes.
+
+## Highlights
+
+- **Bibliothèque** — a searchable command library grouped by **category → tool**
+  (tools sorted alphabetically). Tokenized, accent-insensitive search; filter by
+  category, tool or tag; full create/edit/delete with on-the-fly
+  categories/tools/tags; per-command notes; one-click copy of the *resolved*
+  command.
+- **Méthodologie** — reusable **roadmaps** of phases and checkable steps with
+  per-phase and global progress. A step can link a command, shown expanded and
+  resolved inline. Edit mode with drag-and-drop reordering (including across
+  phases) and a progress reset.
 - **Références** — external links with auto-extracted domain and tags, full-text
-  + tag filtering, add/edit/delete with URL validation & scheme allowlist.
-- **Cheatsheet** — multiple named cheatsheets, ordered entries, editable
-  title/target, **Markdown export** (raw `$TOKEN`s by default, opt-in resolve)
-  and **PDF export** (browser print).
-- **Variables** — live substitution with three render states (resolved / empty /
-  undefined). The 7 built-ins (`$RHOST`, `$RPORT`, `$LHOST`, `$LPORT`, `$USER`,
-  `$DOMAIN`, `$PASS`) plus **custom variables**: unknown `$TOKEN`s used in
-  commands are **auto-detected** (a "Détectées" strip) and can be adopted,
-  **renamed** — cascading the `$OLD`→`$NEW` rewrite across every command — or
-  deleted (the token reverts to raw/undefined). Values are **memory-only**.
-- **Theme** — dark / light, terminal-dense, self-hosted IBM Plex fonts.
-- **Persistence** — everything (except variable values) persists to a local
-  SQLite database and survives reloads.
-- **Import / export** — back up or restore the whole dataset as JSON.
+  and tag filtering, and URL validation on add/edit.
+- **Cheatsheet** — assemble named, target-scoped cheatsheets from library
+  commands, then **export to Markdown** (raw `$TOKEN`s by default, opt-in to
+  resolve) or **PDF**.
+- **Live variables** — substituted everywhere, with three clear states and
+  auto-detection of new ones (see below).
+- **Themeable & dense** — dark / light, terminal-style, self-hosted fonts.
+- **Local persistence** — everything (except variable *values*) is saved to a
+  local SQLite database and survives restarts.
+- **Import / export** — back up or move your whole dataset as a single JSON file.
 
-## Architecture
+## Live variables
 
-One self-contained **Go binary** (Gin) embeds the compiled **Vite + React +
-TypeScript** SPA via `go:embed` and serves it together with a same-origin REST
-API, bound to **`0.0.0.0`** by default (all interfaces, LAN-exposed; set
-`CHEAT_HOST=127.0.0.1` for loopback-only). Storage is **pure-Go GORM/SQLite** (no CGO →
-static binary). **Zero network egress**: no CDN, self-hosted fonts, no telemetry.
+A variable is a `$TOKEN` you define once and reuse everywhere. Cheat ships 7
+built-ins — `$RHOST`, `$RPORT`, `$LHOST`, `$LPORT`, `$USER`, `$DOMAIN`, `$PASS` —
+and you can add your own.
 
-API (lean, whole-`AppState`): `GET`/`PUT /api/state`, `POST /api/import`,
-`GET /api/export`, `GET /api/health`.
+Set `$RHOST = 10.10.10.5` in the sidebar, and a stored command template like:
 
-## Run
-
-Requires a container engine — **podman** (preferred) or **docker** — plus `make`.
-Everything runs through a container; nothing is installed on the host.
-
-```sh
-make build      # build the image (podman/docker auto-detected)
-make up         # run detached  -> http://127.0.0.1:8787   (make logs | make down)
-make run        # run in the foreground (Ctrl-C to stop)
-make rebuild    # down + build + up (the usual one-shot)
-make dev        # containerized dev: Vite HMR (:5173) + Go (:8787)
-make clean      # remove container, image and volumes
+```
+nmap -p- --min-rate 5000 -sV $RHOST
 ```
 
-- Change the port: `make up CHEAT_PORT=9000`.
-- The SQLite database lives in the `cheat-data` volume (`CHEAT_DB=/data/cheat.db`
-  inside the container) so it survives restarts; `make clean` removes it.
-- **LAN-exposed by default**: the container runs on a normal bridge network with
-  the port published on `0.0.0.0` (`-p 0.0.0.0:8787:8787`) and the server binds
-  `0.0.0.0`. **There is no authentication and no TLS** — anyone who can reach the
-  host on this port has full read/write access to the whole (cleartext) dataset.
-  To restrict to loopback: `make up CHEAT_HOST=127.0.0.1 PUBLISH='-p 127.0.0.1:8787:8787'`
-  (or firewall the port / use an SSH local port-forward).
+renders (and copies) as `nmap -p- --min-rate 5000 -sV 10.10.10.5` — in the
+library, in a methodology step that links it, and in any cheatsheet that
+includes it.
 
-## Security / OPSEC
+- **Three render states**: *resolved* (has a value, shown green), *empty*
+  (defined but blank), *undefined* (an unknown `$TOKEN`, shown dimmed).
+- **Auto-detection**: type a new `$TOKEN` into any command and it appears in a
+  **“Détectées”** strip in the sidebar — one click adopts it as a variable you
+  can give a value.
+- **Rename cascades**: renaming a variable rewrites `$OLD → $NEW` across every
+  command that uses it.
+- **Values are memory-only**: variable *values* (your target IP, password, …)
+  are **never** written to disk or the export — they live in memory and reset on
+  reload. Only the variable *names* and command templates are stored. This is a
+  deliberate OPSEC choice (see below).
 
-- Binds **`0.0.0.0`** by default — **LAN-exposed, with no auth and no TLS** (set
-  `CHEAT_HOST=127.0.0.1` to restore loopback-only). **Zero network egress**
-  (self-hosted assets, no telemetry); `spellcheck="false"` on every field (prevents field-content
-  exfiltration by the browser/extensions); outbound reference links use
-  `rel="noopener noreferrer"`.
-- Variable **values** (`$PASS`, target IPs, …) are **memory-only** — never
-  written to the DB, `localStorage`, or the JSON export. They reset on reload.
-- No at-rest encryption: because values are not persisted, the database holds
-  only your commands/methodology/references and free-text notes/targets/URLs
-  (stored in cleartext — rely on OS full-disk encryption). Markdown/PDF exports
-  emit raw `$TOKEN`s by default.
+## Quick start
 
-## Dataset format (import / export)
+You need a container engine — **podman** (preferred) or **docker** — and `make`.
+Everything runs inside a container; nothing is installed on the host.
+
+```sh
+make rebuild        # build the image and (re)start it  → http://localhost:8787
+```
+
+That's the usual one-shot. The individual targets:
+
+```sh
+make build          # build the image (podman/docker auto-detected)
+make up             # start detached          (make logs | make down)
+make run            # start in the foreground (Ctrl-C to stop)
+make dev            # dev mode: Vite HMR (:5173) + Go API (:8787)
+make clean          # remove the container, image, volumes and dev network
+```
+
+Then open **http://localhost:8787**. On first launch the app seeds a starter
+dataset you can edit or replace.
+
+## Configuration
+
+All optional, passed as `make` variables (e.g. `make up CHEAT_PORT=9000`):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CHEAT_PORT` | `8787` | Listen / published port. |
+| `CHEAT_HOST` | `0.0.0.0` | Bind address inside the container. `127.0.0.1` = loopback-only. |
+| `PUBLISH` | `-p 0.0.0.0:$(CHEAT_PORT):$(CHEAT_PORT)` | Container port publishing. |
+
+- **Data** lives in the `cheat-data` volume (`CHEAT_DB=/data/cheat.db` inside the
+  container) and survives restarts; `make clean` deletes it.
+- **Loopback-only** (recommended if you don't need LAN access):
+  `make up CHEAT_HOST=127.0.0.1 PUBLISH='-p 127.0.0.1:8787:8787'`.
+
+## Security & OPSEC
+
+Cheat is a single-user tool with **no authentication and no TLS**, designed to
+run on a machine you control.
+
+- **Exposure** — by default the server binds `0.0.0.0` and the port is published
+  on all interfaces, so it is **reachable on your LAN**. Anyone who can reach the
+  port has full read/write access to the dataset. Bind `127.0.0.1` (above) to
+  keep it local, firewall the port, or reach it over an SSH tunnel.
+- **Variable values are memory-only** — target IPs, passwords and the like are
+  never written to the database, `localStorage`, or the JSON export; they reset
+  on reload.
+- **No at-rest encryption** — the database stores your commands, methodology,
+  references and free-text notes/targets/URLs in cleartext. Rely on OS full-disk
+  encryption. Markdown/PDF exports emit raw `$TOKEN`s by default.
+- **Zero network egress** — no CDN, self-hosted fonts, no telemetry, no
+  auto-update. Inputs set `spellcheck="false"` / `autocorrect="off"` to stop the
+  browser or extensions from shipping field contents to remote services;
+  outbound links use `rel="noopener noreferrer"`.
+
+## Import / export
 
 Export produces — and import expects — a **single JSON object** (`AppState`).
 Import is a **full REPLACE** (it overwrites everything, so export first to back
-up). Variable *values* are never part of the file. The simplest way to obtain a
-valid file is to **Export** one and edit it. Every top-level key must be present
-(arrays may be empty, maps `{}`); import rejects a file whose `commands` is not
-an array.
+up). Variable *values* are never part of the file. The easiest way to get a valid
+file is to **Export** one and edit it. Every top-level key must be present (arrays
+may be empty, maps `{}`); import rejects a file whose `commands` is not an array.
 
 ```json
 {
@@ -109,12 +171,10 @@ an array.
 }
 ```
 
-Field reference:
-
 | Key | Shape | Notes |
 |---|---|---|
 | `categories[]` | `{ key, label, color }` | `color` is a CSS hex; the 18 built-ins keep their canonical keys/labels. |
-| `commands[]` | `{ id, category, tool, title, template, desc, tags[] }` | `category` is a `categories[].key`; `template` may contain `$VAR` tokens. |
+| `commands[]` | `{ id, category, tool, title, template, desc, tags[] }` | `category` is a `categories[].key`; `template` may contain `$VAR` tokens; a command's own tool is never one of its tags. |
 | `references[]` | `{ id, title, url, desc, tags[] }` | `url` should be `http(s)`/`mailto`. |
 | `roadmaps[]` | `{ id, label, phases[] }` | `phases[] = { id, label, steps[] }`, `steps[] = { id, text, commandId? }`. |
 | `cheatsheets[]` | `{ id, title, target, commandIds[] }` | each `commandIds` entry → a `commands[].id`. |
@@ -122,20 +182,32 @@ Field reference:
 | `checks` / `openSteps` | `{ [stepId]: boolean }` | methodology progress / expanded state. |
 | `settings` | `{ theme, activeRoadmap, activeSheet }` | `theme` = `"dark"`\|`"light"`; `activeRoadmap` = a roadmap id or `null`; `activeSheet` = a cheatsheet id. |
 
-- **IDs** are arbitrary unique strings. Keep cross-references consistent
+- **IDs** are arbitrary unique strings; keep cross-references consistent
   (`steps[].commandId`, `cheatsheets[].commandIds`, and the `notes`/`checks`/
-  `openSteps` keys); references to a missing id are dropped/ignored.
-- Variable **values** (`$RHOST`, `$PASS`, …) are **not** stored in the file — they
-  are memory-only and reset on load.
+  `openSteps` keys). References to a missing id are dropped.
+- Variable **values** (`$RHOST`, `$PASS`, …) are **not** in the file — they are
+  memory-only and reset on load.
 
-## Repository layout
+## Tech stack
+
+One self-contained **Go** binary (Gin) embeds the compiled **Vite + React +
+TypeScript** SPA via `go:embed` and serves it alongside a same-origin REST API.
+Storage is **pure-Go GORM/SQLite** (no CGO → a static binary). The API is lean
+and whole-state: `GET`/`PUT /api/state`, `POST /api/import`, `GET /api/export`,
+`GET /api/health`.
+
+## Project layout
 
 - `frontend/` — Vite + React + TypeScript SPA.
 - `backend/` — Go server (Gin, GORM/SQLite, `go:embed` of the built SPA).
-- `SPEC.md` — authoritative specification (12 sections + open items + traceability).
-- `tasks/` — spec questionnaire, decisions log, review adjustments.
 - `Makefile`, `Dockerfile`, `.dockerignore` — build & delivery.
+- `SPEC.md` — the authoritative specification (with an implementation-status
+  addendum for post-spec changes).
+- `CHANGELOG.md` — release notes.
+- `tasks/` — the spec questionnaire, decisions log and review adjustments.
 
 ## License
 
-Proprietary — all rights reserved. See [`LICENSE`](./LICENSE).
+Proprietary — all rights reserved by KnackyCorp. The source is published for
+reference; no license to use, copy, modify or distribute is granted. See
+[`LICENSE`](./LICENSE).
