@@ -74,6 +74,8 @@ export interface AppState {
   notes?: Record<string, string>;
   checks?: Record<string, boolean>;
   openSteps?: Record<string, boolean>;
+  // Per-step captured command output/result (keyed by stepId, like checks/openSteps).
+  results?: Record<string, string>;
   settings: {
     theme: ThemeName;
     activeRoadmap: string | null;

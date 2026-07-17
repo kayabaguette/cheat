@@ -145,8 +145,9 @@ run on a machine you control.
   never written to the database, `localStorage`, or the JSON export; they reset
   on reload.
 - **No at-rest encryption** — the database stores your commands, methodology,
-  references and free-text notes/targets/URLs in cleartext. Rely on OS full-disk
-  encryption. **Markdown and PDF exports emit raw `$TOKEN`s by default** —
+  references, free-text notes/targets/URLs and any **captured command output**
+  (methodology step results, which can contain credentials, hashes or other
+  sensitive data) in cleartext. Rely on OS full-disk encryption. **Markdown and PDF exports emit raw `$TOKEN`s by default** —
   resolving values into an export is an explicit opt-in that warns before writing
   a sensitive value (`$PASS`) to disk.
 - **Zero network egress** — no CDN, self-hosted fonts, no telemetry, no
@@ -172,6 +173,7 @@ may be empty, maps `{}`); import rejects a file whose `commands` is not an array
   "notes":       { "n1": "note perso attachée à la commande n1" },
   "checks":      { "s1": true },
   "openSteps":   { "s1": false },
+  "results":     { "s1": "22/tcp open ssh\n80/tcp open http" },
   "settings":    { "theme": "dark", "activeRoadmap": "services", "activeSheet": "cs1" }
 }
 ```
@@ -185,11 +187,12 @@ may be empty, maps `{}`); import rejects a file whose `commands` is not an array
 | `cheatsheets[]` | `{ id, title, target, commandIds[] }` | each `commandIds` entry → a `commands[].id`. |
 | `notes` | `{ [commandId]: string }` | per-command note. |
 | `checks` / `openSteps` | `{ [stepId]: boolean }` | methodology progress / expanded state. |
+| `results` | `{ [stepId]: string }` | saved command output/result captured per methodology step. |
 | `settings` | `{ theme, activeRoadmap, activeSheet }` | `theme` = `"dark"`\|`"light"`; `activeRoadmap` = a roadmap id or `null`; `activeSheet` = a cheatsheet id. |
 
 - **IDs** are arbitrary unique strings; keep cross-references consistent
   (`steps[].commandId`, `cheatsheets[].commandIds`, and the `notes`/`checks`/
-  `openSteps` keys). References to a missing id are dropped.
+  `openSteps`/`results` keys). References to a missing id are dropped.
 - Variable **values** (`$RHOST`, `$PASS`, …) are **not** in the file — they are
   memory-only and reset on load.
 
