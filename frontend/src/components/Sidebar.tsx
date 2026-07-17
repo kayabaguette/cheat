@@ -311,6 +311,7 @@ export function Sidebar() {
                 spellCheck="false"
                 autoCorrect="off"
                 autoCapitalize="off"
+                autoComplete="off"
                 style={{
                   flex: 1,
                   minWidth: 0,
@@ -388,6 +389,7 @@ export function Sidebar() {
                 spellCheck="false"
                 autoCorrect="off"
                 autoCapitalize="off"
+                autoComplete="off"
                 style={{
                   flex: 1,
                   minWidth: 0,

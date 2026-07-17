@@ -55,8 +55,10 @@ across notes.
 - **Références** — external links with auto-extracted domain and tags, full-text
   and tag filtering, and URL validation on add/edit.
 - **Cheatsheet** — assemble named, target-scoped cheatsheets from library
-  commands, then **export to Markdown** (raw `$TOKEN`s by default, opt-in to
-  resolve) or **PDF**.
+  commands, then **export to Markdown or PDF** — both emit raw `$TOKEN`s by
+  default; a single opt-in toggle resolves the values into either format, and a
+  confirmation guards any resolved export that would write a sensitive value
+  (`$PASS`) to disk.
 - **Live variables** — substituted everywhere, with three clear states and
   auto-detection of new ones (see below).
 - **Themeable & dense** — dark / light, terminal-style, self-hosted fonts.
@@ -108,7 +110,8 @@ make build          # build the image (podman/docker auto-detected)
 make up             # start detached          (make logs | make down)
 make run            # start in the foreground (Ctrl-C to stop)
 make dev            # dev mode: Vite HMR (:5173) + Go API (:8787)
-make clean          # remove the container, image, volumes and dev network
+make clean          # remove the container, image, dev volumes and network (keeps data)
+make purge          # clean + delete the cheat-data volume (destroys your dataset)
 ```
 
 Then open **http://localhost:8787**. On first launch the app seeds a starter
@@ -125,7 +128,7 @@ All optional, passed as `make` variables (e.g. `make up CHEAT_PORT=9000`):
 | `PUBLISH` | `-p 0.0.0.0:$(CHEAT_PORT):$(CHEAT_PORT)` | Container port publishing. |
 
 - **Data** lives in the `cheat-data` volume (`CHEAT_DB=/data/cheat.db` inside the
-  container) and survives restarts; `make clean` deletes it.
+  container) and survives restarts; `make clean` keeps it, `make purge` deletes it.
 - **Loopback-only** (recommended if you don't need LAN access):
   `make up CHEAT_HOST=127.0.0.1 PUBLISH='-p 127.0.0.1:8787:8787'`.
 
@@ -143,7 +146,9 @@ run on a machine you control.
   on reload.
 - **No at-rest encryption** — the database stores your commands, methodology,
   references and free-text notes/targets/URLs in cleartext. Rely on OS full-disk
-  encryption. Markdown/PDF exports emit raw `$TOKEN`s by default.
+  encryption. **Markdown and PDF exports emit raw `$TOKEN`s by default** —
+  resolving values into an export is an explicit opt-in that warns before writing
+  a sensitive value (`$PASS`) to disk.
 - **Zero network egress** — no CDN, self-hosted fonts, no telemetry, no
   auto-update. Inputs set `spellcheck="false"` / `autocorrect="off"` to stop the
   browser or extensions from shipping field contents to remote services;

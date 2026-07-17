@@ -25,3 +25,9 @@ data
 *.db
 *.db-*
 *.sqlite*
+
+# Never leak local secrets into the build context (a VITE_-prefixed value in a
+# local .env would be inlined into the served bundle).
+**/.env
+**/.env.*
+!**/.env.example

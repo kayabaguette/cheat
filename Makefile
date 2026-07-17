@@ -28,7 +28,7 @@ GO_IMAGE    ?= golang:1.25-alpine
 NODE_IMAGE  ?= node:22-alpine
 
 .DEFAULT_GOAL := help
-.PHONY: help require-engine build up run down rebuild logs dev clean
+.PHONY: help require-engine build up run down rebuild logs dev clean purge
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -39,7 +39,9 @@ require-engine:
 	  echo "error: no container engine found — install podman or docker (or set ENGINE=)"; exit 1; fi
 
 build: require-engine ## Build the container image ($(IMAGE):$(TAG)) with $(ENGINE)
-	$(ENGINE) build -t $(IMAGE):$(TAG) -t $(IMAGE):latest --build-arg VERSION=$(VERSION) $(ROOT)
+	# BUILDAH_FORMAT=docker makes podman emit a Docker-format image so the
+	# Dockerfile HEALTHCHECK is preserved (OCI drops it); docker ignores the env.
+	BUILDAH_FORMAT=docker $(ENGINE) build -t $(IMAGE):$(TAG) -t $(IMAGE):latest --build-arg VERSION=$(VERSION) $(ROOT)
 
 # Persist the SQLite DB in a named volume so it survives container restarts.
 # `:U` makes podman chown the volume to the (nonroot) container user. Docker does
@@ -82,8 +84,11 @@ dev: require-engine ## Containerized dev: Vite HMR (:5173) + Go (:$(CHEAT_PORT))
 	   $(NODE_IMAGE) sh -c "npm install --no-audit --no-fund --silent && npm run dev" & \
 	 wait
 
-clean: require-engine ## Remove the container, image, dev volumes and dev network
+clean: require-engine ## Remove the container, image, dev volumes and dev network (KEEPS your data)
 	-$(ENGINE) rm -f $(NAME) $(NAME)-api $(NAME)-web 2>/dev/null
 	-$(ENGINE) rmi $(IMAGE):$(TAG) $(IMAGE):latest 2>/dev/null
-	-$(ENGINE) volume rm cheat-go-cache cheat-web-modules cheat-data 2>/dev/null
+	-$(ENGINE) volume rm cheat-go-cache cheat-web-modules 2>/dev/null
 	-$(ENGINE) network rm $(DEV_NET) 2>/dev/null
+
+purge: clean ## clean + DELETE the cheat-data volume (destroys your saved dataset)
+	-$(ENGINE) volume rm cheat-data 2>/dev/null

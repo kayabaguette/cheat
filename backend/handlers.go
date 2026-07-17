@@ -11,13 +11,33 @@ package main
 
 import (
 	"net/http"
+	"regexp"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
+// maxBodyBytes caps request bodies on the write endpoints. The server binds
+// 0.0.0.0 with no auth, so an unbounded PUT /state or POST /import body would be
+// a LAN-reachable memory-exhaustion DoS; 8 MiB sits well above any real dataset.
+const maxBodyBytes = 8 << 20
+
+// exportDateRe validates the optional ?date= filename hint (YYYY-MM-DD) so no
+// attacker-influenced text is reflected into the Content-Disposition header.
+var exportDateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+// limitBody caps the request body size before any handler reads it.
+func limitBody(max int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, max)
+		c.Next()
+	}
+}
+
 // registerAPI wires the persistence endpoints onto the given /api group.
 func registerAPI(api *gin.RouterGroup, db *gorm.DB) {
+	api.Use(limitBody(maxBodyBytes))
+
 	api.GET("/state", func(c *gin.Context) {
 		initialized, state, err := loadState(db)
 		if err != nil {
@@ -37,10 +57,10 @@ func registerAPI(api *gin.RouterGroup, db *gorm.DB) {
 			return
 		}
 		// Downloadable attachment. The client may pass ?date=YYYY-MM-DD for the
-		// filename; fall back to a fixed name when absent.
-		date := c.Query("date")
+		// filename; only a strict date shape is honored, otherwise a fixed name
+		// (never reflect raw query input into the response header).
 		name := "cheat-export.json"
-		if date != "" {
+		if date := c.Query("date"); exportDateRe.MatchString(date) {
 			name = "cheat-export-" + date + ".json"
 		}
 		c.Header("Content-Disposition", `attachment; filename="`+name+`"`)

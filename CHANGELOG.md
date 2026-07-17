@@ -4,6 +4,60 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.4.0] — 2026-07-17
+
+Security-review pass. A full read-only audit (backend, frontend, delivery,
+secrets/OPSEC) found the posture solid — no SQLi/XSS/path-traversal, zero
+network egress, a non-root distroless image, a clean git history, and the
+memory-only variable-value guarantee upheld in the persistence layer. This
+release fixes the one real breach of that guarantee plus a set of hardening
+items, delivered as three focused PRs (#14 export, #15 backend/delivery,
+#16 frontend).
+
+### Security / OPSEC
+- **Cheatsheet exports are now raw `$TOKEN` by default in BOTH Markdown and
+  PDF.** The PDF export previously resolved every variable value
+  unconditionally — including the sensitive `$PASS` — into the printed
+  document, and the Markdown export emitted the `RHOST/LHOST/USER/DOMAIN` value
+  block even in raw mode. A single export-resolution toggle (memory-only,
+  default off) now governs both formats; resolving is an explicit opt-in and a
+  confirmation guards any resolved export that would write a sensitive value to
+  disk (SPEC §9.6).
+- **Request bodies are capped at 8 MiB** on `PUT /api/state` and
+  `POST /api/import` (`http.MaxBytesReader`). They were unbounded — a
+  LAN-reachable memory-exhaustion DoS given the `0.0.0.0` / no-auth bind.
+- **Defense-in-depth response headers** — a strict `Content-Security-Policy`
+  (no `unsafe-inline`), `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`.
+- **Reference URLs are re-sanitized on load** (not only on add/edit): any
+  disallowed scheme (`javascript:`, `data:`, …) in an imported dataset is
+  neutralized so a hostile file can never yield a clickable link.
+- **Variable-value inputs set `autocomplete="off"`** so browser form-autofill
+  never retains memory-only values (incl. `$PASS`).
+- **`.dockerignore` excludes `**/.env*`** so a local `VITE_`-prefixed secret
+  cannot be inlined into the served bundle.
+
+### Changed
+- **Container image hardening** — base images pinned by digest; explicit
+  `USER 65532:65532`; a `WORKDIR` under the nonroot home so the default
+  `CHEAT_DB` is writable without a volume (the volumeless `docker run` example
+  now works); a `HEALTHCHECK` via a new `cheat -healthcheck` self-probe
+  (`make build` emits a Docker-format image so podman preserves it).
+- **`make clean` no longer deletes your data** — it keeps the `cheat-data`
+  volume; the new **`make purge`** removes it.
+- **Import validation** rejects a malformed dataset (a wrong-typed top-level
+  key) up front instead of wiping the current data and then failing to hydrate.
+- Bumped indirect Go dependencies `golang.org/x/net` (0.25 → 0.57) and
+  `golang.org/x/crypto` (0.23 → 0.54).
+- The export `?date=` filename hint is validated (`YYYY-MM-DD`) before it
+  reaches the `Content-Disposition` header.
+- The Markdown export HTML-escapes interpolated prose (titles, descriptions,
+  notes, tags, target); fenced code blocks are unaffected.
+
+### Notes
+- Accepted-by-design items are unchanged: no auth / no TLS with the LAN
+  `0.0.0.0` bind, and the cleartext at-rest database.
+
 ## [0.3.0] — 2026-07-17
 
 ### Added
