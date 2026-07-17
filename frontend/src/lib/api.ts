@@ -18,24 +18,25 @@ export async function getState(): Promise<{ initialized: boolean; state: AppStat
   return asJson<{ initialized: boolean; state: AppState }>(res);
 }
 
-// PUT /api/state -> replaces all persisted data and flips initialized = true.
-export async function putState(state: AppState): Promise<void> {
-  const res = await fetch('/api/state', {
-    method: 'PUT',
+// Shared write path for the two full-REPLACE endpoints (PUT /api/state and
+// POST /api/import): identical headers, JSON body, and discarded { ok } result.
+async function writeState(method: string, url: string, state: AppState): Promise<void> {
+  const res = await fetch(url, {
+    method,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(state),
   });
   await asJson<{ ok: boolean }>(res);
 }
 
+// PUT /api/state -> replaces all persisted data and flips initialized = true.
+export async function putState(state: AppState): Promise<void> {
+  await writeState('PUT', '/api/state', state);
+}
+
 // POST /api/import -> same semantics as PUT (full REPLACE, D4).
 export async function importState(state: AppState): Promise<void> {
-  const res = await fetch('/api/import', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(state),
-  });
-  await asJson<{ ok: boolean }>(res);
+  await writeState('POST', '/api/import', state);
 }
 
 // GET /api/export -> the AppState as a downloadable JSON attachment.

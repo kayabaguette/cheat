@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { resolve } from '../lib/vars';
+import { MONO } from '../lib/ui';
 import type { Command } from '../types';
 
 // PrintRoot — the print-only rendering of the ACTIVE cheatsheet. It is hidden on
@@ -25,7 +26,7 @@ const h1: CSSProperties = { margin: 0, fontSize: '24px' };
 const target: CSSProperties = { color: '#555', fontSize: '13px', marginTop: '4px' };
 const metaRow: CSSProperties = {
   marginTop: '8px',
-  fontFamily: "'IBM Plex Mono', monospace",
+  fontFamily: MONO,
   fontSize: '11px',
   color: '#333',
 };
@@ -39,7 +40,7 @@ const entryPre: CSSProperties = {
   background: '#f4f4f5',
   border: '1px solid #e2e2e5',
   padding: '9px 11px',
-  fontFamily: "'IBM Plex Mono', monospace",
+  fontFamily: MONO,
   fontSize: '12px',
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-word',

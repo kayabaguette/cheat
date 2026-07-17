@@ -90,36 +90,33 @@ func main() {
 	}
 }
 
-// resolveHost picks the listen host: --host flag, then CHEAT_HOST env, then
-// 0.0.0.0 (all interfaces). Set CHEAT_HOST=127.0.0.1 for loopback-only.
-func resolveHost(flagVal string) string {
+// resolve picks a config value: the raw flag value (if non-empty), then the
+// trimmed env var at envKey (if non-empty), then def.
+func resolve(flagVal, envKey, def string) string {
 	if flagVal != "" {
 		return flagVal
 	}
-	if env := strings.TrimSpace(os.Getenv("CHEAT_HOST")); env != "" {
+	if env := strings.TrimSpace(os.Getenv(envKey)); env != "" {
 		return env
 	}
-	return "0.0.0.0"
+	return def
+}
+
+// resolveHost picks the listen host: --host flag, then CHEAT_HOST env, then
+// 0.0.0.0 (all interfaces). Set CHEAT_HOST=127.0.0.1 for loopback-only.
+func resolveHost(flagVal string) string {
+	return resolve(flagVal, "CHEAT_HOST", "0.0.0.0")
 }
 
 // resolvePort picks the listen port: --port flag, then CHEAT_PORT env, then
 // the fixed default (SPEC Q195).
 func resolvePort(flagVal string) string {
-	if flagVal != "" {
-		return flagVal
-	}
-	if env := strings.TrimSpace(os.Getenv("CHEAT_PORT")); env != "" {
-		return env
-	}
-	return defaultPort
+	return resolve(flagVal, "CHEAT_PORT", defaultPort)
 }
 
 // resolveDBPath picks the SQLite path: CHEAT_DB env, then the fixed default.
 func resolveDBPath() string {
-	if env := strings.TrimSpace(os.Getenv("CHEAT_DB")); env != "" {
-		return env
-	}
-	return defaultDBPath
+	return resolve("", "CHEAT_DB", defaultDBPath)
 }
 
 // loadSPA returns the embedded SPA filesystem (rooted at dist/) and whether it
@@ -151,10 +148,6 @@ func serveSPA(r *gin.Engine, spa fs.FS) {
 			return
 		}
 		clean := strings.TrimPrefix(req.URL.Path, "/")
-		if clean == "" {
-			serveFile(c, spa, "index.html")
-			return
-		}
 		if f, err := spa.Open(clean); err == nil {
 			_ = f.Close()
 			fileServer.ServeHTTP(c.Writer, req)

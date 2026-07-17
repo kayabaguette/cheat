@@ -322,7 +322,8 @@ export const REFERENCES: Reference[] = [
 
 // Roadmaps — ported verbatim from the prototype `roadmaps` array.
 // The prototype's per-step `note` field (a command id) is mapped to `commandId`.
-// Stable ids are generated: phase = `${roadmapId}-p${n}`, step = `${phaseId}-s${n}`.
+// Ids are hardcoded (not generated) following the pattern roadmapId-p{n}-s{n}
+// and must stay stable — roadmap progress state references them by id.
 export const ROADMAPS: Roadmap[] = [
   {
     id: 'services',

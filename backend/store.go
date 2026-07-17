@@ -288,7 +288,7 @@ func loadState(db *gorm.DB) (bool, AppState, error) {
 	}
 	for _, s := range sheets {
 		state.Cheatsheets = append(state.Cheatsheets, CheatsheetDTO{
-			ID: s.ID, Title: s.Title, Target: s.Target, CommandIDs: nonNilStr(s.CommandIDs),
+			ID: s.ID, Title: s.Title, Target: s.Target, CommandIDs: nonNil(s.CommandIDs),
 		})
 	}
 
@@ -374,7 +374,7 @@ func saveState(db *gorm.DB, s AppState) error {
 		for i, sh := range s.Cheatsheets {
 			sheets = append(sheets, Cheatsheet{
 				ID: sh.ID, Title: sh.Title, Target: sh.Target,
-				Position: i, CommandIDs: nonNilStr(sh.CommandIDs),
+				Position: i, CommandIDs: nonNil(sh.CommandIDs),
 			})
 		}
 		if err := insertAll(tx, sheets); err != nil {
@@ -382,13 +382,13 @@ func saveState(db *gorm.DB, s AppState) error {
 		}
 
 		// kv maps + settings + initialized flag.
-		if err := kvSet(tx, kvNotes, nonNilMapS(s.Notes)); err != nil {
+		if err := kvSet(tx, kvNotes, nonNilMap(s.Notes)); err != nil {
 			return err
 		}
-		if err := kvSet(tx, kvChecks, nonNilMapB(s.Checks)); err != nil {
+		if err := kvSet(tx, kvChecks, nonNilMap(s.Checks)); err != nil {
 			return err
 		}
-		if err := kvSet(tx, kvOpenSteps, nonNilMapB(s.OpenSteps)); err != nil {
+		if err := kvSet(tx, kvOpenSteps, nonNilMap(s.OpenSteps)); err != nil {
 			return err
 		}
 		if err := kvSet(tx, kvSettings, s.Settings); err != nil {
@@ -458,16 +458,9 @@ func nonNil(s []string) []string {
 	}
 	return s
 }
-func nonNilStr(s []string) []string { return nonNil(s) }
-func nonNilMapS(m map[string]string) map[string]string {
+func nonNilMap[K comparable, V any](m map[K]V) map[K]V {
 	if m == nil {
-		return map[string]string{}
-	}
-	return m
-}
-func nonNilMapB(m map[string]bool) map[string]bool {
-	if m == nil {
-		return map[string]bool{}
+		return map[K]V{}
 	}
 	return m
 }

@@ -13,6 +13,8 @@ import type {
 import { CATEGORIES, COMMANDS, INITIAL_VALUES, REFERENCES, ROADMAPS } from './data/seed';
 import { getState, putState } from './lib/api';
 import { STANDARD_VARS } from './lib/theme';
+import { sanitizeUrl, slug } from './lib/format';
+import { definedNames } from './lib/varsets';
 
 // Names of the 6 built-in variables — value-editable only (never renamed/deleted).
 const STD_NAMES = new Set(STANDARD_VARS.map((v) => v.name));
@@ -31,21 +33,6 @@ const CUSTOM_CAT_PALETTE = [
   '#2dd4bf',
 ];
 
-// Prefix a bare URL with https:// and reject non web/mail schemes. Returns the
-// normalized absolute URL, or null when it cannot be parsed / is not allowed.
-function sanitizeUrl(raw: string): string | null {
-  let url = raw;
-  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url)) url = 'https://' + url;
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
-  if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) return null;
-  return url;
-}
-
 // Dedupe + trim a tag list (order preserved, empties dropped).
 function cleanTags(tags: string[]): string[] {
   return [...new Set(tags.map((t) => t.trim()).filter(Boolean))];
@@ -54,11 +41,9 @@ function cleanTags(tags: string[]): string[] {
 // A tool name must NEVER be a tag: the tool is already its own grouping/facet in
 // the sidebar, so tagging a command with its own tool is pure redundancy.
 // Comparison is case- and separator-insensitive.
-const tagSlug = (s: string): string =>
-  s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 function dropToolTag(tags: string[], tool: string): string[] {
-  const ts = tagSlug(tool);
-  return ts ? tags.filter((t) => tagSlug(t) !== ts) : tags;
+  const ts = slug(tool);
+  return ts ? tags.filter((t) => slug(t) !== ts) : tags;
 }
 
 // Id source for user-minted roadmaps/phases/steps/references. Uses
@@ -84,6 +69,14 @@ function purge(obj: Record<string, boolean>, ids: Set<string>): Record<string, b
   const out: Record<string, boolean> = {};
   for (const k of Object.keys(obj)) if (!ids.has(k)) out[k] = obj[k];
   return out;
+}
+
+// Return `obj` without `key` (a fresh object), or `obj` unchanged when the key
+// is absent — so an untouched map keeps its referential identity for React.
+function omitKey<T>(obj: Record<string, T>, key: string): Record<string, T> {
+  if (!(key in obj)) return obj;
+  const { [key]: _drop, ...rest } = obj;
+  return rest;
 }
 
 const clamp = (n: number, max: number): number => Math.max(0, Math.min(n, max));
@@ -324,11 +317,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Standard variables are never deletable.
   const deleteVar = useCallback((name: string) => {
     if (STD_NAMES.has(name)) return;
-    setValues((v) => {
-      if (!(name in v)) return v;
-      const { [name]: _drop, ...rest } = v;
-      return rest;
-    });
+    setValues((v) => omitKey(v, name));
   }, []);
 
   // Rename a custom variable, cascading $OLD -> $NEW across every command
@@ -346,7 +335,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return -1;
       }
       if (next === oldName) return 0;
-      const defined = new Set<string>([...STD_NAMES, ...Object.keys(valuesRef.current)]);
+      const defined = definedNames(valuesRef.current);
       if (defined.has(next)) {
         flash('Ce nom existe déjà');
         return -1;
@@ -397,21 +386,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Drop progression + panel-open state for a set of step ids (shared by the
+  // roadmap/phase/step delete actions and resetProgress).
+  const purgeProgress = useCallback((ids: Set<string>) => {
+    setChecks((c) => purge(c, ids));
+    setOpenSteps((o) => purge(o, ids));
+  }, []);
+
   const deleteRoadmap = useCallback(
     (id: string) => {
       const target = roadmapsRef.current.find((r) => r.id === id);
       const ids = new Set(target ? stepIdsOf(target) : []);
-      setChecks((c) => purge(c, ids));
-      setOpenSteps((o) => purge(o, ids));
+      purgeProgress(ids);
       setRoadmaps((rms) => rms.filter((r) => r.id !== id));
       setActiveRoadmap((prev) => {
         if (prev !== id) return prev;
         const remaining = roadmapsRef.current.filter((r) => r.id !== id);
-        return remaining[0] ? remaining[0].id : null;
+        return remaining[0]?.id ?? null;
       });
       flash('Méthodologie supprimée');
     },
-    [flash],
+    [flash, purgeProgress],
   );
 
   const addPhase = useCallback((roadmapId: string, label: string) => {
@@ -438,15 +433,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const r = roadmapsRef.current.find((x) => x.id === roadmapId);
     const p = r?.phases.find((ph) => ph.id === phaseId);
     const ids = new Set(p ? p.steps.map((s) => s.id) : []);
-    setChecks((c) => purge(c, ids));
-    setOpenSteps((o) => purge(o, ids));
+    purgeProgress(ids);
     setRoadmaps((rms) => {
       const next = cloneRoadmaps(rms);
       const rr = next.find((x) => x.id === roadmapId);
       if (rr) rr.phases = rr.phases.filter((ph) => ph.id !== phaseId);
       return next;
     });
-  }, []);
+  }, [purgeProgress]);
 
   const addStep = useCallback(
     (roadmapId: string, phaseId: string, text: string, commandId?: string) => {
@@ -464,15 +458,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const deleteStep = useCallback((roadmapId: string, phaseId: string, stepId: string) => {
     const ids = new Set([stepId]);
-    setChecks((c) => purge(c, ids));
-    setOpenSteps((o) => purge(o, ids));
+    purgeProgress(ids);
     setRoadmaps((rms) => {
       const next = cloneRoadmaps(rms);
       const p = next.find((x) => x.id === roadmapId)?.phases.find((ph) => ph.id === phaseId);
       if (p) p.steps = p.steps.filter((s) => s.id !== stepId);
       return next;
     });
-  }, []);
+  }, [purgeProgress]);
 
   // Cross-phase drag is allowed. Array reorder only — step ids are stable, so
   // checks/openSteps need NO remap (SPEC KEY DECISIONS).
@@ -519,9 +512,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const resetProgress = useCallback((roadmapId: string) => {
     const r = roadmapsRef.current.find((x) => x.id === roadmapId);
     const ids = new Set(r ? stepIdsOf(r) : []);
-    setChecks((c) => purge(c, ids));
-    setOpenSteps((o) => purge(o, ids));
-  }, []);
+    purgeProgress(ids);
+  }, [purgeProgress]);
 
   // --- M1: References actions ---
 
@@ -537,21 +529,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEditingRefId(id);
   }, []);
 
+  // Shared title/URL validation for add/update reference: flashes the matching
+  // error and returns null on failure, or the sanitized URL on success.
+  const resolveRefUrl = useCallback(
+    (title: string, raw: string): string | null => {
+      if (!title || !raw) {
+        flash('Titre et URL requis');
+        return null;
+      }
+      const url = sanitizeUrl(raw);
+      if (!url) {
+        flash('URL invalide');
+        return null;
+      }
+      return url;
+    },
+    [flash],
+  );
+
   const addReference = useCallback(
     (input: { title: string; url: string; desc: string; tags: string[] }): boolean => {
       const title = input.title.trim();
       const raw = input.url.trim();
-      if (!title || !raw) {
-        flash('Titre et URL requis');
-        return false;
-      }
       // Sanitize: prefix https:// when scheme-less; only web + mail schemes are
       // allowed (blocks javascript:, data:, …).
-      const url = sanitizeUrl(raw);
-      if (!url) {
-        flash('URL invalide');
-        return false;
-      }
+      const url = resolveRefUrl(title, raw);
+      if (!url) return false;
       const id = mint('ref');
       setReferences((refs) => [
         ...refs,
@@ -561,7 +564,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       flash('Référence ajoutée');
       return true;
     },
-    [flash, setAddingRef],
+    [flash, resolveRefUrl, setAddingRef],
   );
 
   const updateReference = useCallback(
@@ -573,15 +576,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!cur) return false;
       const title = (patch.title ?? cur.title).trim();
       const raw = (patch.url ?? cur.url).trim();
-      if (!title || !raw) {
-        flash('Titre et URL requis');
-        return false;
-      }
-      const url = sanitizeUrl(raw);
-      if (!url) {
-        flash('URL invalide');
-        return false;
-      }
+      const url = resolveRefUrl(title, raw);
+      if (!url) return false;
       const desc = patch.desc !== undefined ? patch.desc.trim() : cur.desc;
       const tags = patch.tags !== undefined ? cleanTags(patch.tags) : cur.tags;
       setReferences((refs) =>
@@ -591,7 +587,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       flash('Référence modifiée');
       return true;
     },
-    [flash, setAddingRef],
+    [flash, resolveRefUrl, setAddingRef],
   );
 
   const deleteReference = useCallback(
@@ -619,7 +615,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const setAdding = useCallback((b: boolean) => {
     setAddingState(b);
-    setEditingCommandId(null);
+    if (!b) setEditingCommandId(null);
   }, []);
 
   const openEditCommand = useCallback((id: string) => {
@@ -725,19 +721,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             p.steps = p.steps.map((s) => (s.commandId === id ? { ...s, commandId: undefined } : s));
         return next;
       });
-      setNotes((n) => {
-        if (!(id in n)) return n;
-        const { [id]: _drop, ...rest } = n;
-        return rest;
-      });
+      setNotes((n) => omitKey(n, id));
       flash('Commande supprimée');
     },
     [flash],
   );
 
   // --- M2: Cheatsheet actions ---
-
-  const setActiveSheet = useCallback((id: string) => setActiveSheetState(id), []);
 
   const addCheatsheet = useCallback((title?: string) => {
     const id = mint('cs');
@@ -761,7 +751,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setActiveSheetState((prev) => {
       if (prev !== id) return prev;
       const remaining = cheatsheetsRef.current.filter((s) => s.id !== id);
-      return remaining[0] ? remaining[0].id : '';
+      return remaining[0]?.id ?? '';
     });
   }, []);
 
@@ -946,7 +936,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addCommand,
       updateCommand,
       deleteCommand,
-      setActiveSheet,
+      setActiveSheet: setActiveSheetState,
       addCheatsheet,
       renameCheatsheet,
       setCheatsheetTarget,
@@ -1020,7 +1010,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addCommand,
       updateCommand,
       deleteCommand,
-      setActiveSheet,
       addCheatsheet,
       renameCheatsheet,
       setCheatsheetTarget,

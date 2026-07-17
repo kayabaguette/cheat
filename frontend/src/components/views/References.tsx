@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../../store';
 import type { Reference } from '../../types';
+import { fold, extractDomain } from '../../lib/format';
+import { MONO, cardBase, cardHead, cardIconBtn, tagBtn, toastShell, toastDot } from '../../lib/ui';
+import { EmptyState } from '../EmptyState';
 
 // Références — faithful port of the prototype's refs panel (~lines 303-330):
 // a responsive grid of reference cards (title link, external-open icon, an
@@ -9,10 +12,6 @@ import type { Reference } from '../../types';
 // filtered by the store's full-text query AND the active ref tag. Each href is
 // sanitized at render (only http/https/mailto are clickable). Tag chips toggle
 // the active ref-tag facet.
-
-function fold(s: string): string {
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-}
 
 // Parse once; returns null when the URL is unparseable.
 function parseUrl(raw: string): URL | null {
@@ -31,46 +30,14 @@ function sanitizeHref(raw: string): string | null {
   return ['http:', 'https:', 'mailto:'].includes(u.protocol) ? u.href : null;
 }
 
-// Human-readable origin shown under the title (www. stripped; the address for
-// mailto: links; the raw string as a last resort).
-function domainOf(raw: string): string {
-  const u = parseUrl(raw);
-  if (!u) return raw;
-  if (u.protocol === 'mailto:') return u.pathname;
-  return u.hostname.replace(/^www\./, '') || raw;
-}
-
 const page: CSSProperties = { padding: '22px 26px 70px' };
 const grid: CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
   gap: '13px',
 };
-const card: CSSProperties = {
-  background: 'var(--card)',
-  border: '1px solid var(--border)',
-  padding: 'var(--pad)',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '8px',
-};
-const cardHead: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: '8px' };
-const cardIconBtn: CSSProperties = {
-  cursor: 'pointer',
-  border: '1px solid var(--border2)',
-  background: 'transparent',
-  color: 'var(--muted)',
-  width: '24px',
-  height: '24px',
-  fontSize: '12px',
-  lineHeight: 1,
-  fontFamily: 'inherit',
-  flex: 'none',
-  padding: 0,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-};
+// Card gap is References-specific (8px vs Library's 9px) — spread the shared base.
+const card: CSSProperties = { ...cardBase, gap: '8px' };
 const titleLink: CSSProperties = {
   fontWeight: 600,
   fontSize: '14px',
@@ -82,7 +49,7 @@ const titleLink: CSSProperties = {
 const titlePlain: CSSProperties = { ...titleLink, cursor: 'default' };
 const openIcon: CSSProperties = { color: 'var(--muted)', flex: 'none', display: 'flex' };
 const domainStyle: CSSProperties = {
-  fontFamily: "'IBM Plex Mono', monospace",
+  fontFamily: MONO,
   fontSize: '11px',
   color: 'var(--faint)',
   overflow: 'hidden',
@@ -96,41 +63,10 @@ const tagsRow: CSSProperties = {
   gap: '6px',
   marginTop: '2px',
 };
-const tagBtn: CSSProperties = {
-  cursor: 'pointer',
-  border: 'none',
-  background: 'transparent',
-  color: 'var(--faint)',
-  fontSize: '11px',
-  fontFamily: "'IBM Plex Mono', monospace",
-  padding: 0,
-};
 const tagBtnOn: CSSProperties = { ...tagBtn, color: 'var(--acc)' };
-const emptyWrap: CSSProperties = { textAlign: 'center', padding: '80px 20px' };
-const emptyMono: CSSProperties = {
-  fontFamily: "'IBM Plex Mono', monospace",
-  fontSize: '13px',
-  color: 'var(--faint)',
-};
-const emptySub: CSSProperties = { fontSize: '13px', marginTop: '6px', color: 'var(--muted)' };
 // Undo toast (Q16) — same bottom-center chrome as the store <Toast>, above it
 // (zIndex 101), with an « Annuler » action that restores the deleted reference.
-const undoToast: CSSProperties = {
-  position: 'fixed',
-  bottom: '22px',
-  left: '50%',
-  transform: 'translateX(-50%)',
-  background: 'var(--elev)',
-  border: '1px solid var(--acc-line)',
-  color: 'var(--text)',
-  padding: '9px 16px',
-  fontSize: '12.5px',
-  boxShadow: '0 8px 30px rgba(0,0,0,.35)',
-  zIndex: 101,
-  display: 'flex',
-  alignItems: 'center',
-  gap: '12px',
-};
+const undoToast: CSSProperties = { ...toastShell, zIndex: 101, gap: '12px' };
 const undoBtn: CSSProperties = {
   cursor: 'pointer',
   border: 'none',
@@ -141,6 +77,8 @@ const undoBtn: CSSProperties = {
   fontFamily: 'inherit',
   padding: 0,
 };
+// Shared open-in-new-tab contract for every anchor in a reference card.
+const extLinkProps = { target: '_blank', rel: 'noopener noreferrer' } as const;
 
 function ExternalIcon() {
   return (
@@ -194,7 +132,7 @@ export function References() {
       if (activeRefTag && !r.tags.includes(activeRefTag)) return false;
       if (tokens.length) {
         const hay = fold(
-          [r.title, r.url, r.desc, r.tags.join(' '), domainOf(r.url)].join(' '),
+          [r.title, r.url, r.desc, r.tags.join(' '), extractDomain(r.url)].join(' '),
         );
         if (!tokens.every((t) => hay.includes(t))) return false;
       }
@@ -215,12 +153,12 @@ export function References() {
         <div style={grid}>
           {filtered.map((r) => {
             const href = sanitizeHref(r.url);
-            const domain = domainOf(r.url);
+            const domain = extractDomain(r.url);
             return (
               <div key={r.id} style={card}>
                 <div style={cardHead}>
                   {href ? (
-                    <a href={href} target="_blank" rel="noopener noreferrer" style={titleLink}>
+                    <a href={href} {...extLinkProps} style={titleLink}>
                       {r.title}
                     </a>
                   ) : (
@@ -229,8 +167,7 @@ export function References() {
                   {href && (
                     <a
                       href={href}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      {...extLinkProps}
                       title="Ouvrir"
                       style={openIcon}
                     >
@@ -245,7 +182,7 @@ export function References() {
                   </button>
                 </div>
                 {href ? (
-                  <a href={href} target="_blank" rel="noopener noreferrer" style={domainStyle}>
+                  <a href={href} {...extLinkProps} style={domainStyle}>
                     {domain}
                   </a>
                 ) : (
@@ -270,15 +207,15 @@ export function References() {
           })}
         </div>
       ) : (
-        <div style={emptyWrap}>
-          <div style={emptyMono}>// aucune référence</div>
-          <div style={emptySub}>Ajoute un lien utile avec le bouton « + Référence ».</div>
-        </div>
+        <EmptyState
+          mono="// aucune référence"
+          sub="Ajoute un lien utile avec le bouton « + Référence »."
+        />
       )}
     </div>
     {undo && (
       <div style={undoToast}>
-        <span style={{ width: '7px', height: '7px', flex: 'none', background: 'var(--acc)' }} />
+        <span style={toastDot} />
         Référence supprimée
         <button onClick={doUndo} style={undoBtn}>
           Annuler

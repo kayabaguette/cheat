@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../../store';
-import { STANDARD_VARS } from '../../lib/theme';
-import { resolve, toParts } from '../../lib/vars';
-import type { Command, Part } from '../../types';
+import { resolve } from '../../lib/vars';
+import { fold } from '../../lib/format';
+import { definedNames as buildDefinedNames } from '../../lib/varsets';
+import { cardBase, cardHead, cardIconBtn, codeWrap, tagBtn } from '../../lib/ui';
+import { CodeBlock } from '../CodeBlock';
+import { EmptyState } from '../EmptyState';
+import type { Command } from '../../types';
 
 // Library — the fully rendered module. Filters store.commands by the active
 // category/tool/tag/query from the store, groups the results by category then
@@ -13,23 +17,6 @@ import type { Command, Part } from '../../types';
 // ACTIVE sheet — D1/D2), a personal note, and edit/delete actions (D6). The tool
 // is shown only as the group sub-header — NOT as a per-card badge (A59; the tool
 // badge belongs to Cheatsheet entries).
-
-function fold(s: string): string {
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-}
-
-// Per-part styling for the three render states (§5.10 — the single authority).
-function partStyle(state: Part['state']): CSSProperties {
-  switch (state) {
-    case 'resolved':
-      return { color: 'var(--acc)', background: 'var(--acc-dim)' };
-    case 'undef':
-      return { color: 'var(--muted)', textDecoration: 'underline dotted' };
-    case 'empty':
-    default:
-      return {};
-  }
-}
 
 // --- static style objects -------------------------------------------------
 const page: CSSProperties = { padding: '22px 26px 70px' };
@@ -60,34 +47,7 @@ const grid: CSSProperties = {
   gridTemplateColumns: 'repeat(auto-fill, minmax(370px, 1fr))',
   gap: '13px',
 };
-const card: CSSProperties = {
-  background: 'var(--card)',
-  border: '1px solid var(--border)',
-  padding: 'var(--pad)',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '9px',
-};
-const cardHead: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: '8px' };
-// Per-card edit / delete actions (D6 full command CRUD). Styled as the small
-// square icon buttons used elsewhere (phase/step controls) — border shorthand so
-// no stale border-color, transparent base.
-const cardIconBtn: CSSProperties = {
-  cursor: 'pointer',
-  border: '1px solid var(--border2)',
-  background: 'transparent',
-  color: 'var(--muted)',
-  width: '24px',
-  height: '24px',
-  fontSize: '12px',
-  lineHeight: 1,
-  fontFamily: 'inherit',
-  flex: 'none',
-  padding: 0,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-};
+const card: CSSProperties = { ...cardBase, gap: '9px' };
 const cardTitle: CSSProperties = {
   fontWeight: 600,
   fontSize: '13.5px',
@@ -101,38 +61,11 @@ const cardDesc: CSSProperties = {
   lineHeight: 1.45,
   marginTop: '-2px',
 };
-const codeWrap: CSSProperties = { position: 'relative' };
-// Copy button styling lives in the .copy-btn CSS class (index.css) so :hover and
-// :active feedback apply (inline styles would override the class rules).
-const pre: CSSProperties = {
-  margin: 0,
-  background: 'var(--code)',
-  border: '1px solid var(--border)',
-  padding: '11px 12px',
-  paddingRight: '44px',
-  overflowX: 'auto',
-  fontFamily: "'IBM Plex Mono', monospace",
-  fontSize: '12.5px',
-  lineHeight: 1.65,
-  color: 'var(--code-text)',
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word',
-};
-const prompt: CSSProperties = { color: 'var(--acc)', userSelect: 'none' };
 const tagsRow: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: '9px',
   flexWrap: 'wrap',
-};
-const tagBtn: CSSProperties = {
-  cursor: 'pointer',
-  border: 'none',
-  background: 'transparent',
-  color: 'var(--faint)',
-  fontSize: '11px',
-  fontFamily: "'IBM Plex Mono', monospace",
-  padding: 0,
 };
 const addBase: CSSProperties = {
   cursor: 'pointer',
@@ -168,13 +101,6 @@ const noteArea: CSSProperties = {
   padding: '6px 8px',
   lineHeight: 1.4,
 };
-const emptyWrap: CSSProperties = { textAlign: 'center', padding: '80px 20px' };
-const emptyMono: CSSProperties = {
-  fontFamily: "'IBM Plex Mono', monospace",
-  fontSize: '13px',
-  color: 'var(--faint)',
-};
-const emptySub: CSSProperties = { fontSize: '13px', marginTop: '6px', color: 'var(--muted)' };
 
 function CopyIcon() {
   return (
@@ -247,10 +173,7 @@ export function Library() {
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const definedNames = useMemo(
-    () => new Set<string>([...STANDARD_VARS.map((v) => v.name), ...Object.keys(values)]),
-    [values],
-  );
+  const definedNames = useMemo(() => buildDefinedNames(values), [values]);
 
   // Category lookup + first-seen tool order per category, derived live from the
   // store so added/edited/deleted commands and custom categories are reflected.
@@ -316,11 +239,14 @@ export function Library() {
     };
     try {
       const p = navigator.clipboard?.writeText(resolve(template, values));
-      // Toast reflects the real clipboard result (Q53).
+      // Success is flashed ONLY when writeText resolves; a missing clipboard API,
+      // a rejected promise, or a synchronous throw all surface the failure toast
+      // (no false success — matches the shared CopyButton fix). Toast reflects the
+      // real clipboard result (Q53).
       if (p && typeof p.then === 'function') {
         p.then(done, () => flash('Échec de la copie'));
       } else {
-        done();
+        flash('Échec de la copie');
       }
     } catch {
       flash('Échec de la copie');
@@ -396,7 +322,6 @@ export function Library() {
                     </div>
                     <div style={grid}>
                       {tl.commands.map((c) => {
-                        const parts = toParts(c.template, values, definedNames);
                         const inSheet = sheetIds.has(c.id);
                         return (
                           <div key={c.id} style={card}>
@@ -419,6 +344,9 @@ export function Library() {
                             </div>
                             {c.desc && <div style={cardDesc}>{c.desc}</div>}
                             <div style={codeWrap}>
+                              {/* Copy button styling lives in the .copy-btn CSS class (index.css)
+                                  so :hover / :active feedback apply (inline styles would override
+                                  the class rules). */}
                               <button
                                 onClick={() => copy(c.id, c.template)}
                                 title="Copier"
@@ -426,14 +354,7 @@ export function Library() {
                               >
                                 {copiedId === c.id ? <CheckIcon /> : <CopyIcon />}
                               </button>
-                              <pre style={pre}>
-                                <span style={prompt}>$ </span>
-                                {parts.map((p, i) => (
-                                  <span key={i} style={partStyle(p.state)}>
-                                    {p.text}
-                                  </span>
-                                ))}
-                              </pre>
+                              <CodeBlock template={c.template} values={values} definedNames={definedNames} />
                             </div>
                             <div style={tagsRow}>
                               {c.tags.map((t) => (
@@ -470,10 +391,7 @@ export function Library() {
           ))}
         </div>
       ) : (
-        <div style={emptyWrap}>
-          <div style={emptyMono}>// aucune commande</div>
-          <div style={emptySub}>Modifie ta recherche ou réinitialise les filtres.</div>
-        </div>
+        <EmptyState mono="// aucune commande" sub="Modifie ta recherche ou réinitialise les filtres." />
       )}
     </div>
   );
