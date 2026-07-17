@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -53,7 +54,13 @@ var distFS embed.FS
 func main() {
 	portFlag := flag.String("port", "", "port to listen on (overrides CHEAT_PORT; default "+defaultPort+")")
 	hostFlag := flag.String("host", "", "host/interface to bind (overrides CHEAT_HOST; default 0.0.0.0 — all interfaces)")
+	healthFlag := flag.Bool("healthcheck", false, "probe GET /api/health then exit 0/1 (for the container HEALTHCHECK; no shell needed)")
 	flag.Parse()
+
+	// Self-probe mode for the container HEALTHCHECK (distroless has no shell/curl).
+	if *healthFlag {
+		os.Exit(runHealthcheck(resolveHost(*hostFlag), resolvePort(*portFlag)))
+	}
 
 	port := resolvePort(*portFlag)
 	addr := resolveHost(*hostFlag) + ":" + port
@@ -66,6 +73,7 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(securityHeaders())
 	// Minimal access log: method, path, status, latency only — never bodies,
 	// query params, or bound SQL params (SPEC Q178, OPSEC).
 	r.Use(gin.LoggerWithFormatter(minimalLogFormatter))
@@ -193,6 +201,44 @@ func minimalLogFormatter(p gin.LogFormatterParams) string {
 		p.Method + " " + p.Path + " " +
 		http.StatusText(p.StatusCode) + " " +
 		p.Latency.String() + "\n"
+}
+
+// securityHeaders sets defense-in-depth response headers on every response. The
+// SPA is fully same-origin and self-contained (one bundled script + stylesheet,
+// self-hosted fonts, /api same-origin fetch), so a strict CSP needs no
+// 'unsafe-inline': React applies inline styles via the CSSOM, which style-src
+// does not govern. This bounds the blast radius if the LAN-exposed port is hit.
+func securityHeaders() gin.HandlerFunc {
+	const csp = "default-src 'none'; script-src 'self'; style-src 'self'; " +
+		"img-src 'self' data:; font-src 'self'; connect-src 'self'; " +
+		"base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+	return func(c *gin.Context) {
+		h := c.Writer.Header()
+		h.Set("Content-Security-Policy", csp)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("X-Frame-Options", "DENY")
+		c.Next()
+	}
+}
+
+// runHealthcheck probes GET /api/health on the configured host:port and returns
+// a process exit code (0 healthy, 1 otherwise). Used by the container
+// HEALTHCHECK via `cheat -healthcheck`; when bound to 0.0.0.0 it dials loopback.
+func runHealthcheck(host, port string) int {
+	if host == "0.0.0.0" || host == "" {
+		host = "127.0.0.1"
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://" + host + ":" + port + "/api/health")
+	if err != nil {
+		return 1
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 1
+	}
+	return 0
 }
 
 const devPlaceholderPage = `<!doctype html>
