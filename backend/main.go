@@ -1,15 +1,16 @@
 // Command cheat is the single-binary backend for the Cheat app (M0 scaffold).
 //
 // It embeds the built Vite SPA (frontend/dist) and serves it same-origin
-// alongside a minimal JSON API, bound to the loopback interface only
-// (127.0.0.1). This is the lean M0 server: no database and no entity
-// endpoints yet — only GET /api/health plus the embedded SPA with an
-// history/SPA fallback to index.html.
+// alongside a minimal JSON API, plus GET /api/health and a history/SPA
+// fallback to index.html.
 //
-// Networking is hard-bound to loopback (SPEC Q168/R1): there is no LAN mode,
-// no TLS, and no auth token. The listen port defaults to 8787 and can be
-// overridden with the --port flag or the CHEAT_PORT environment variable
-// (SPEC Q195); a port clash fails loudly.
+// Networking: the listen host defaults to 0.0.0.0 (all interfaces — LAN
+// exposed) and can be overridden with the --host flag or the CHEAT_HOST env
+// (e.g. CHEAT_HOST=127.0.0.1 to restore loopback-only). The port defaults to
+// 8787 (--port / CHEAT_PORT, SPEC Q195); a bind clash fails loudly.
+// NOTE: there is NO auth and NO TLS — binding 0.0.0.0 exposes the entire
+// (cleartext) dataset to anyone who can reach the port. This intentionally
+// overrides the loopback-only posture of SPEC R1/Q168.
 package main
 
 import (
@@ -50,11 +51,12 @@ const devPlaceholderSentinel = "CHEAT_DEV_PLACEHOLDER"
 var distFS embed.FS
 
 func main() {
-	portFlag := flag.String("port", "", "loopback port to listen on (overrides CHEAT_PORT; default "+defaultPort+")")
+	portFlag := flag.String("port", "", "port to listen on (overrides CHEAT_PORT; default "+defaultPort+")")
+	hostFlag := flag.String("host", "", "host/interface to bind (overrides CHEAT_HOST; default 0.0.0.0 — all interfaces)")
 	flag.Parse()
 
 	port := resolvePort(*portFlag)
-	addr := "127.0.0.1:" + port
+	addr := resolveHost(*hostFlag) + ":" + port
 
 	// Open the persistence DB first; a missing/unopenable DB is fatal (fail loud).
 	db := mustOpenDB(resolveDBPath())
@@ -86,6 +88,18 @@ func main() {
 	if err := r.Run(addr); err != nil {
 		log.Fatalf("cheat: failed to bind %s: %v", addr, err)
 	}
+}
+
+// resolveHost picks the listen host: --host flag, then CHEAT_HOST env, then
+// 0.0.0.0 (all interfaces). Set CHEAT_HOST=127.0.0.1 for loopback-only.
+func resolveHost(flagVal string) string {
+	if flagVal != "" {
+		return flagVal
+	}
+	if env := strings.TrimSpace(os.Getenv("CHEAT_HOST")); env != "" {
+		return env
+	}
+	return "0.0.0.0"
 }
 
 // resolvePort picks the listen port: --port flag, then CHEAT_PORT env, then

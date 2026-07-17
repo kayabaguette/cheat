@@ -4,6 +4,24 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.3.0] — 2026-07-17
+
+### Changed
+- **Networking — LAN exposure (overrides the loopback-only R1 posture).** The
+  container no longer uses `--network host`: it runs on a normal bridge network
+  with the port published on `0.0.0.0` (`-p 0.0.0.0:8787:8787`), and the server
+  binds `0.0.0.0` by default. The bind host is configurable via `CHEAT_HOST`
+  (or `--host`); the publish mapping via the `PUBLISH` make variable.
+- Also alphabetically sorted the sidebar tools per category, and stopped
+  seeding a command's own tool name as one of its tags.
+
+### Security / OPSEC
+- **The app is now reachable on the LAN with no authentication and no TLS.**
+  Anyone who can reach the host on `CHEAT_PORT` has full read/write access to
+  the whole (cleartext) dataset and the API. Restore loopback-only with
+  `make up CHEAT_HOST=127.0.0.1 PUBLISH='-p 127.0.0.1:8787:8787'`, firewall the
+  port, or use an SSH local port-forward. Outbound egress is still zero.
+
 ## [0.2.0] — 2026-07-17
 
 Variable-system overhaul: custom variables become first-class, and the default

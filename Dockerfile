@@ -25,12 +25,11 @@ RUN go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/cheat
 # --- Stage 3: minimal runtime ----------------------------------------------
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=backend /out/cheat /cheat
-# The server binds 127.0.0.1 only (loopback, SPEC Q168). Inside a container
-# that is NOT reachable via a published port. To use the image, either run
-# with the host network (recommended for this loopback-only design):
-#     docker run --rm --network host cheat:latest
-# A plain `-p 8787:8787` mapping will NOT reach a 127.0.0.1 listener. The
-# localhost bind is intentional (zero network egress); do not expose it to a
-# LAN. For remote access use an SSH local port-forward, not a LAN publish.
+# The server binds CHEAT_HOST (default 0.0.0.0 — all interfaces) so it is
+# reachable via a published port on a normal bridge network:
+#     docker run --rm -p 0.0.0.0:8787:8787 cheat:latest   (LAN-exposed)
+# There is NO auth and NO TLS: publishing to 0.0.0.0 exposes the whole
+# (cleartext) dataset to the LAN. For loopback-only, set CHEAT_HOST=127.0.0.1
+# and publish on 127.0.0.1 (or use an SSH local port-forward for remote access).
 EXPOSE 8787
 ENTRYPOINT ["/cheat"]
