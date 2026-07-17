@@ -41,7 +41,8 @@ authoritative specification. UI language is **French**; in-repo docs are English
 
 One self-contained **Go binary** (Gin) embeds the compiled **Vite + React +
 TypeScript** SPA via `go:embed` and serves it together with a same-origin REST
-API, bound to **`127.0.0.1`**. Storage is **pure-Go GORM/SQLite** (no CGO →
+API, bound to **`0.0.0.0`** by default (all interfaces, LAN-exposed; set
+`CHEAT_HOST=127.0.0.1` for loopback-only). Storage is **pure-Go GORM/SQLite** (no CGO →
 static binary). **Zero network egress**: no CDN, self-hosted fonts, no telemetry.
 
 API (lean, whole-`AppState`): `GET`/`PUT /api/state`, `POST /api/import`,
@@ -64,14 +65,18 @@ make clean      # remove container, image and volumes
 - Change the port: `make up CHEAT_PORT=9000`.
 - The SQLite database lives in the `cheat-data` volume (`CHEAT_DB=/data/cheat.db`
   inside the container) so it survives restarts; `make clean` removes it.
-- Loopback-only by design: containers use `--network host` so the process binds
-  the host's `127.0.0.1`. For remote access use an SSH local port-forward — never
-  expose it to a LAN.
+- **LAN-exposed by default**: the container runs on a normal bridge network with
+  the port published on `0.0.0.0` (`-p 0.0.0.0:8787:8787`) and the server binds
+  `0.0.0.0`. **There is no authentication and no TLS** — anyone who can reach the
+  host on this port has full read/write access to the whole (cleartext) dataset.
+  To restrict to loopback: `make up CHEAT_HOST=127.0.0.1 PUBLISH='-p 127.0.0.1:8787:8787'`
+  (or firewall the port / use an SSH local port-forward).
 
 ## Security / OPSEC
 
-- Binds `127.0.0.1` only; **zero network egress** (self-hosted assets, no
-  telemetry); `spellcheck="false"` on every field (prevents field-content
+- Binds **`0.0.0.0`** by default — **LAN-exposed, with no auth and no TLS** (set
+  `CHEAT_HOST=127.0.0.1` to restore loopback-only). **Zero network egress**
+  (self-hosted assets, no telemetry); `spellcheck="false"` on every field (prevents field-content
   exfiltration by the browser/extensions); outbound reference links use
   `rel="noopener noreferrer"`.
 - Variable **values** (`$PASS`, target IPs, …) are **memory-only** — never
