@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../../store';
-import { STANDARD_VARS } from '../../lib/theme';
-import { resolve, toParts } from '../../lib/vars';
-import type { Command, Part } from '../../types';
+import { resolve } from '../../lib/vars';
+import { definedNames as buildDefinedNames } from '../../lib/varsets';
+import { dateStamp } from '../../lib/format';
+import { codeWrap, tabBar, pillBase, pillOn } from '../../lib/ui';
+import { CodeBlock } from '../CodeBlock';
+import { EmptyState } from '../EmptyState';
+import type { Command } from '../../types';
 
 // Cheatsheet — faithful port of the prototype's cheatsheet view (~lines 332-408),
 // extended for the M2 model (D1 multiple named sheets, D2 single global value
@@ -19,19 +23,6 @@ import type { Command, Part } from '../../types';
 // an opt-in « résoudre les variables » toggle; « Exporter en PDF » calls
 // window.print() over the print-only <PrintRoot>. All exports are zero-egress
 // (clipboard / Blob object-URL only).
-
-// Per-part styling for the three A5 render states (§5.10), identical to Library.
-function partStyle(state: Part['state']): CSSProperties {
-  switch (state) {
-    case 'resolved':
-      return { color: 'var(--acc)', background: 'var(--acc-dim)' };
-    case 'undef':
-      return { color: 'var(--muted)', textDecoration: 'underline dotted' };
-    case 'empty':
-    default:
-      return {};
-  }
-}
 
 // Non-sensitive meta variables surfaced as chips (PASS/LPORT excluded, matching
 // the prototype's cheatsheet meta strip).
@@ -58,40 +49,10 @@ function slug(s: string): string {
   return out || 'cheatsheet';
 }
 
-// Local YYYY-MM-DD stamp appended to the export filename.
-function dateStamp(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
 // --- static style objects (ported from the prototype) ---------------------
 const page: CSSProperties = { padding: '26px 26px 80px', display: 'flex', justifyContent: 'center' };
 const column: CSSProperties = { width: '100%', maxWidth: '840px' };
 
-const tabBar: CSSProperties = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: '7px',
-  marginBottom: '14px',
-  alignItems: 'center',
-};
-const pillBase: CSSProperties = {
-  cursor: 'pointer',
-  border: '1px solid var(--border2)',
-  background: 'var(--surface2)',
-  color: 'var(--muted)',
-  padding: '6px 12px',
-  fontSize: '12.5px',
-  fontWeight: 600,
-  fontFamily: 'inherit',
-};
-const pillOn: CSSProperties = {
-  ...pillBase,
-  background: 'var(--acc-dim)',
-  color: 'var(--acc)',
-  border: '1px solid var(--acc-line)',
-};
 const addPill: CSSProperties = {
   cursor: 'pointer',
   border: '1px dashed var(--border2)',
@@ -233,22 +194,6 @@ const ctrlBtn: CSSProperties = {
   padding: 0,
 };
 const itemDesc: CSSProperties = { fontSize: '12px', color: 'var(--muted)', marginBottom: '7px' };
-const codeWrap: CSSProperties = { position: 'relative' };
-const pre: CSSProperties = {
-  margin: 0,
-  background: 'var(--code)',
-  border: '1px solid var(--border)',
-  padding: '11px 12px',
-  paddingRight: '44px',
-  overflowX: 'auto',
-  fontFamily: "'IBM Plex Mono', monospace",
-  fontSize: '12.5px',
-  lineHeight: 1.65,
-  color: 'var(--code-text)',
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word',
-};
-const prompt: CSSProperties = { color: 'var(--acc)', userSelect: 'none' };
 const noteBlock: CSSProperties = {
   marginTop: '8px',
   fontSize: '12px',
@@ -257,15 +202,6 @@ const noteBlock: CSSProperties = {
   paddingLeft: '10px',
   lineHeight: 1.45,
 };
-
-const emptyWrap: CSSProperties = { textAlign: 'center', padding: '64px 20px' };
-const emptyWrapTall: CSSProperties = { textAlign: 'center', padding: '80px 20px' };
-const emptyMono: CSSProperties = {
-  fontFamily: "'IBM Plex Mono', monospace",
-  fontSize: '13px',
-  color: 'var(--faint)',
-};
-const emptySub: CSSProperties = { fontSize: '13px', marginTop: '6px', color: 'var(--muted)' };
 
 function CopyIcon() {
   return (
@@ -321,10 +257,7 @@ export function Cheatsheet() {
   const [resolveMd, setResolveMd] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const definedNames = useMemo(
-    () => new Set<string>([...STANDARD_VARS.map((v) => v.name), ...Object.keys(values)]),
-    [values],
-  );
+  const definedNames = useMemo(() => buildDefinedNames(values), [values]);
   const cmdById = useMemo(() => new Map(commands.map((c) => [c.id, c])), [commands]);
   const catByKey = useMemo(() => new Map(categories.map((c) => [c.key, c])), [categories]);
 
@@ -359,10 +292,24 @@ export function Cheatsheet() {
   };
 
   const copyOne = (c: Command) => {
-    copyText(resolve(c.template, values), () => {
+    const done = () => {
       setCopiedId(c.id);
       setTimeout(() => setCopiedId((cur) => (cur === c.id ? null : cur)), 1200);
-    });
+      flash('Copié dans le presse-papier');
+    };
+    try {
+      const p = navigator.clipboard?.writeText(resolve(c.template, values));
+      // Success is flashed ONLY when writeText resolves; a missing clipboard API,
+      // a rejected promise, or a synchronous throw all surface the failure toast
+      // (no false success — matches the shared CopyButton fix).
+      if (p && typeof p.then === 'function') {
+        p.then(done, () => flash('Échec de la copie'));
+      } else {
+        flash('Échec de la copie');
+      }
+    } catch {
+      flash('Échec de la copie');
+    }
   };
 
   // « Copier tout » — RESOLVED commands, one per line (Q99: clipboard resolves).
@@ -452,10 +399,7 @@ export function Cheatsheet() {
         </div>
 
         {!sheet ? (
-          <div style={emptyWrapTall}>
-            <div style={emptyMono}>// aucune cheatsheet</div>
-            <div style={emptySub}>Crée-en une avec le bouton « + » ci-dessus.</div>
-          </div>
+          <EmptyState mono="// aucune cheatsheet" sub="Crée-en une avec le bouton « + » ci-dessus." />
         ) : (
           <>
             {/* Export toolbar */}
@@ -564,14 +508,7 @@ export function Cheatsheet() {
                             >
                               <CopyIcon />
                             </button>
-                            <pre style={pre}>
-                              <span style={prompt}>$ </span>
-                              {toParts(c.template, values, definedNames).map((p, k) => (
-                                <span key={k} style={partStyle(p.state)}>
-                                  {p.text}
-                                </span>
-                              ))}
-                            </pre>
+                            <CodeBlock template={c.template} values={values} definedNames={definedNames} />
                           </div>
                           {hasNote && <div style={noteBlock}>{note}</div>}
                         </div>
@@ -580,12 +517,11 @@ export function Cheatsheet() {
                   })}
                 </div>
               ) : (
-                <div style={emptyWrap}>
-                  <div style={emptyMono}>// cheatsheet vide</div>
-                  <div style={emptySub}>
-                    Ajoute des commandes depuis la bibliothèque avec le bouton « + Cheatsheet ».
-                  </div>
-                </div>
+                <EmptyState
+                  mono="// cheatsheet vide"
+                  sub="Ajoute des commandes depuis la bibliothèque avec le bouton « + Cheatsheet »."
+                  padding="64px 20px"
+                />
               )}
             </div>
           </>

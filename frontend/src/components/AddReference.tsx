@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { TagPicker, mergeTags } from './TagPicker';
+import { Modal } from './Modal';
+import { inputBase, monoInput } from '../lib/ui';
 
 // « Nouvelle référence » / « Modifier la référence » modal — faithful port of the
 // prototype's addRef dialog (~lines 461-492), extended with an edit mode.
@@ -9,71 +11,13 @@ import { TagPicker, mergeTags } from './TagPicker';
 // tags). When store.editingRefId is set the form PREFILLS from that reference and
 // submits via updateReference; otherwise it submits via addReference. Both store
 // actions normalize + sanitize the URL and close the modal on success.
+//
+// Overlay / panel / header / body / footer chrome comes from the shared <Modal>
+// (maxWidth 500px, non-sticky — matching this form's original layout). Only the
+// field body and footer buttons live here.
 
-const overlay: CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  background: 'rgba(6,7,9,.66)',
-  backdropFilter: 'blur(2px)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 80,
-  padding: '20px',
-};
-const panel: CSSProperties = {
-  width: '100%',
-  maxWidth: '500px',
-  maxHeight: '90vh',
-  overflowY: 'auto',
-  background: 'var(--card)',
-  border: '1px solid var(--border2)',
-  boxShadow: '0 20px 60px rgba(0,0,0,.4)',
-};
-const header: CSSProperties = {
-  padding: '16px 20px',
-  borderBottom: '1px solid var(--border)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-};
-const closeBtn: CSSProperties = {
-  cursor: 'pointer',
-  border: 'none',
-  background: 'transparent',
-  color: 'var(--muted)',
-  fontSize: '16px',
-};
-const body: CSSProperties = {
-  padding: '18px 20px',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '14px',
-};
 const fieldLabel: CSSProperties = { fontSize: '11px', color: 'var(--muted)', marginBottom: '6px' };
-const inputBase: CSSProperties = {
-  width: '100%',
-  background: 'var(--code)',
-  border: '1px solid var(--border2)',
-  color: 'var(--text)',
-  fontFamily: 'inherit',
-  fontSize: '13px',
-  padding: '8px 10px',
-};
-const urlInput: CSSProperties = {
-  ...inputBase,
-  fontFamily: "'IBM Plex Mono', monospace",
-  fontSize: '12.5px',
-};
 const descInput: CSSProperties = { ...inputBase, resize: 'vertical', lineHeight: 1.5 };
-const footer: CSSProperties = {
-  padding: '14px 20px',
-  borderTop: '1px solid var(--border)',
-  display: 'flex',
-  justifyContent: 'flex-end',
-  gap: '9px',
-  alignItems: 'center',
-};
 const errStyle: CSSProperties = { flex: 1, color: '#e5484d', fontSize: '12px' };
 const cancelBtn: CSSProperties = {
   cursor: 'pointer',
@@ -171,65 +115,12 @@ export function AddReference() {
   };
 
   return (
-    <div onClick={close} style={overlay}>
-      <div onClick={(e) => e.stopPropagation()} style={panel}>
-        <div style={header}>
-          <div style={{ fontWeight: 600, fontSize: '14px' }}>
-            {editingRefId ? 'Modifier la référence' : 'Nouvelle référence'}
-          </div>
-          <button onClick={close} style={closeBtn}>
-            ✕
-          </button>
-        </div>
-
-        <div style={body}>
-          <div>
-            <div style={fieldLabel}>Titre</div>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Ex : HackTricks"
-              spellCheck="false"
-              autoCorrect="off"
-              autoCapitalize="off"
-              style={inputBase}
-            />
-          </div>
-          <div>
-            <div style={fieldLabel}>URL</div>
-            <input
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://…"
-              spellCheck="false"
-              autoCorrect="off"
-              autoCapitalize="off"
-              style={urlInput}
-            />
-          </div>
-          <div>
-            <div style={fieldLabel}>Description</div>
-            <textarea
-              value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-              rows={2}
-              placeholder="À quoi sert ce lien ?"
-              spellCheck="false"
-              autoCorrect="off"
-              autoCapitalize="off"
-              style={descInput}
-            />
-          </div>
-          <TagPicker
-            all={existingTags}
-            selected={tagsSel}
-            onToggle={toggleTag}
-            text={tagsText}
-            onText={setTagsText}
-          />
-        </div>
-
-        <div style={footer}>
+    <Modal
+      title={editingRefId ? 'Modifier la référence' : 'Nouvelle référence'}
+      onClose={close}
+      maxWidth="500px"
+      footer={
+        <>
           {error && <div style={errStyle}>{error}</div>}
           <button onClick={close} style={cancelBtn}>
             Annuler
@@ -237,8 +128,53 @@ export function AddReference() {
           <button onClick={submit} style={submitBtn}>
             {editingRefId ? 'Enregistrer' : 'Ajouter'}
           </button>
-        </div>
+        </>
+      }
+    >
+      <div>
+        <div style={fieldLabel}>Titre</div>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Ex : HackTricks"
+          spellCheck="false"
+          autoCorrect="off"
+          autoCapitalize="off"
+          style={inputBase}
+        />
       </div>
-    </div>
+      <div>
+        <div style={fieldLabel}>URL</div>
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://…"
+          spellCheck="false"
+          autoCorrect="off"
+          autoCapitalize="off"
+          style={monoInput}
+        />
+      </div>
+      <div>
+        <div style={fieldLabel}>Description</div>
+        <textarea
+          value={desc}
+          onChange={(e) => setDesc(e.target.value)}
+          rows={2}
+          placeholder="À quoi sert ce lien ?"
+          spellCheck="false"
+          autoCorrect="off"
+          autoCapitalize="off"
+          style={descInput}
+        />
+      </div>
+      <TagPicker
+        all={existingTags}
+        selected={tagsSel}
+        onToggle={toggleTag}
+        text={tagsText}
+        onText={setTagsText}
+      />
+    </Modal>
   );
 }

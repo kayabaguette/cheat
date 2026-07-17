@@ -6,6 +6,14 @@ import type { Part } from '../types';
 // escaped branch matches, capture group 1 is undefined.
 const TOKEN_RE = /\\\$|\$([A-Z_][A-Z0-9_]*)/g;
 
+// Fresh stateful regex for the exec-driven loops below (each call owns its
+// lastIndex). resolve() intentionally keeps using the shared global TOKEN_RE
+// with String.replace, which resets lastIndex on its own.
+const freshTokenRe = (): RegExp => new RegExp(TOKEN_RE.source, 'g');
+
+// A $TOKEN name is substituted only when it is present with a non-empty value.
+const hasValue = (v: string | undefined): boolean => v != null && v !== '';
+
 // Single-pass substitution. Only names present with a non-empty value are
 // substituted; unknown or empty names keep their literal $TOKEN. An escaped
 // \$ collapses to a plain '$'.
@@ -13,14 +21,14 @@ export function resolve(template: string, values: Record<string, string>): strin
   return template.replace(TOKEN_RE, (match, name: string | undefined) => {
     if (name === undefined) return '$'; // escaped \$
     const val = values[name];
-    return val != null && val !== '' ? val : match;
+    return hasValue(val) ? val : match;
   });
 }
 
 // Distinct $TOKEN names referenced in a template (escaped \$ ignored), in
 // first-seen order. Used to auto-detect variables that are not yet defined.
 export function extractTokens(template: string): string[] {
-  const re = new RegExp(TOKEN_RE.source, 'g');
+  const re = freshTokenRe();
   const seen = new Set<string>();
   const out: string[] = [];
   let m: RegExpExecArray | null;
@@ -45,7 +53,7 @@ export function toParts(
   definedNames: Set<string>,
 ): Part[] {
   const parts: Part[] = [];
-  const re = new RegExp(TOKEN_RE.source, 'g');
+  const re = freshTokenRe();
   let last = 0;
   let m: RegExpExecArray | null;
 
@@ -61,7 +69,7 @@ export function toParts(
       parts.push({ text: m[0], state: 'undef' });
     } else {
       const val = values[name];
-      if (val != null && val !== '') {
+      if (hasValue(val)) {
         parts.push({ text: val, state: 'resolved' });
       } else {
         parts.push({ text: m[0], state: 'empty' });

@@ -1,7 +1,8 @@
 import { useRef } from 'react';
-import type { CSSProperties, ChangeEvent } from 'react';
+import type { CSSProperties, ChangeEvent, ReactNode } from 'react';
 import { useStore } from '../store';
 import { exportState, importState } from '../lib/api';
+import { fileStamp } from '../lib/format';
 import type { AppState } from '../types';
 
 // Dataset backup: export the whole AppState to a JSON file, or import one
@@ -22,26 +23,32 @@ const btn: CSSProperties = {
   flex: 'none',
 };
 
-function DownloadIcon() {
+// Shared <svg> chrome + the common "tray" path; each icon supplies only its two
+// differing arrow paths as children (keeps the rendered SVG byte-identical).
+function IconSvg({ children }: { children: ReactNode }) {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      {children}
+    </svg>
+  );
+}
+function DownloadIcon() {
+  return (
+    <IconSvg>
       <path d="M7 10l5 5 5-5" />
       <path d="M12 15V3" />
-    </svg>
+    </IconSvg>
   );
 }
 function UploadIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <IconSvg>
       <path d="M17 8l-5-5-5 5" />
       <path d="M12 3v12" />
-    </svg>
+    </IconSvg>
   );
 }
-
-const pad2 = (n: number) => String(n).padStart(2, '0');
 
 export function DataMenu() {
   const { flash } = useStore();
@@ -50,10 +57,7 @@ export function DataMenu() {
   const doExport = async () => {
     try {
       const state = await exportState();
-      const d = new Date();
-      const stamp =
-        `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}` +
-        `-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+      const stamp = fileStamp();
       const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

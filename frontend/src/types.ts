@@ -69,9 +69,9 @@ export interface AppState {
   references: Reference[];
   roadmaps: Roadmap[];
   cheatsheets: Cheatsheet[];
-  notes: Record<string, string>;
-  checks: Record<string, boolean>;
-  openSteps: Record<string, boolean>;
+  notes?: Record<string, string>;
+  checks?: Record<string, boolean>;
+  openSteps?: Record<string, boolean>;
   settings: {
     theme: ThemeName;
     activeRoadmap: string | null;

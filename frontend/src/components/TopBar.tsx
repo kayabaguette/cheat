@@ -50,7 +50,6 @@ export function TopBar() {
   // The add button is contextual to the active view: library opens the add-command
   // modal, methodology the new-roadmap inline form, references the add-reference
   // modal, and cheatsheet creates a new sheet (A60).
-  const showAdd = true;
   const addLabel =
     view === 'refs'
       ? 'Référence'
@@ -170,27 +169,25 @@ export function TopBar() {
         />
       </div>
 
-      {showAdd && (
-        <button
-          onClick={onAdd}
-          style={{
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            border: '1px solid var(--acc-line)',
-            background: 'var(--acc)',
-            color: 'var(--on-acc)',
-            padding: '7px 12px',
-            fontSize: '12.5px',
-            fontWeight: 600,
-            fontFamily: 'inherit',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <span style={{ fontSize: '15px', lineHeight: 1 }}>+</span> {addLabel}
-        </button>
-      )}
+      <button
+        onClick={onAdd}
+        style={{
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          border: '1px solid var(--acc-line)',
+          background: 'var(--acc)',
+          color: 'var(--on-acc)',
+          padding: '7px 12px',
+          fontSize: '12.5px',
+          fontWeight: 600,
+          fontFamily: 'inherit',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <span style={{ fontSize: '15px', lineHeight: 1 }}>+</span> {addLabel}
+      </button>
 
       <DataMenu />
 

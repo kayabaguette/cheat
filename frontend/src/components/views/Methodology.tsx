@@ -1,9 +1,12 @@
 import { Fragment, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../../store';
-import { STANDARD_VARS } from '../../lib/theme';
-import { resolve, toParts } from '../../lib/vars';
-import type { Part } from '../../types';
+import { resolve } from '../../lib/vars';
+import { definedNames } from '../../lib/varsets';
+import { MONO, tabBar, pillBase, pillOn, barTrackBase, codePreCompact } from '../../lib/ui';
+import { CodeBlock } from '../CodeBlock';
+import { EmptyState } from '../EmptyState';
+import { CopyButton } from '../CopyButton';
 
 // Méthodologie — faithful port of the prototype's roadmap/checklist view
 // (prototype markup ~lines 186-301, logic ~1047-1149), restructured to React.
@@ -24,20 +27,6 @@ import type { Part } from '../../types';
 // in edit mode — so step text is NOT an inline input here. It matches the
 // prototype exactly; a rename action + inline field can be added later.
 
-// Per-part styling for the three A5 render states (§5.10 — the single authority),
-// identical to the Library code blocks.
-function partStyle(state: Part['state']): CSSProperties {
-  switch (state) {
-    case 'resolved':
-      return { color: 'var(--acc)', background: 'var(--acc-dim)' };
-    case 'undef':
-      return { color: 'var(--muted)', textDecoration: 'underline dotted' };
-    case 'empty':
-    default:
-      return {};
-  }
-}
-
 // SPEC §7.5 progress: neutral state for empty scopes, never 0%/100% for a
 // partially-complete scope.
 function progress(done: number, total: number): { readout: string; width: string } {
@@ -53,37 +42,20 @@ function progress(done: number, total: number): { readout: string; width: string
 const page: CSSProperties = { padding: '24px 26px 80px', display: 'flex', justifyContent: 'center' };
 const column: CSSProperties = { width: '100%', maxWidth: '820px' };
 
-const tabBar: CSSProperties = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: '7px',
-  marginBottom: '14px',
-  alignItems: 'center',
-};
-const pillBase: CSSProperties = {
-  cursor: 'pointer',
-  border: '1px solid var(--border2)',
-  background: 'var(--surface2)',
-  color: 'var(--muted)',
-  padding: '6px 12px',
-  fontSize: '12.5px',
-  fontWeight: 600,
-  fontFamily: 'inherit',
-};
-const pillOn: CSSProperties = {
-  ...pillBase,
-  background: 'var(--acc-dim)',
-  color: 'var(--acc)',
-  border: '1px solid var(--acc-line)',
-};
-
-const newRmRow: CSSProperties = { display: 'flex', gap: '8px', marginBottom: '18px' };
-const newRmInput: CSSProperties = {
-  flex: 1,
+// Shared code-field base for this view's text inputs/selects: the four
+// declarations every input repeated. Each input spreads this, then adds its own
+// flex/width/fontSize/padding/fontWeight/cursor overrides.
+const inputBase: CSSProperties = {
   background: 'var(--code)',
   border: '1px solid var(--border2)',
   color: 'var(--text)',
   fontFamily: 'inherit',
+};
+
+const newRmRow: CSSProperties = { display: 'flex', gap: '8px', marginBottom: '18px' };
+const newRmInput: CSSProperties = {
+  ...inputBase,
+  flex: 1,
   fontSize: '12.5px',
   padding: '8px 10px',
 };
@@ -99,22 +71,14 @@ const newRmBtn: CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
-const emptyWrap: CSSProperties = { textAlign: 'center', padding: '70px 20px' };
-const emptyMono: CSSProperties = {
-  fontFamily: "'IBM Plex Mono', monospace",
-  fontSize: '13px',
-  color: 'var(--faint)',
-};
-const emptySub: CSSProperties = { fontSize: '13px', marginTop: '6px', color: 'var(--muted)' };
-
 const headerRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' };
 const rmTitle: CSSProperties = { fontWeight: 700, fontSize: '16px', letterSpacing: '-.01em' };
 const rmProgressText: CSSProperties = {
-  fontFamily: "'IBM Plex Mono', monospace",
+  fontFamily: MONO,
   fontSize: '12px',
   color: 'var(--muted)',
 };
-const barTrack: CSSProperties = { height: '6px', background: 'var(--border)', overflow: 'hidden' };
+const barTrack: CSSProperties = { ...barTrackBase, height: '6px' };
 const editBtnBase: CSSProperties = {
   cursor: 'pointer',
   border: '1px solid var(--border2)',
@@ -132,7 +96,6 @@ const editBtnOn: CSSProperties = {
   color: 'var(--acc)',
   border: '1px solid var(--acc-line)',
 };
-const resetBtn: CSSProperties = { ...editBtnBase };
 
 const rmEditBar: CSSProperties = {
   display: 'flex',
@@ -144,11 +107,8 @@ const rmEditBar: CSSProperties = {
   padding: '10px 12px',
 };
 const rmEditInput: CSSProperties = {
+  ...inputBase,
   flex: 1,
-  background: 'var(--code)',
-  border: '1px solid var(--border2)',
-  color: 'var(--text)',
-  fontFamily: 'inherit',
   fontSize: '12.5px',
   padding: '6px 9px',
 };
@@ -170,27 +130,27 @@ const phPlaceholder: CSSProperties = {
   background: 'var(--acc-dim)',
   boxShadow: 'inset 0 0 24px color-mix(in srgb, var(--acc) 22%, transparent)',
 };
-const dragHandle: CSSProperties = {
+const grabHandleBase: CSSProperties = {
   cursor: 'grab',
   color: 'var(--faint)',
-  fontSize: '15px',
-  lineHeight: 1,
   userSelect: 'none',
   flex: 'none',
 };
+const dragHandle: CSSProperties = {
+  ...grabHandleBase,
+  fontSize: '15px',
+  lineHeight: 1,
+};
 const phaseLabel: CSSProperties = { fontWeight: 600, fontSize: '13.5px', flex: 1 };
 const monoCount: CSSProperties = {
-  fontFamily: "'IBM Plex Mono', monospace",
+  fontFamily: MONO,
   fontSize: '11px',
   color: 'var(--faint)',
 };
-const phaseBarTrack: CSSProperties = { width: '70px', height: '5px', background: 'var(--border)', overflow: 'hidden' };
+const phaseBarTrack: CSSProperties = { ...barTrackBase, width: '70px', height: '5px' };
 const phaseRenameInput: CSSProperties = {
+  ...inputBase,
   flex: 1,
-  background: 'var(--code)',
-  border: '1px solid var(--border2)',
-  color: 'var(--text)',
-  fontFamily: 'inherit',
   fontSize: '13px',
   fontWeight: 600,
   padding: '5px 8px',
@@ -226,13 +186,10 @@ const phaseDelBtn: CSSProperties = {
 
 const stepInner: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: '11px' };
 const stepDragHandle: CSSProperties = {
-  cursor: 'grab',
-  color: 'var(--faint)',
+  ...grabHandleBase,
   fontSize: '13px',
   lineHeight: 1.4,
   marginTop: '1px',
-  userSelect: 'none',
-  flex: 'none',
 };
 const checkOff: CSSProperties = {
   cursor: 'pointer',
@@ -270,7 +227,7 @@ const noteBtn: CSSProperties = {
   color: 'var(--acc)',
   padding: '2px 8px',
   fontSize: '11px',
-  fontFamily: "'IBM Plex Mono', monospace",
+  fontFamily: MONO,
   whiteSpace: 'nowrap',
   flex: 'none',
 };
@@ -290,37 +247,8 @@ const cmdTitleLine: CSSProperties = {
   fontSize: '11px',
   color: 'var(--faint)',
   marginBottom: '5px',
-  fontFamily: "'IBM Plex Mono', monospace",
+  fontFamily: MONO,
 };
-const copyBtn: CSSProperties = {
-  position: 'absolute',
-  top: '22px',
-  right: '7px',
-  cursor: 'pointer',
-  border: '1px solid var(--border2)',
-  background: 'var(--code)',
-  color: 'var(--muted)',
-  padding: '4px 5px',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-};
-const stepPre: CSSProperties = {
-  margin: 0,
-  background: 'var(--code)',
-  border: '1px solid var(--border)',
-  padding: '10px 12px',
-  paddingRight: '44px',
-  overflowX: 'auto',
-  fontFamily: "'IBM Plex Mono', monospace",
-  fontSize: '12px',
-  lineHeight: 1.6,
-  color: 'var(--code-text)',
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word',
-};
-const prompt: CSSProperties = { color: 'var(--acc)', userSelect: 'none' };
-
 const addStepWrap: CSSProperties = {
   marginTop: '6px',
   padding: '11px 0 3px',
@@ -330,21 +258,15 @@ const addStepWrap: CSSProperties = {
   gap: '8px',
 };
 const addStepInput: CSSProperties = {
+  ...inputBase,
   width: '100%',
-  background: 'var(--code)',
-  border: '1px solid var(--border2)',
-  color: 'var(--text)',
-  fontFamily: 'inherit',
   fontSize: '12.5px',
   padding: '7px 10px',
 };
 const addStepSelect: CSSProperties = {
+  ...inputBase,
   flex: 1,
   minWidth: 0,
-  background: 'var(--code)',
-  border: '1px solid var(--border2)',
-  color: 'var(--text)',
-  fontFamily: 'inherit',
   fontSize: '12px',
   padding: '7px 9px',
   cursor: 'pointer',
@@ -361,11 +283,8 @@ const addStepBtn: CSSProperties = {
   whiteSpace: 'nowrap',
 };
 const addPhaseInput: CSSProperties = {
+  ...inputBase,
   flex: 1,
-  background: 'var(--code)',
-  border: '1px solid var(--border2)',
-  color: 'var(--text)',
-  fontFamily: 'inherit',
   fontSize: '12.5px',
   padding: '8px 10px',
 };
@@ -381,21 +300,58 @@ const addPhaseBtn: CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
-function CopyIcon() {
+// Progress bar: track + accent fill. Both the roadmap bar and each phase bar
+// render this identical markup, differing only in the track style + fill width.
+function Bar({ track, width }: { track: CSSProperties; width: string }) {
   return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="square"
-      strokeLinejoin="miter"
-    >
-      <rect x="9" y="9" width="12" height="12" />
-      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-    </svg>
+    <div style={track}>
+      <div style={{ height: '100%', width, background: 'var(--acc)' }} />
+    </div>
+  );
+}
+
+// Reorder (↑/↓) + delete edit-control trio, shared by the phase header and each
+// step row. Index math and callbacks stay at the call sites so the semantics are
+// identical; the delete button's style differs per site (phaseDelBtn vs
+// stepDelBtn) and is threaded through `delStyle`.
+function ReorderControls({
+  onUp,
+  onDown,
+  onDelete,
+  disableUp,
+  disableDown,
+  upTitle,
+  downTitle,
+  delTitle,
+  delStyle,
+}: {
+  onUp: () => void;
+  onDown: () => void;
+  onDelete: () => void;
+  disableUp: boolean;
+  disableDown: boolean;
+  upTitle: string;
+  downTitle: string;
+  delTitle: string;
+  delStyle: CSSProperties;
+}) {
+  return (
+    <>
+      <button onClick={onUp} disabled={disableUp} title={upTitle} style={disableUp ? arrowBtnDisabled : arrowBtn}>
+        ↑
+      </button>
+      <button
+        onClick={onDown}
+        disabled={disableDown}
+        title={downTitle}
+        style={disableDown ? arrowBtnDisabled : arrowBtn}
+      >
+        ↓
+      </button>
+      <button onClick={onDelete} title={delTitle} style={delStyle}>
+        ✕
+      </button>
+    </>
   );
 }
 
@@ -437,7 +393,6 @@ export function Methodology() {
     toggleCheck,
     toggleOpenStep,
     resetProgress,
-    flash,
   } = useStore();
 
   // Inline create/draft form state (transient, memory-only).
@@ -450,29 +405,13 @@ export function Methodology() {
   const [dragPhaseIdx, setDragPhaseIdx] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
 
-  const definedNames = useMemo(
-    () => new Set<string>([...STANDARD_VARS.map((v) => v.name), ...Object.keys(values)]),
-    [values],
-  );
+  const defNames = useMemo(() => definedNames(values), [values]);
 
   // Command lookup for step→command links, derived live from the store so
   // added/edited/deleted commands are reflected in the select and the panels.
   const cmdById = useMemo(() => new Map(commands.map((c) => [c.id, c])), [commands]);
 
   const rm = roadmaps.find((r) => r.id === activeRoadmap) ?? roadmaps[0] ?? null;
-
-  const copyCmd = (template: string) => {
-    try {
-      const p = navigator.clipboard?.writeText(resolve(template, values));
-      if (p && typeof p.then === 'function') {
-        p.then(() => flash('Copié dans le presse-papier'), () => flash('Échec de la copie'));
-      } else {
-        flash('Copié dans le presse-papier');
-      }
-    } catch {
-      flash('Échec de la copie');
-    }
-  };
 
   const submitNewRm = () => {
     const label = newRmLabel.trim();
@@ -557,10 +496,11 @@ export function Methodology() {
         )}
 
         {!rm ? (
-          <div style={emptyWrap}>
-            <div style={emptyMono}>// aucune méthodologie</div>
-            <div style={emptySub}>Crée-en une avec le bouton « + Méthodologie ».</div>
-          </div>
+          <EmptyState
+            mono="// aucune méthodologie"
+            sub="Crée-en une avec le bouton « + Méthodologie »."
+            padding="70px 20px"
+          />
         ) : (
           (() => {
             // Global progress over every step in the roadmap (equal weight, Q61).
@@ -583,14 +523,12 @@ export function Methodology() {
                       <span style={rmTitle}>{rm.label}</span>
                       <span style={rmProgressText}>{rmProg.readout}</span>
                     </div>
-                    <div style={barTrack}>
-                      <div style={{ height: '100%', width: rmProg.width, background: 'var(--acc)' }} />
-                    </div>
+                    <Bar track={barTrack} width={rmProg.width} />
                   </div>
                   <button onClick={toggleMethodEdit} style={methodEdit ? editBtnOn : editBtnBase}>
                     {methodEdit ? 'Terminé' : '✎ Modifier'}
                   </button>
-                  <button onClick={onReset} style={resetBtn}>
+                  <button onClick={onReset} style={editBtnBase}>
                     Réinitialiser la progression
                   </button>
                 </div>
@@ -697,37 +635,23 @@ export function Methodology() {
                                 {/* Accessible reorder fallback. movePhase takes a
                                     post-removal splice index (like moveStep), so a
                                     neighbour swap is up = pi-1, down = pi+1. */}
-                                <button
-                                  onClick={() => movePhase(rm.id, ph.id, pi - 1)}
-                                  disabled={pi === 0}
-                                  title="Monter la phase"
-                                  style={pi === 0 ? arrowBtnDisabled : arrowBtn}
-                                >
-                                  ↑
-                                </button>
-                                <button
-                                  onClick={() => movePhase(rm.id, ph.id, pi + 1)}
-                                  disabled={pi === nPhases - 1}
-                                  title="Descendre la phase"
-                                  style={pi === nPhases - 1 ? arrowBtnDisabled : arrowBtn}
-                                >
-                                  ↓
-                                </button>
-                                <button
-                                  onClick={() => deletePhase(rm.id, ph.id)}
-                                  title="Supprimer la phase"
-                                  style={phaseDelBtn}
-                                >
-                                  ✕
-                                </button>
+                                <ReorderControls
+                                  onUp={() => movePhase(rm.id, ph.id, pi - 1)}
+                                  onDown={() => movePhase(rm.id, ph.id, pi + 1)}
+                                  onDelete={() => deletePhase(rm.id, ph.id)}
+                                  disableUp={pi === 0}
+                                  disableDown={pi === nPhases - 1}
+                                  upTitle="Monter la phase"
+                                  downTitle="Descendre la phase"
+                                  delTitle="Supprimer la phase"
+                                  delStyle={phaseDelBtn}
+                                />
                               </>
                             ) : (
                               <>
                                 <span style={phaseLabel}>{ph.label}</span>
                                 <span style={monoCount}>{pdone + '/' + ph.steps.length}</span>
-                                <div style={phaseBarTrack}>
-                                  <div style={{ height: '100%', width: phProg.width, background: 'var(--acc)' }} />
-                                </div>
+                                <Bar track={phaseBarTrack} width={phProg.width} />
                               </>
                             )}
                           </div>
@@ -802,47 +726,29 @@ export function Methodology() {
                                       </button>
                                     )}
                                     {methodEdit && (
-                                      <>
-                                        <button
-                                          onClick={() => moveStep(rm.id, ph.id, ph.id, st.id, si - 1)}
-                                          disabled={si === 0}
-                                          title="Monter l'étape"
-                                          style={si === 0 ? arrowBtnDisabled : arrowBtn}
-                                        >
-                                          ↑
-                                        </button>
-                                        <button
-                                          onClick={() => moveStep(rm.id, ph.id, ph.id, st.id, si + 1)}
-                                          disabled={si === ph.steps.length - 1}
-                                          title="Descendre l'étape"
-                                          style={si === ph.steps.length - 1 ? arrowBtnDisabled : arrowBtn}
-                                        >
-                                          ↓
-                                        </button>
-                                        <button
-                                          onClick={() => deleteStep(rm.id, ph.id, st.id)}
-                                          title="Supprimer l'étape"
-                                          style={stepDelBtn}
-                                        >
-                                          ✕
-                                        </button>
-                                      </>
+                                      <ReorderControls
+                                        onUp={() => moveStep(rm.id, ph.id, ph.id, st.id, si - 1)}
+                                        onDown={() => moveStep(rm.id, ph.id, ph.id, st.id, si + 1)}
+                                        onDelete={() => deleteStep(rm.id, ph.id, st.id)}
+                                        disableUp={si === 0}
+                                        disableDown={si === ph.steps.length - 1}
+                                        upTitle="Monter l'étape"
+                                        downTitle="Descendre l'étape"
+                                        delTitle="Supprimer l'étape"
+                                        delStyle={stepDelBtn}
+                                      />
                                     )}
                                   </div>
                                   {showNote && cmd && (
                                     <div style={notePanel}>
                                       <div style={cmdTitleLine}>{cmd.title}</div>
-                                      <button onClick={() => copyCmd(cmd.template)} title="Copier" style={copyBtn}>
-                                        <CopyIcon />
-                                      </button>
-                                      <pre style={stepPre}>
-                                        <span style={prompt}>$ </span>
-                                        {toParts(cmd.template, values, definedNames).map((p, i) => (
-                                          <span key={i} style={partStyle(p.state)}>
-                                            {p.text}
-                                          </span>
-                                        ))}
-                                      </pre>
+                                      <CopyButton variant="inline" text={resolve(cmd.template, values)} />
+                                      <CodeBlock
+                                        template={cmd.template}
+                                        values={values}
+                                        definedNames={defNames}
+                                        preStyle={codePreCompact}
+                                      />
                                     </div>
                                   )}
                                 </div>
@@ -875,7 +781,7 @@ export function Methodology() {
                                   justifyContent: 'center',
                                   fontSize: '11px',
                                   color: 'var(--acc)',
-                                  fontFamily: "'IBM Plex Mono', monospace",
+                                  fontFamily: MONO,
                                 }}
                               >
                                 déposer l'étape ici
