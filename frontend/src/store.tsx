@@ -51,6 +51,16 @@ function cleanTags(tags: string[]): string[] {
   return [...new Set(tags.map((t) => t.trim()).filter(Boolean))];
 }
 
+// A tool name must NEVER be a tag: the tool is already its own grouping/facet in
+// the sidebar, so tagging a command with its own tool is pure redundancy.
+// Comparison is case- and separator-insensitive.
+const tagSlug = (s: string): string =>
+  s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+function dropToolTag(tags: string[], tool: string): string[] {
+  const ts = tagSlug(tool);
+  return ts ? tags.filter((t) => tagSlug(t) !== ts) : tags;
+}
+
 // Id source for user-minted roadmaps/phases/steps/references. Uses
 // crypto.randomUUID() so client-minted ids stay STABLE & UNIQUE across reloads:
 // a per-session counter would restart at 0 each load and collide with ids
@@ -653,7 +663,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         title,
         template,
         desc: input.desc.trim(),
-        tags: cleanTags(input.tags),
+        tags: dropToolTag(cleanTags(input.tags), tool),
       };
       setCommands((cs) => [...cs, cmd]);
       setAdding(false);
@@ -686,7 +696,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const category = patch.category ?? cur.category;
       const tool = patch.tool !== undefined ? patch.tool.trim() || 'Divers' : cur.tool;
       const desc = patch.desc !== undefined ? patch.desc.trim() : cur.desc;
-      const tags = patch.tags !== undefined ? cleanTags(patch.tags) : cur.tags;
+      const tags = dropToolTag(patch.tags !== undefined ? cleanTags(patch.tags) : cur.tags, tool);
       setCommands((cs) =>
         cs.map((c) => (c.id === id ? { ...c, category, tool, title, template, desc, tags } : c)),
       );
@@ -849,7 +859,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         if (initialized) {
           setCategories(state.categories);
-          setCommands(state.commands);
+          // Enforce "a tool name is never a tag" on any loaded dataset (DB or a
+          // freshly-imported one), independent of add/edit-time enforcement.
+          setCommands(state.commands.map((c) => ({ ...c, tags: dropToolTag(c.tags, c.tool) })));
           setReferences(state.references);
           setRoadmaps(state.roadmaps);
           setCheatsheets(state.cheatsheets);
