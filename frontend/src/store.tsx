@@ -852,7 +852,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // Enforce "a tool name is never a tag" on any loaded dataset (DB or a
           // freshly-imported one), independent of add/edit-time enforcement.
           setCommands(state.commands.map((c) => ({ ...c, tags: dropToolTag(c.tags, c.tool) })));
-          setReferences(state.references);
+          // Re-sanitize imported URLs on load (mirrors the add/edit path and the
+          // command tag normalization above): scheme-complete valid links and
+          // neutralize any disallowed scheme (e.g. javascript:) to '' so a hostile
+          // imported dataset can never yield a clickable link — independent of the
+          // render-time guard in References.
+          setReferences(state.references.map((r) => ({ ...r, url: sanitizeUrl(r.url) ?? '' })));
           setRoadmaps(state.roadmaps);
           setCheatsheets(state.cheatsheets);
           setNotes(state.notes ?? {});

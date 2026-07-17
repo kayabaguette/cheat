@@ -84,8 +84,23 @@ export function DataMenu() {
       flash('Fichier JSON invalide');
       return;
     }
-    // Minimal shape check before a destructive replace.
-    if (!data || typeof data !== 'object' || !Array.isArray((data as AppState).commands)) {
+    // Shape check before a destructive replace: `commands` must be a present
+    // array, and every other known top-level key, if present, must be the right
+    // kind (array or map). Rejects a malformed file up front rather than wiping
+    // the dataset and then breaking hydration on a wrong-typed slice.
+    if (!data || typeof data !== 'object') {
+      flash('Format de dataset invalide');
+      return;
+    }
+    const d = data as Record<string, unknown>;
+    const isMap = (v: unknown) => typeof v === 'object' && v !== null && !Array.isArray(v);
+    const arrayKeys = ['categories', 'commands', 'references', 'roadmaps', 'cheatsheets'];
+    const mapKeys = ['notes', 'checks', 'openSteps', 'settings'];
+    const shapeOk =
+      Array.isArray(d.commands) &&
+      arrayKeys.every((k) => d[k] === undefined || Array.isArray(d[k])) &&
+      mapKeys.every((k) => d[k] === undefined || isMap(d[k]));
+    if (!shapeOk) {
       flash('Format de dataset invalide');
       return;
     }
