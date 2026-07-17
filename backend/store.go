@@ -43,6 +43,7 @@ type CommandDTO struct {
 	Template string   `json:"template"`
 	Desc     string   `json:"desc"`
 	Tags     []string `json:"tags"`
+	Favorite bool     `json:"favorite"`
 }
 
 type ReferenceDTO struct {
@@ -132,6 +133,7 @@ type Command struct {
 	Template string
 	Desc     string
 	Tags     []string `gorm:"serializer:json"`
+	Favorite bool
 }
 
 type Reference struct {
@@ -250,6 +252,7 @@ func loadState(db *gorm.DB) (bool, AppState, error) {
 		state.Commands = append(state.Commands, CommandDTO{
 			ID: c.ID, Category: c.Category, Tool: c.Tool, Title: c.Title,
 			Template: c.Template, Desc: c.Desc, Tags: nonNil(c.Tags),
+			Favorite: c.Favorite,
 		})
 	}
 
@@ -336,6 +339,7 @@ func saveState(db *gorm.DB, s AppState) error {
 			cmds = append(cmds, Command{
 				ID: c.ID, Category: c.Category, Tool: c.Tool, Title: c.Title,
 				Template: c.Template, Desc: c.Desc, Tags: nonNil(c.Tags),
+				Favorite: c.Favorite,
 			})
 		}
 		if err := insertAll(tx, cmds); err != nil {

@@ -167,6 +167,7 @@ export function Library() {
     toggleInSheet,
     openEditCommand,
     deleteCommand,
+    toggleFavorite,
     setNote,
     flash,
   } = useStore();
@@ -216,7 +217,11 @@ export function Library() {
       if (!inCat.length) continue;
       const tools: ToolGroup[] = [];
       for (const name of catToolOrder.get(cat.key) ?? []) {
-        const cs = inCat.filter((c) => c.tool === name);
+        // Favorites first within the tool group; Array.sort is stable, so the
+        // relative rowid order is preserved inside each partition.
+        const cs = inCat
+          .filter((c) => c.tool === name)
+          .sort((a, b) => Number(b.favorite ?? false) - Number(a.favorite ?? false));
         if (cs.length) tools.push({ name, count: cs.length, commands: cs });
       }
       out.push({ key: cat.key, label: cat.label, color: cat.color, count: inCat.length, tools });
@@ -327,6 +332,17 @@ export function Library() {
                           <div key={c.id} style={card}>
                             <div style={cardHead}>
                               <div style={cardTitle}>{c.title}</div>
+                              <button
+                                onClick={() => toggleFavorite(c.id)}
+                                title={c.favorite ? 'Retirer des favoris' : 'Marquer comme favori'}
+                                style={
+                                  c.favorite
+                                    ? { ...cardIconBtn, color: 'var(--acc)', borderColor: 'var(--acc-line)' }
+                                    : cardIconBtn
+                                }
+                              >
+                                {c.favorite ? '★' : '☆'}
+                              </button>
                               <button
                                 onClick={() => openEditCommand(c.id)}
                                 title="Modifier"
