@@ -785,6 +785,7 @@ export function Methodology() {
                                         value={results[st.id] ?? ''}
                                         onChange={(e) => setResult(st.id, e.target.value)}
                                         placeholder="Colle la sortie de la commande…"
+                                        rows={20}
                                         spellCheck="false"
                                         autoCorrect="off"
                                         autoCapitalize="off"
