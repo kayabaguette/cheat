@@ -95,7 +95,7 @@ export function DataMenu() {
     const d = data as Record<string, unknown>;
     const isMap = (v: unknown) => typeof v === 'object' && v !== null && !Array.isArray(v);
     const arrayKeys = ['categories', 'commands', 'references', 'roadmaps', 'cheatsheets'];
-    const mapKeys = ['notes', 'checks', 'openSteps', 'settings'];
+    const mapKeys = ['notes', 'checks', 'openSteps', 'results', 'settings'];
     const shapeOk =
       Array.isArray(d.commands) &&
       arrayKeys.every((k) => d[k] === undefined || Array.isArray(d[k])) &&

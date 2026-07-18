@@ -95,6 +95,7 @@ type AppState struct {
 	Notes       map[string]string `json:"notes"`
 	Checks      map[string]bool   `json:"checks"`
 	OpenSteps   map[string]bool   `json:"openSteps"`
+	Results     map[string]string `json:"results"`
 	Settings    SettingsDTO       `json:"settings"`
 }
 
@@ -110,6 +111,7 @@ func emptyState() AppState {
 		Notes:       map[string]string{},
 		Checks:      map[string]bool{},
 		OpenSteps:   map[string]bool{},
+		Results:     map[string]string{},
 		Settings:    SettingsDTO{Theme: "dark", ActiveRoadmap: nil, ActiveSheet: ""},
 	}
 }
@@ -188,6 +190,7 @@ const (
 	kvNotes       = "notes"
 	kvChecks      = "checks"
 	kvOpenSteps   = "openSteps"
+	kvResults     = "results"
 	kvSettings    = "settings"
 )
 
@@ -304,6 +307,9 @@ func loadState(db *gorm.DB) (bool, AppState, error) {
 	if err := kvUnmarshal(db, kvOpenSteps, &state.OpenSteps); err != nil {
 		return false, state, err
 	}
+	if err := kvUnmarshal(db, kvResults, &state.Results); err != nil {
+		return false, state, err
+	}
 	if err := kvUnmarshal(db, kvSettings, &state.Settings); err != nil {
 		return false, state, err
 	}
@@ -393,6 +399,9 @@ func saveState(db *gorm.DB, s AppState) error {
 			return err
 		}
 		if err := kvSet(tx, kvOpenSteps, nonNilMap(s.OpenSteps)); err != nil {
+			return err
+		}
+		if err := kvSet(tx, kvResults, nonNilMap(s.Results)); err != nil {
 			return err
 		}
 		if err := kvSet(tx, kvSettings, s.Settings); err != nil {
