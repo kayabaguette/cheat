@@ -430,6 +430,17 @@ export function Methodology() {
   // Command lookup for step→command links, derived live from the store so
   // added/edited/deleted commands are reflected in the select and the panels.
   const cmdById = useMemo(() => new Map(commands.map((c) => [c.id, c])), [commands]);
+  // Commands offered when linking a step, sorted alphabetically by their visible
+  // "tool — title" label (case/accent-insensitive) instead of insertion/id order.
+  const sortedCommands = useMemo(
+    () =>
+      [...commands].sort((a, b) =>
+        `${a.tool} — ${a.title}`.localeCompare(`${b.tool} — ${b.title}`, undefined, {
+          sensitivity: 'base',
+        }),
+      ),
+    [commands],
+  );
 
   const rm = roadmaps.find((r) => r.id === activeRoadmap) ?? roadmaps[0] ?? null;
 
@@ -850,7 +861,7 @@ export function Methodology() {
                                     style={addStepSelect}
                                   >
                                     <option value="">— aucune commande liée —</option>
-                                    {commands.map((c) => (
+                                    {sortedCommands.map((c) => (
                                       <option key={c.id} value={c.id}>
                                         {c.tool} — {c.title}
                                       </option>
