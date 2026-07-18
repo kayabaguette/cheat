@@ -4,6 +4,23 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.6.0] — 2026-07-18
+
+### Added
+- **Command results in Méthodologie.** Every step — whether or not it links a
+  command — has a **Résultat** area in its expandable panel where you can paste
+  and save the command's output/findings. Results are **persisted** (a new
+  `results` map keyed by step id, part of the import/export `AppState`, stored in
+  the same `kv` table as `checks`/`openSteps` — no schema migration). A collapsed
+  step whose result is non-empty shows its toggle in the accent colour. Deleting
+  a step/phase/roadmap purges its result, but **« Réinitialiser la progression »
+  keeps saved results** (they are data, not progress).
+
+### Security / OPSEC
+- Captured command output can contain credentials/hashes and is stored in the
+  database in **cleartext** (same posture as notes; rely on full-disk
+  encryption). The result inputs disable autocomplete/spellcheck.
+
 ## [0.5.0] — 2026-07-17
 
 ### Added

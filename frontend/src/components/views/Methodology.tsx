@@ -249,6 +249,24 @@ const cmdTitleLine: CSSProperties = {
   marginBottom: '5px',
   fontFamily: MONO,
 };
+const resultLabel: CSSProperties = {
+  fontSize: '11px',
+  color: 'var(--faint)',
+  margin: '9px 0 4px',
+  fontFamily: MONO,
+};
+const resultArea: CSSProperties = {
+  width: '100%',
+  minHeight: '58px',
+  resize: 'vertical',
+  background: 'var(--code)',
+  border: '1px solid var(--border)',
+  color: 'var(--code-text)',
+  fontFamily: MONO,
+  fontSize: '11.5px',
+  lineHeight: 1.5,
+  padding: '7px 9px',
+};
 const addStepWrap: CSSProperties = {
   marginTop: '6px',
   padding: '11px 0 3px',
@@ -377,6 +395,7 @@ export function Methodology() {
     methodEdit,
     checks,
     openSteps,
+    results,
     newRmOpen,
     setActiveRoadmap,
     toggleMethodEdit,
@@ -392,6 +411,7 @@ export function Methodology() {
     movePhase,
     toggleCheck,
     toggleOpenStep,
+    setResult,
     resetProgress,
   } = useStore();
 
@@ -661,7 +681,8 @@ export function Methodology() {
                             {ph.steps.map((st, si) => {
                               const checked = !!checks[st.id];
                               const cmd = st.commandId ? cmdById.get(st.commandId) : undefined;
-                              const showNote = !!openSteps[st.id] && !!cmd;
+                              const expanded = !!openSteps[st.id];
+                              const hasResult = !!results[st.id]?.trim();
                               const isDragged = dragStep?.stepId === st.id;
                               const isOver =
                                 dragStep != null &&
@@ -720,11 +741,17 @@ export function Methodology() {
                                     <div style={stepTextWrap}>
                                       <div style={checked ? stepTextDone : stepText}>{st.text}</div>
                                     </div>
-                                    {cmd && (
-                                      <button onClick={() => toggleOpenStep(st.id)} style={noteBtn}>
-                                        {showNote ? 'masquer' : '▸ ' + cmd.tool}
-                                      </button>
-                                    )}
+                                    <button
+                                      onClick={() => toggleOpenStep(st.id)}
+                                      title={hasResult ? 'Résultat enregistré' : undefined}
+                                      style={
+                                        !expanded && hasResult
+                                          ? { ...noteBtn, background: 'var(--acc-dim)', borderColor: 'var(--acc-line)' }
+                                          : noteBtn
+                                      }
+                                    >
+                                      {expanded ? 'masquer' : cmd ? '▸ ' + cmd.tool : '▸ résultat'}
+                                    </button>
                                     {methodEdit && (
                                       <ReorderControls
                                         onUp={() => moveStep(rm.id, ph.id, ph.id, st.id, si - 1)}
@@ -739,15 +766,31 @@ export function Methodology() {
                                       />
                                     )}
                                   </div>
-                                  {showNote && cmd && (
+                                  {expanded && (
                                     <div style={notePanel}>
-                                      <div style={cmdTitleLine}>{cmd.title}</div>
-                                      <CopyButton variant="inline" text={resolve(cmd.template, values)} />
-                                      <CodeBlock
-                                        template={cmd.template}
-                                        values={values}
-                                        definedNames={defNames}
-                                        preStyle={codePreCompact}
+                                      {cmd && (
+                                        <>
+                                          <div style={cmdTitleLine}>{cmd.title}</div>
+                                          <CopyButton variant="inline" text={resolve(cmd.template, values)} />
+                                          <CodeBlock
+                                            template={cmd.template}
+                                            values={values}
+                                            definedNames={defNames}
+                                            preStyle={codePreCompact}
+                                          />
+                                        </>
+                                      )}
+                                      <div style={resultLabel}>Résultat</div>
+                                      <textarea
+                                        value={results[st.id] ?? ''}
+                                        onChange={(e) => setResult(st.id, e.target.value)}
+                                        placeholder="Colle la sortie de la commande…"
+                                        rows={20}
+                                        spellCheck="false"
+                                        autoCorrect="off"
+                                        autoCapitalize="off"
+                                        autoComplete="off"
+                                        style={resultArea}
                                       />
                                     </div>
                                   )}

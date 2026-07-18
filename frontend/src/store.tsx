@@ -64,9 +64,9 @@ function stepIdsOf(rm: Roadmap): string[] {
   return rm.phases.flatMap((p) => p.steps.map((s) => s.id));
 }
 
-// Drop any key present in `ids` from an id-keyed boolean map.
-function purge(obj: Record<string, boolean>, ids: Set<string>): Record<string, boolean> {
-  const out: Record<string, boolean> = {};
+// Drop any key present in `ids` from an id-keyed map (booleans or strings).
+function purge<T>(obj: Record<string, T>, ids: Set<string>): Record<string, T> {
+  const out: Record<string, T> = {};
   for (const k of Object.keys(obj)) if (!ids.has(k)) out[k] = obj[k];
   return out;
 }
@@ -120,6 +120,8 @@ export interface StoreState {
   // so reordering steps/phases needs no key remap (SPEC A5 / KEY DECISIONS).
   checks: Record<string, boolean>;
   openSteps: Record<string, boolean>;
+  // Per-step captured command output (keyed by stable step id, like checks/openSteps).
+  results: Record<string, string>;
   newRmOpen: boolean;
   // --- M1: References ---
   references: Reference[];
@@ -169,6 +171,7 @@ export interface StoreActions {
   movePhase: (roadmapId: string, phaseId: string, toIndex: number) => void;
   toggleCheck: (stepId: string) => void;
   toggleOpenStep: (stepId: string) => void;
+  setResult: (stepId: string, text: string) => void;
   resetProgress: (roadmapId: string) => void;
   // --- M1: References ---
   setActiveRefTag: (tag: string | null) => void;
@@ -251,6 +254,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [methodEdit, setMethodEdit] = useState<boolean>(false);
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [openSteps, setOpenSteps] = useState<Record<string, boolean>>({});
+  const [results, setResults] = useState<Record<string, string>>({});
   const [newRmOpen, setNewRmOpen] = useState<boolean>(false);
   const [references, setReferences] = useState<Reference[]>(() => REFERENCES.slice());
   const [activeRefTag, setActiveRefTag] = useState<string | null>(null);
@@ -389,16 +393,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Drop progression + panel-open state for a set of step ids (shared by the
   // roadmap/phase/step delete actions and resetProgress).
-  const purgeProgress = useCallback((ids: Set<string>) => {
+  const purgeProgress = useCallback((ids: Set<string>, alsoResults = false) => {
     setChecks((c) => purge(c, ids));
     setOpenSteps((o) => purge(o, ids));
+    // Saved command output is DATA, not progression: purge it only when the steps
+    // are actually deleted (alsoResults), never on a plain progress reset.
+    if (alsoResults) setResults((r) => purge(r, ids));
   }, []);
 
   const deleteRoadmap = useCallback(
     (id: string) => {
       const target = roadmapsRef.current.find((r) => r.id === id);
       const ids = new Set(target ? stepIdsOf(target) : []);
-      purgeProgress(ids);
+      purgeProgress(ids, true);
       setRoadmaps((rms) => rms.filter((r) => r.id !== id));
       setActiveRoadmap((prev) => {
         if (prev !== id) return prev;
@@ -434,7 +441,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const r = roadmapsRef.current.find((x) => x.id === roadmapId);
     const p = r?.phases.find((ph) => ph.id === phaseId);
     const ids = new Set(p ? p.steps.map((s) => s.id) : []);
-    purgeProgress(ids);
+    purgeProgress(ids, true);
     setRoadmaps((rms) => {
       const next = cloneRoadmaps(rms);
       const rr = next.find((x) => x.id === roadmapId);
@@ -459,7 +466,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const deleteStep = useCallback((roadmapId: string, phaseId: string, stepId: string) => {
     const ids = new Set([stepId]);
-    purgeProgress(ids);
+    purgeProgress(ids, true);
     setRoadmaps((rms) => {
       const next = cloneRoadmaps(rms);
       const p = next.find((x) => x.id === roadmapId)?.phases.find((ph) => ph.id === phaseId);
@@ -508,6 +515,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const toggleOpenStep = useCallback((stepId: string) => {
     setOpenSteps((o) => ({ ...o, [stepId]: !o[stepId] }));
+  }, []);
+
+  // Save the captured output/result for a step (per-step free text, persisted
+  // like notes; keyed by stable step id).
+  const setResult = useCallback((stepId: string, text: string) => {
+    setResults((r) => ({ ...r, [stepId]: text }));
   }, []);
 
   const resetProgress = useCallback((roadmapId: string) => {
@@ -822,6 +835,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       notes,
       checks,
       openSteps,
+      results,
       settings: { theme, activeRoadmap, activeSheet },
     }),
     [
@@ -833,6 +847,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       notes,
       checks,
       openSteps,
+      results,
       theme,
       activeRoadmap,
       activeSheet,
@@ -870,6 +885,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setNotes(state.notes ?? {});
           setChecks(state.checks ?? {});
           setOpenSteps(state.openSteps ?? {});
+          setResults(state.results ?? {});
           setTheme(state.settings.theme);
           setActiveRoadmap(state.settings.activeRoadmap);
           setActiveSheetState(state.settings.activeSheet);
@@ -924,6 +940,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       methodEdit,
       checks,
       openSteps,
+      results,
       newRmOpen,
       references,
       activeRefTag,
@@ -972,6 +989,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       movePhase,
       toggleCheck,
       toggleOpenStep,
+      setResult,
       resetProgress,
       setActiveRefTag,
       setAddingRef,
@@ -1004,6 +1022,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       methodEdit,
       checks,
       openSteps,
+      results,
       newRmOpen,
       references,
       activeRefTag,
@@ -1044,6 +1063,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       movePhase,
       toggleCheck,
       toggleOpenStep,
+      setResult,
       resetProgress,
       setAddingRef,
       addReference,
