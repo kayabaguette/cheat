@@ -141,10 +141,12 @@ top bar (next to import/export).
 
 - **New profile** — either **empty**, or a **clone** of an existing profile (its
   whole dataset copied into a fresh, isolated profile).
-- **Copy a single item across profiles** — a small “copy to…” control on each
-  command, reference and methodology copies that item into another profile with
-  fresh ids. A copied command brings its category (if missing) and its note; a
-  copied methodology is copied **structure only** (unchecked, without saved results).
+- **Copy a single item across profiles** — copies an item into another profile
+  with fresh ids. On a command it lives in the card’s **☰ menu** (alongside
+  *Éditer* / *Supprimer*, under *Cloner vers*); references and methodologies use a
+  small “copy to…” control. A copied command brings its category (if missing) and
+  its note; a copied methodology is copied **structure only** (unchecked, without
+  saved results).
 - **Migration** — an existing single-dataset database is migrated automatically on
   first start into a profile named **OSCP** (rename it as you like); nothing is lost.
 - **Scope** — a profile scopes *content* only. Variable *values* (`$RHOST`, …) stay

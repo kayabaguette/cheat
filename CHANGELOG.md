@@ -11,10 +11,12 @@ development (pre-1.0).
   methodology, references and cheatsheets) — e.g. one for OSCP, one per red-team
   engagement. A profile menu in the top bar switches, creates, renames and deletes
   profiles. A **new profile** is either empty or a **clone** of an existing one
-  (whole dataset copied). A **“copy to…”** control on each command, reference and
-  methodology copies that single item into another profile with fresh ids (a copied
-  command brings its category + note; a copied methodology is structure only —
-  unchecked, no saved results). Deleting the last profile is refused.
+  (whole dataset copied). A single command, reference or methodology can be copied
+  into another profile with fresh ids (a copied command brings its category + note;
+  a copied methodology is structure only — unchecked, no saved results). Deleting
+  the last profile is refused.
+- **Command card decluttered to two controls** — a favorite star and a **☰ menu**
+  folding *Éditer*, *Supprimer* and *Cloner vers <profil>* (the cross-profile copy).
 
 ### Changed
 - **API is now per-profile.** Each profile is one `AppState` stored as a JSON blob

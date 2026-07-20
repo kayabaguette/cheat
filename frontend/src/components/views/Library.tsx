@@ -6,7 +6,7 @@ import { fold } from '../../lib/format';
 import { definedNames as buildDefinedNames } from '../../lib/varsets';
 import { cardBase, cardHead, cardIconBtn, codeWrap, tagBtn } from '../../lib/ui';
 import { CodeBlock } from '../CodeBlock';
-import { CopyToProfile } from '../CopyToProfile';
+import { CommandMenu } from '../CommandMenu';
 import { EmptyState } from '../EmptyState';
 import type { Command } from '../../types';
 
@@ -344,21 +344,11 @@ export function Library() {
                               >
                                 {c.favorite ? '★' : '☆'}
                               </button>
-                              <button
-                                onClick={() => openEditCommand(c.id)}
-                                title="Modifier"
-                                style={cardIconBtn}
-                              >
-                                ✎
-                              </button>
-                              <button
-                                onClick={() => askDelete(c)}
-                                title="Supprimer"
-                                style={cardIconBtn}
-                              >
-                                ✕
-                              </button>
-                              <CopyToProfile kind="command" id={c.id} />
+                              <CommandMenu
+                                commandId={c.id}
+                                onEdit={() => openEditCommand(c.id)}
+                                onDelete={() => askDelete(c)}
+                              />
                             </div>
                             {c.desc && <div style={cardDesc}>{c.desc}</div>}
                             <div style={codeWrap}>
