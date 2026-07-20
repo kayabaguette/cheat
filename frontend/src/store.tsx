@@ -5,13 +5,22 @@ import type {
   Category,
   Cheatsheet,
   Command,
+  ProfileMeta,
   Reference,
   Roadmap,
   ThemeName,
   ViewKey,
 } from './types';
 import { CATEGORIES, COMMANDS, INITIAL_VALUES, REFERENCES, ROADMAPS } from './data/seed';
-import { getState, putState } from './lib/api';
+import {
+  createProfile as apiCreateProfile,
+  deleteProfile as apiDeleteProfile,
+  getProfileState,
+  listProfiles as apiListProfiles,
+  putProfileState,
+  renameProfile as apiRenameProfile,
+  setActiveProfile as apiSetActiveProfile,
+} from './lib/api';
 import { STANDARD_VARS } from './lib/theme';
 import { sanitizeUrl, slug } from './lib/format';
 import { definedNames } from './lib/varsets';
@@ -89,6 +98,10 @@ export interface StoreState {
   // The app renders a loading placeholder while false so seed data is never
   // flashed and then overwritten by the hydrated DB state.
   hydrated: boolean;
+  // Multi-profile: the list of profiles (id+name) and the id of the active one.
+  // Each profile is an isolated AppState; switching re-hydrates via a full reload.
+  profiles: ProfileMeta[];
+  activeProfileId: string;
   theme: ThemeName;
   view: ViewKey;
   values: Record<string, string>;
@@ -132,6 +145,17 @@ export interface StoreState {
 }
 
 export interface StoreActions {
+  // --- Profiles ---
+  // Switch/create/delete re-hydrate the whole app via a full reload (reusing the
+  // mount hydration path); rename patches the local list in place.
+  switchProfile: (id: string) => void;
+  createProfile: (name: string, cloneFrom?: string) => Promise<void>;
+  renameProfile: (id: string, name: string) => Promise<void>;
+  deleteProfile: (id: string) => Promise<void>;
+  // Copy a single entity into ANOTHER (non-active) profile with fresh ids.
+  copyCommandToProfile: (commandId: string, targetProfileId: string) => Promise<void>;
+  copyReferenceToProfile: (referenceId: string, targetProfileId: string) => Promise<void>;
+  copyRoadmapToProfile: (roadmapId: string, targetProfileId: string) => Promise<void>;
   toggleTheme: () => void;
   setView: (v: ViewKey) => void;
   setValue: (name: string, val: string) => void;
@@ -226,6 +250,8 @@ const StoreContext = createContext<Store | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [hydrated, setHydrated] = useState<boolean>(false);
+  const [profiles, setProfiles] = useState<ProfileMeta[]>([]);
+  const [activeProfileId, setActiveProfileId] = useState<string>('');
   const [theme, setTheme] = useState<ThemeName>('dark');
   const [view, setView] = useState<ViewKey>('library');
   const [values, setValues] = useState<Record<string, string>>(() => ({ ...INITIAL_VALUES }));
@@ -278,6 +304,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   referencesRef.current = references;
   const valuesRef = useRef(values);
   valuesRef.current = values;
+  const notesRef = useRef(notes);
+  notesRef.current = notes;
+  const activeProfileIdRef = useRef(activeProfileId);
+  activeProfileIdRef.current = activeProfileId;
+  const profilesRef = useRef(profiles);
+  profilesRef.current = profiles;
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => (t === 'light' ? 'dark' : 'light'));
@@ -820,11 +852,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
-  // --- M3: persistence (hydrate on mount, then debounced autosave) ---
-
   // The single canonical persistable snapshot (STATE CONTRACT). Ephemeral,
   // memory-only slices (values/view/query/filters/expanded/modal & edit flags/
-  // toast/hydrated) are intentionally excluded — only durable data is sent.
+  // toast/hydrated + profiles/activeProfileId) are intentionally excluded — only
+  // a profile's own durable data is sent.
   const persistableState = useMemo<AppState>(
     () => ({
       categories,
@@ -854,43 +885,244 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  // Always-fresh view of the snapshot so the one-shot hydration effect can
-  // persist the seed without depending on (and re-running for) every slice.
+  // Always-fresh view of the snapshot so hydration / profile-switch flush can
+  // persist without depending on (and re-running for) every slice.
   const persistableRef = useRef(persistableState);
   persistableRef.current = persistableState;
 
-  // On mount, once: load persisted state. If initialized, hydrate every
-  // persistable slice from the response; otherwise keep the seed defaults and
-  // immediately persist them (seeding the DB + flipping initialized). On any
-  // error we still flip hydrated so the app works offline from the seed.
+  // Hydrate a slice set from a fetched AppState (shared shape with the seed).
+  const hydrateFromState = useCallback((state: AppState) => {
+    setCategories(state.categories);
+    // Enforce "a tool name is never a tag" on any loaded dataset (DB or a
+    // freshly-imported one), independent of add/edit-time enforcement.
+    setCommands(state.commands.map((c) => ({ ...c, tags: dropToolTag(c.tags, c.tool) })));
+    // Re-sanitize imported URLs on load (mirrors the add/edit path and the
+    // command tag normalization above): scheme-complete valid links and
+    // neutralize any disallowed scheme (e.g. javascript:) to '' so a hostile
+    // imported dataset can never yield a clickable link — independent of the
+    // render-time guard in References.
+    setReferences(state.references.map((r) => ({ ...r, url: sanitizeUrl(r.url) ?? '' })));
+    setRoadmaps(state.roadmaps);
+    setCheatsheets(state.cheatsheets);
+    setNotes(state.notes ?? {});
+    setChecks(state.checks ?? {});
+    setOpenSteps(state.openSteps ?? {});
+    setResults(state.results ?? {});
+    setTheme(state.settings.theme);
+    setActiveRoadmap(state.settings.activeRoadmap);
+    setActiveSheetState(state.settings.activeSheet);
+  }, []);
+
+  // --- Profiles: switch/create/delete re-hydrate IN PLACE (no full reload) so
+  // the memory-only variable VALUES survive a profile switch (decision: values
+  // are global/session, unchanged across profiles — D7). Copy actions target
+  // ANOTHER profile's stored state without touching the active one.
+
+  const profileName = useCallback(
+    (id: string) => profilesRef.current.find((p) => p.id === id)?.name ?? 'profil',
+    [],
+  );
+
+  // Point the backend at `id`, load its dataset and hydrate every slice, then
+  // update the local profile list/active pointer and clear transient filters.
+  const activateAndHydrate = useCallback(
+    async (id: string, list?: ProfileMeta[]) => {
+      await apiSetActiveProfile(id);
+      const { state } = await getProfileState(id);
+      hydrateFromState(state);
+      if (list) setProfiles(list);
+      setActiveProfileId(id);
+      clearFilters();
+    },
+    [hydrateFromState, clearFilters],
+  );
+
+  const switchProfile = useCallback(
+    (id: string) => {
+      if (id === activeProfileIdRef.current) return;
+      void (async () => {
+        try {
+          // Flush the current profile first so no pending edit is lost, then
+          // hydrate the target in place (values stay untouched).
+          if (activeProfileIdRef.current) {
+            await putProfileState(activeProfileIdRef.current, persistableRef.current);
+          }
+          await activateAndHydrate(id);
+          flash('Profil : ' + profileName(id));
+        } catch {
+          flash('Échec du changement de profil');
+        }
+      })();
+    },
+    [flash, profileName, activateAndHydrate],
+  );
+
+  const createProfile = useCallback(
+    async (name: string, cloneFrom?: string) => {
+      const n = name.trim();
+      if (!n) {
+        flash('Nom de profil requis');
+        return;
+      }
+      try {
+        // Flush current profile before leaving it.
+        if (activeProfileIdRef.current) {
+          await putProfileState(activeProfileIdRef.current, persistableRef.current);
+        }
+        const meta = await apiCreateProfile(n, cloneFrom);
+        const list = await apiListProfiles();
+        await activateAndHydrate(meta.id, list.profiles);
+        flash(cloneFrom ? 'Profil cloné' : 'Profil créé');
+      } catch {
+        flash('Échec de la création du profil');
+      }
+    },
+    [flash, activateAndHydrate],
+  );
+
+  const renameProfile = useCallback(
+    async (id: string, name: string) => {
+      const n = name.trim();
+      if (!n) {
+        flash('Nom de profil requis');
+        return;
+      }
+      try {
+        await apiRenameProfile(id, n);
+        setProfiles((ps) => ps.map((p) => (p.id === id ? { ...p, name: n } : p)));
+        flash('Profil renommé');
+      } catch {
+        flash('Échec du renommage');
+      }
+    },
+    [flash],
+  );
+
+  const deleteProfile = useCallback(
+    async (id: string) => {
+      try {
+        await apiDeleteProfile(id);
+        const { profiles: list, activeId } = await apiListProfiles();
+        if (id === activeProfileIdRef.current) {
+          // Backend re-pointed active to the first remaining profile — load it.
+          await activateAndHydrate(activeId || list[0]?.id || '', list);
+        } else {
+          setProfiles(list);
+        }
+        flash('Profil supprimé');
+      } catch {
+        flash('Suppression impossible');
+      }
+    },
+    [flash, activateAndHydrate],
+  );
+
+  const copyCommandToProfile = useCallback(
+    async (commandId: string, targetProfileId: string) => {
+      const cmd = commandsRef.current.find((c) => c.id === commandId);
+      if (!cmd) return;
+      try {
+        const { state } = await getProfileState(targetProfileId);
+        const newId = mint('u');
+        const next: AppState = {
+          ...state,
+          commands: [
+            ...state.commands,
+            { ...cmd, id: newId, favorite: false, tags: dropToolTag(cleanTags(cmd.tags), cmd.tool) },
+          ],
+        };
+        // Bring the command's category if the target profile lacks it.
+        if (!next.categories.some((c) => c.key === cmd.category)) {
+          const cat = categoriesRef.current.find((c) => c.key === cmd.category);
+          if (cat) next.categories = [...next.categories, cat];
+        }
+        // Bring the personal note, re-keyed to the new command id.
+        const note = notesRef.current[commandId];
+        if (note && note.trim()) next.notes = { ...(next.notes ?? {}), [newId]: note };
+        await putProfileState(targetProfileId, next);
+        flash('Commande copiée vers « ' + profileName(targetProfileId) + ' »');
+      } catch {
+        flash('Échec de la copie');
+      }
+    },
+    [flash, profileName],
+  );
+
+  const copyReferenceToProfile = useCallback(
+    async (referenceId: string, targetProfileId: string) => {
+      const ref = referencesRef.current.find((r) => r.id === referenceId);
+      if (!ref) return;
+      try {
+        const { state } = await getProfileState(targetProfileId);
+        const next: AppState = {
+          ...state,
+          references: [...state.references, { ...ref, id: mint('ref') }],
+        };
+        await putProfileState(targetProfileId, next);
+        flash('Référence copiée vers « ' + profileName(targetProfileId) + ' »');
+      } catch {
+        flash('Échec de la copie');
+      }
+    },
+    [flash, profileName],
+  );
+
+  const copyRoadmapToProfile = useCallback(
+    async (roadmapId: string, targetProfileId: string) => {
+      const rm = roadmapsRef.current.find((r) => r.id === roadmapId);
+      if (!rm) return;
+      try {
+        const { state } = await getProfileState(targetProfileId);
+        // Deep-clone with FRESH ids at every level; progress (checks/results) is
+        // NOT copied — the copy is structure only.
+        const cloned: Roadmap = {
+          id: mint('rm'),
+          label: rm.label,
+          phases: rm.phases.map((p) => ({
+            id: mint('ph'),
+            label: p.label,
+            steps: p.steps.map((s) => ({ id: mint('st'), text: s.text, commandId: s.commandId })),
+          })),
+        };
+        const next: AppState = { ...state, roadmaps: [...state.roadmaps, cloned] };
+        await putProfileState(targetProfileId, next);
+        flash('Méthodologie copiée vers « ' + profileName(targetProfileId) + ' »');
+      } catch {
+        flash('Échec de la copie');
+      }
+    },
+    [flash, profileName],
+  );
+
+  // --- M3: persistence (hydrate on mount, then debounced autosave) ---
+  // (persistableState / persistableRef / hydrateFromState are defined above the
+  // profile actions so those can reference them.)
+
+  // On mount, once: resolve the profile list + active profile, then hydrate that
+  // profile's state. A fresh DB (no profiles) is bootstrapped by creating a first
+  // profile ("OSCP") seeded with the in-memory seed defaults. On any error we
+  // still flip hydrated so the app works offline from the seed.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const { initialized, state } = await getState();
+        const { profiles: list, activeId } = await apiListProfiles();
         if (cancelled) return;
-        if (initialized) {
-          setCategories(state.categories);
-          // Enforce "a tool name is never a tag" on any loaded dataset (DB or a
-          // freshly-imported one), independent of add/edit-time enforcement.
-          setCommands(state.commands.map((c) => ({ ...c, tags: dropToolTag(c.tags, c.tool) })));
-          // Re-sanitize imported URLs on load (mirrors the add/edit path and the
-          // command tag normalization above): scheme-complete valid links and
-          // neutralize any disallowed scheme (e.g. javascript:) to '' so a hostile
-          // imported dataset can never yield a clickable link — independent of the
-          // render-time guard in References.
-          setReferences(state.references.map((r) => ({ ...r, url: sanitizeUrl(r.url) ?? '' })));
-          setRoadmaps(state.roadmaps);
-          setCheatsheets(state.cheatsheets);
-          setNotes(state.notes ?? {});
-          setChecks(state.checks ?? {});
-          setOpenSteps(state.openSteps ?? {});
-          setResults(state.results ?? {});
-          setTheme(state.settings.theme);
-          setActiveRoadmap(state.settings.activeRoadmap);
-          setActiveSheetState(state.settings.activeSheet);
+        if (list.length === 0) {
+          // Bootstrap: seed the first profile with the current (seed) defaults.
+          const meta = await apiCreateProfile('OSCP');
+          await putProfileState(meta.id, persistableRef.current);
+          await apiSetActiveProfile(meta.id);
+          if (cancelled) return;
+          setProfiles([meta]);
+          setActiveProfileId(meta.id);
         } else {
-          await putState(persistableRef.current);
+          const id = activeId || list[0].id;
+          const { state } = await getProfileState(id);
+          if (cancelled) return;
+          hydrateFromState(state);
+          setProfiles(list);
+          setActiveProfileId(id);
         }
       } catch {
         // Offline / backend unavailable: fall back to seed defaults.
@@ -901,24 +1133,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [hydrateFromState]);
 
   // Debounced autosave: whenever any persistable slice changes, PUT the whole
-  // snapshot ~500 ms later. Guarded on `hydrated` so we never clobber the DB
-  // with seed defaults before the initial load has completed.
+  // snapshot of the ACTIVE profile ~500 ms later. Guarded on `hydrated` (never
+  // clobber before the initial load) and on a known active profile id.
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || !activeProfileId) return;
     const t = setTimeout(() => {
-      void putState(persistableState).catch(() => {
+      void putProfileState(activeProfileId, persistableState).catch(() => {
         /* transient save failure — retried on the next change */
       });
     }, 500);
     return () => clearTimeout(t);
-  }, [hydrated, persistableState]);
+  }, [hydrated, activeProfileId, persistableState]);
 
   const store = useMemo<Store>(
     () => ({
       hydrated,
+      profiles,
+      activeProfileId,
       theme,
       view,
       values,
@@ -960,6 +1194,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleExpand,
       setNote,
       flash,
+      switchProfile,
+      createProfile,
+      renameProfile,
+      deleteProfile,
+      copyCommandToProfile,
+      copyReferenceToProfile,
+      copyRoadmapToProfile,
       setAdding,
       openEditCommand,
       addCommand,
@@ -1001,6 +1242,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       hydrated,
+      profiles,
+      activeProfileId,
       theme,
       view,
       values,
@@ -1037,6 +1280,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleExpand,
       setNote,
       flash,
+      switchProfile,
+      createProfile,
+      renameProfile,
+      deleteProfile,
+      copyCommandToProfile,
+      copyReferenceToProfile,
+      copyRoadmapToProfile,
       setAdding,
       openEditCommand,
       addCommand,
