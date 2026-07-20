@@ -6,6 +6,7 @@ import { fold } from '../../lib/format';
 import { definedNames as buildDefinedNames } from '../../lib/varsets';
 import { cardBase, cardHead, cardIconBtn, codeWrap, tagBtn } from '../../lib/ui';
 import { CodeBlock } from '../CodeBlock';
+import { CopyToProfile } from '../CopyToProfile';
 import { EmptyState } from '../EmptyState';
 import type { Command } from '../../types';
 
@@ -357,6 +358,7 @@ export function Library() {
                               >
                                 ✕
                               </button>
+                              <CopyToProfile kind="command" id={c.id} />
                             </div>
                             {c.desc && <div style={cardDesc}>{c.desc}</div>}
                             <div style={codeWrap}>

@@ -4,6 +4,29 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.7.0] — 2026-07-20
+
+### Added
+- **Multiple profiles.** A profile is an isolated dataset (its own commands,
+  methodology, references and cheatsheets) — e.g. one for OSCP, one per red-team
+  engagement. A profile menu in the top bar switches, creates, renames and deletes
+  profiles. A **new profile** is either empty or a **clone** of an existing one
+  (whole dataset copied). A **“copy to…”** control on each command, reference and
+  methodology copies that single item into another profile with fresh ids (a copied
+  command brings its category + note; a copied methodology is structure only —
+  unchecked, no saved results). Deleting the last profile is refused.
+
+### Changed
+- **API is now per-profile.** Each profile is one `AppState` stored as a JSON blob
+  in a new `profiles` table. New routes `GET/POST /api/profiles`,
+  `PUT/DELETE /api/profiles/:id`, `POST /api/profiles/:id/activate`,
+  `GET/PUT /api/profiles/:id/state`; `import`/`export` act on the active profile.
+  The former global `GET/PUT /api/state` is removed. An existing single-dataset DB
+  is **migrated automatically** on first start into a profile named **OSCP**
+  (one-shot, transactional, non-destructive).
+- Variable *values* remain global to the session and are **unchanged when switching
+  profiles** (a profile scopes content, not values — D7 preserved).
+
 ## [0.6.0] — 2026-07-18
 
 ### Added

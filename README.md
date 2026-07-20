@@ -132,6 +132,25 @@ All optional, passed as `make` variables (e.g. `make up CHEAT_PORT=9000`):
 - **Loopback-only** (recommended if you don't need LAN access):
   `make up CHEAT_HOST=127.0.0.1 PUBLISH='-p 127.0.0.1:8787:8787'`.
 
+## Profils
+
+A **profile** is an isolated dataset — its own commands, methodology, references
+and cheatsheets (e.g. one for **OSCP**, one for a **red-team** engagement, one per
+client). Switch, create, rename and delete profiles from the profile menu in the
+top bar (next to import/export).
+
+- **New profile** — either **empty**, or a **clone** of an existing profile (its
+  whole dataset copied into a fresh, isolated profile).
+- **Copy a single item across profiles** — a small “copy to…” control on each
+  command, reference and methodology copies that item into another profile with
+  fresh ids. A copied command brings its category (if missing) and its note; a
+  copied methodology is copied **structure only** (unchecked, without saved results).
+- **Migration** — an existing single-dataset database is migrated automatically on
+  first start into a profile named **OSCP** (rename it as you like); nothing is lost.
+- **Scope** — a profile scopes *content* only. Variable *values* (`$RHOST`, …) stay
+  global to the session and unchanged across profile switches. Import/export act on
+  the **active** profile.
+
 ## Security & OPSEC
 
 Cheat is a single-user tool with **no authentication and no TLS**, designed to
@@ -143,11 +162,12 @@ run on a machine you control.
   keep it local, firewall the port, or reach it over an SSH tunnel.
 - **Variable values are memory-only** — target IPs, passwords and the like are
   never written to the database, `localStorage`, or the JSON export; they reset
-  on reload.
+  on reload. They are **global to the session** and are **kept unchanged when you
+  switch profiles** (a profile scopes content, not variable values).
 - **No at-rest encryption** — the database stores your commands, methodology,
   references, free-text notes/targets/URLs and any **captured command output**
   (methodology step results, which can contain credentials, hashes or other
-  sensitive data) in cleartext. Rely on OS full-disk encryption. **Markdown and PDF exports emit raw `$TOKEN`s by default** —
+  sensitive data) in cleartext, **for every profile**. Rely on OS full-disk encryption. **Markdown and PDF exports emit raw `$TOKEN`s by default** —
   resolving values into an export is an explicit opt-in that warns before writing
   a sensitive value (`$PASS`) to disk.
 - **Zero network egress** — no CDN, self-hosted fonts, no telemetry, no
@@ -157,9 +177,10 @@ run on a machine you control.
 
 ## Import / export
 
-Export produces — and import expects — a **single JSON object** (`AppState`).
-Import is a **full REPLACE** (it overwrites everything, so export first to back
-up). Variable *values* are never part of the file. The easiest way to get a valid
+Export produces — and import expects — a **single JSON object** (`AppState`),
+scoped to the **active profile**. Import is a **full REPLACE** of the active
+profile (it overwrites everything in it, so export first to back up); it does not
+touch other profiles. Variable *values* are never part of the file. The easiest way to get a valid
 file is to **Export** one and edit it. Every top-level key must be present (arrays
 may be empty, maps `{}`); import rejects a file whose `commands` is not an array.
 
@@ -201,8 +222,11 @@ may be empty, maps `{}`); import rejects a file whose `commands` is not an array
 One self-contained **Go** binary (Gin) embeds the compiled **Vite + React +
 TypeScript** SPA via `go:embed` and serves it alongside a same-origin REST API.
 Storage is **pure-Go GORM/SQLite** (no CGO → a static binary). The API is lean
-and whole-state: `GET`/`PUT /api/state`, `POST /api/import`, `GET /api/export`,
-`GET /api/health`.
+and whole-state, scoped per profile: `GET /api/profiles`, `POST /api/profiles`
+(create/clone), `PUT`/`DELETE /api/profiles/:id`, `POST /api/profiles/:id/activate`,
+`GET`/`PUT /api/profiles/:id/state`, plus `POST /api/import`, `GET /api/export`
+(active profile) and `GET /api/health`. Each profile is one `AppState` stored as
+a JSON blob in a `profiles` row.
 
 ## Project layout
 

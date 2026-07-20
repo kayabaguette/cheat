@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import type { ViewKey } from '../types';
 import { DataMenu } from './DataMenu';
+import { ProfileMenu } from './ProfileMenu';
 
 // Fixed 53px top bar: logo, the 4-tab segmented control, search, a contextual
 // add button, and the theme toggle. Markup/styles ported verbatim from the
@@ -188,6 +189,8 @@ export function TopBar() {
       >
         <span style={{ fontSize: '15px', lineHeight: 1 }}>+</span> {addLabel}
       </button>
+
+      <ProfileMenu />
 
       <DataMenu />
 

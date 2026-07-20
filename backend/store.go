@@ -1,24 +1,33 @@
-// Persistence layer for the Cheat app (M3).
+// Persistence layer for the Cheat app.
 //
 // LEAN CHOICE (deliberate, documented): the API exposes a COARSE whole-AppState
-// contract (GET/PUT /api/state) rather than the SPEC's granular per-entity CRUD.
-// The frontend keeps its entire state in memory (components/store.tsx) and simply
-// snapshots it here; this file gives that snapshot durable, relational storage.
+// contract rather than the SPEC's granular per-entity CRUD. The frontend keeps
+// its entire state in memory (components/store.tsx) and simply snapshots it here.
 //
-// Storage is relational GORM over a PURE-GO SQLite driver (github.com/glebarez/
-// sqlite → modernc.org/sqlite) so the distroless static build works with
-// CGO_ENABLED=0. Entities (Category/Command/Reference/Roadmap/Phase/Step/
-// Cheatsheet) are real rows; the id-keyed maps (notes/checks/openSteps), the
-// settings object and the `initialized` flag live in a tiny kv table as JSON.
+// PROFILES: a profile (e.g. OSCP, RT) is nothing but one whole AppState. Because
+// the access pattern is always "load whole / save whole", each profile is stored
+// as a SINGLE `profiles` row holding its AppState serialized as JSON (Profile.State)
+// — no per-entity relational rows, no profile_id scoping, isolation for free.
+//
+// The pre-profiles builds stored ONE AppState relationally (Category/Command/…
+// tables + a kv table). Those models + the legacy read path (legacyLoadState) are
+// retained ONLY to migrate an existing single-dataset DB into a first profile on
+// startup (migrateToProfiles); afterwards those tables are dormant and untouched.
+//
+// Storage uses GORM over a PURE-GO SQLite driver (github.com/glebarez/sqlite →
+// modernc.org/sqlite) so the distroless static build works with CGO_ENABLED=0.
 //
 // Variable VALUES are NEVER persisted (SPEC D7, memory-only) — they are not part
 // of the AppState contract below.
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
+	"strings"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -179,20 +188,54 @@ type Cheatsheet struct {
 
 // KV is the tiny key/value table for the id-keyed maps, settings and the
 // `initialized` flag. All values are JSON.
+//
+// In the pre-profiles schema this held the id-keyed maps + settings for the
+// single dataset. Post-profiles it holds only GLOBAL flags (`initialized`,
+// `activeProfileId`); the per-profile maps live inside each Profile.State blob.
 type KV struct {
 	Key   string `gorm:"primaryKey"`
 	Value string
 }
 
-// kv keys.
+// kv keys. kvInitialized..kvSettings are LEGACY (read by legacyLoadState during
+// migration only). kvActiveProfile is the current global pointer to the active
+// profile id.
 const (
-	kvInitialized = "initialized"
-	kvNotes       = "notes"
-	kvChecks      = "checks"
-	kvOpenSteps   = "openSteps"
-	kvResults     = "results"
-	kvSettings    = "settings"
+	kvInitialized   = "initialized"
+	kvNotes         = "notes"
+	kvChecks        = "checks"
+	kvOpenSteps     = "openSteps"
+	kvResults       = "results"
+	kvSettings      = "settings"
+	kvActiveProfile = "activeProfileId"
 )
+
+// Profile is one named dataset. State is the whole AppState serialized as JSON;
+// Position preserves the display order of the profile switcher.
+type Profile struct {
+	ID       string `gorm:"primaryKey"`
+	Name     string
+	Position int
+	State    string // AppState as JSON
+}
+
+// ProfileMeta is the lightweight {id,name} pair returned by the profile list.
+type ProfileMeta struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// newID mints a random hex id for a server-created profile (16 bytes → 32 hex
+// chars), prefixed for legibility. Uses crypto/rand (no external dep).
+func newID(prefix string) string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return prefix + hex.EncodeToString(b[:])
+}
+
+// maxProfileNameLen bounds a profile name (the server binds 0.0.0.0 with no auth;
+// keep stored/reflected text sane).
+const maxProfileNameLen = 100
 
 // openDB opens SQLite at dbPath, enables WAL + FK enforcement and AutoMigrates
 // every model. It fails loud (returns error) if the DB cannot be opened.
@@ -216,32 +259,69 @@ func openDB(dbPath string) (*gorm.DB, error) {
 		}
 	}
 	if err := db.AutoMigrate(
+		&Profile{},
+		// Legacy content tables — retained so a pre-profiles DB can be migrated
+		// once into a first profile (see migrateToProfiles); dormant afterwards.
 		&Category{}, &Command{}, &Reference{},
 		&Roadmap{}, &Phase{}, &Step{}, &Cheatsheet{},
 		&KV{},
 	); err != nil {
 		return nil, err
 	}
+	if err := migrateToProfiles(db); err != nil {
+		return nil, err
+	}
 	return db, nil
 }
 
-// --- Read: assemble AppState from the tables + kv ---------------------------
-
-func loadState(db *gorm.DB) (bool, AppState, error) {
-	state := emptyState()
-
-	initialized, err := kvBool(db, kvInitialized)
+// migrateToProfiles is a one-shot, idempotent, NON-destructive migration: if no
+// profiles exist yet but a legacy single-dataset is present (kvInitialized set),
+// it wraps that dataset into a first profile named "OSCP" and marks it active.
+// The legacy tables are left intact. On a fresh DB it does nothing (the frontend
+// seeds the first profile on load).
+func migrateToProfiles(db *gorm.DB) error {
+	var n int64
+	if err := db.Model(&Profile{}).Count(&n).Error; err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil // already migrated / profiles exist
+	}
+	legacyInit, err := kvBool(db, kvInitialized)
 	if err != nil {
-		return false, state, err
+		return err
 	}
-	// Not initialized → return the empty/zero state (state stays empty).
-	if !initialized {
-		return false, state, nil
+	if !legacyInit {
+		return nil // fresh DB — nothing to migrate
 	}
+	// Reassemble the legacy AppState and store it as the first profile.
+	state, err := legacyLoadState(db)
+	if err != nil {
+		return err
+	}
+	blob, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	id := newID("p")
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&Profile{ID: id, Name: "OSCP", Position: 0, State: string(blob)}).Error; err != nil {
+			return err
+		}
+		return kvSet(tx, kvActiveProfile, id)
+	})
+}
+
+// --- LEGACY read: assemble the pre-profiles AppState from the old tables + kv.
+// Used ONLY by migrateToProfiles to wrap an existing single dataset into the
+// first profile. Not on the live request path.
+
+func legacyLoadState(db *gorm.DB) (AppState, error) {
+	state := emptyState()
 
 	var cats []Category
 	if err := db.Order("rowid").Find(&cats).Error; err != nil {
-		return false, state, err
+		return state, err
 	}
 	for _, c := range cats {
 		state.Categories = append(state.Categories, CategoryDTO{Key: c.Key, Label: c.Label, Color: c.Color})
@@ -249,7 +329,7 @@ func loadState(db *gorm.DB) (bool, AppState, error) {
 
 	var cmds []Command
 	if err := db.Order("rowid").Find(&cmds).Error; err != nil {
-		return false, state, err
+		return state, err
 	}
 	for _, c := range cmds {
 		state.Commands = append(state.Commands, CommandDTO{
@@ -261,7 +341,7 @@ func loadState(db *gorm.DB) (bool, AppState, error) {
 
 	var refs []Reference
 	if err := db.Order("rowid").Find(&refs).Error; err != nil {
-		return false, state, err
+		return state, err
 	}
 	for _, r := range refs {
 		state.References = append(state.References, ReferenceDTO{
@@ -274,7 +354,7 @@ func loadState(db *gorm.DB) (bool, AppState, error) {
 		Preload("Phases", func(tx *gorm.DB) *gorm.DB { return tx.Order("phases.position") }).
 		Preload("Phases.Steps", func(tx *gorm.DB) *gorm.DB { return tx.Order("steps.position") }).
 		Order("position").Find(&roadmaps).Error; err != nil {
-		return false, state, err
+		return state, err
 	}
 	for _, r := range roadmaps {
 		rd := RoadmapDTO{ID: r.ID, Label: r.Label, Phases: []PhaseDTO{}}
@@ -290,7 +370,7 @@ func loadState(db *gorm.DB) (bool, AppState, error) {
 
 	var sheets []Cheatsheet
 	if err := db.Order("position").Find(&sheets).Error; err != nil {
-		return false, state, err
+		return state, err
 	}
 	for _, s := range sheets {
 		state.Cheatsheets = append(state.Cheatsheets, CheatsheetDTO{
@@ -299,125 +379,188 @@ func loadState(db *gorm.DB) (bool, AppState, error) {
 	}
 
 	if err := kvUnmarshal(db, kvNotes, &state.Notes); err != nil {
-		return false, state, err
+		return state, err
 	}
 	if err := kvUnmarshal(db, kvChecks, &state.Checks); err != nil {
-		return false, state, err
+		return state, err
 	}
 	if err := kvUnmarshal(db, kvOpenSteps, &state.OpenSteps); err != nil {
-		return false, state, err
+		return state, err
 	}
 	if err := kvUnmarshal(db, kvResults, &state.Results); err != nil {
-		return false, state, err
+		return state, err
 	}
 	if err := kvUnmarshal(db, kvSettings, &state.Settings); err != nil {
-		return false, state, err
+		return state, err
 	}
 
-	return true, state, nil
+	return state, nil
 }
 
-// --- Write: full REPLACE of all persisted data in ONE transaction -----------
+// --- Profiles: each profile is one AppState stored as a JSON blob ------------
 
-func saveState(db *gorm.DB, s AppState) error {
+// listProfiles returns the {id,name} of every profile, ordered by position.
+func listProfiles(db *gorm.DB) ([]ProfileMeta, error) {
+	var ps []Profile
+	if err := db.Order("position").Find(&ps).Error; err != nil {
+		return nil, err
+	}
+	out := make([]ProfileMeta, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, ProfileMeta{ID: p.ID, Name: p.Name})
+	}
+	return out, nil
+}
+
+// getActiveProfileID returns the active profile id, or "" if none is set.
+func getActiveProfileID(db *gorm.DB) (string, error) {
+	var id string
+	if err := kvUnmarshal(db, kvActiveProfile, &id); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// setActiveProfileID persists the active profile pointer after checking the
+// profile exists. Returns gorm.ErrRecordNotFound for an unknown id.
+func setActiveProfileID(db *gorm.DB, id string) error {
+	if err := db.First(&Profile{}, "id = ?", id).Error; err != nil {
+		return err
+	}
+	return kvSet(db, kvActiveProfile, id)
+}
+
+// loadProfileState unmarshals a profile's AppState blob. Missing profile →
+// gorm.ErrRecordNotFound. An empty blob decodes to the emptyState default.
+func loadProfileState(db *gorm.DB, id string) (AppState, error) {
+	state := emptyState()
+	var p Profile
+	if err := db.First(&p, "id = ?", id).Error; err != nil {
+		return state, err
+	}
+	if p.State == "" {
+		return state, nil
+	}
+	if err := json.Unmarshal([]byte(p.State), &state); err != nil {
+		return state, err
+	}
+	return state, nil
+}
+
+// saveProfileState replaces a profile's AppState blob. Missing profile →
+// gorm.ErrRecordNotFound (never creates a profile implicitly).
+func saveProfileState(db *gorm.DB, id string, s AppState) error {
+	blob, err := json.Marshal(s)
+	if err != nil {
+		return err
+	}
+	res := db.Model(&Profile{}).Where("id = ?", id).Update("state", string(blob))
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// createProfile mints a profile. When cloneFrom is non-empty its AppState blob
+// is copied verbatim (whole-profile clone); otherwise the profile starts empty.
+// The new profile is appended (max position + 1). Returns its metadata.
+func createProfile(db *gorm.DB, name, cloneFrom string) (ProfileMeta, error) {
+	name = trimName(name)
+	if name == "" {
+		return ProfileMeta{}, errEmptyName
+	}
+	blob := ""
+	if cloneFrom != "" {
+		var src Profile
+		if err := db.First(&src, "id = ?", cloneFrom).Error; err != nil {
+			return ProfileMeta{}, err
+		}
+		blob = src.State
+	}
+	if blob == "" {
+		b, err := json.Marshal(emptyState())
+		if err != nil {
+			return ProfileMeta{}, err
+		}
+		blob = string(b)
+	}
+	var maxPos struct{ Max int }
+	if err := db.Model(&Profile{}).Select("COALESCE(MAX(position), -1) AS max").Scan(&maxPos).Error; err != nil {
+		return ProfileMeta{}, err
+	}
+	p := Profile{ID: newID("p"), Name: name, Position: maxPos.Max + 1, State: blob}
+	if err := db.Create(&p).Error; err != nil {
+		return ProfileMeta{}, err
+	}
+	return ProfileMeta{ID: p.ID, Name: p.Name}, nil
+}
+
+// renameProfile updates a profile's name. Missing profile / empty name error out.
+func renameProfile(db *gorm.DB, id, name string) error {
+	name = trimName(name)
+	if name == "" {
+		return errEmptyName
+	}
+	res := db.Model(&Profile{}).Where("id = ?", id).Update("name", name)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// deleteProfile removes a profile. It refuses to delete the LAST profile
+// (errLastProfile). If the deleted profile was active, the active pointer moves
+// to the first remaining profile (by position).
+func deleteProfile(db *gorm.DB, id string) error {
+	var n int64
+	if err := db.Model(&Profile{}).Count(&n).Error; err != nil {
+		return err
+	}
+	if n <= 1 {
+		return errLastProfile
+	}
 	return db.Transaction(func(tx *gorm.DB) error {
-		// Wipe every table (children first for FK safety).
-		for _, m := range []any{
-			&Step{}, &Phase{}, &Roadmap{},
-			&Command{}, &Reference{}, &Category{}, &Cheatsheet{},
-		} {
-			if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(m).Error; err != nil {
+		res := tx.Delete(&Profile{}, "id = ?", id)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		active, err := getActiveProfileID(tx)
+		if err != nil {
+			return err
+		}
+		if active == id {
+			var first Profile
+			if err := tx.Order("position").First(&first).Error; err != nil {
 				return err
 			}
+			return kvSet(tx, kvActiveProfile, first.ID)
 		}
-
-		// Reinsert entities, stamping Position from array index to preserve order.
-		cats := make([]Category, 0, len(s.Categories))
-		for _, c := range s.Categories {
-			cats = append(cats, Category{Key: c.Key, Label: c.Label, Color: c.Color})
-		}
-		if err := insertAll(tx, cats); err != nil {
-			return err
-		}
-
-		cmds := make([]Command, 0, len(s.Commands))
-		for _, c := range s.Commands {
-			cmds = append(cmds, Command{
-				ID: c.ID, Category: c.Category, Tool: c.Tool, Title: c.Title,
-				Template: c.Template, Desc: c.Desc, Tags: nonNil(c.Tags),
-				Favorite: c.Favorite,
-			})
-		}
-		if err := insertAll(tx, cmds); err != nil {
-			return err
-		}
-
-		refs := make([]Reference, 0, len(s.References))
-		for _, r := range s.References {
-			refs = append(refs, Reference{
-				ID: r.ID, Title: r.Title, URL: r.URL, Desc: r.Desc, Tags: nonNil(r.Tags),
-			})
-		}
-		if err := insertAll(tx, refs); err != nil {
-			return err
-		}
-
-		for ri, r := range s.Roadmaps {
-			if err := tx.Create(&Roadmap{ID: r.ID, Label: r.Label, Position: ri}).Error; err != nil {
-				return err
-			}
-			for pi, p := range r.Phases {
-				if err := tx.Create(&Phase{ID: p.ID, RoadmapID: r.ID, Label: p.Label, Position: pi}).Error; err != nil {
-					return err
-				}
-				for si, st := range p.Steps {
-					if err := tx.Create(&Step{
-						ID: st.ID, PhaseID: p.ID, Text: st.Text, CommandID: st.CommandID, Position: si,
-					}).Error; err != nil {
-						return err
-					}
-				}
-			}
-		}
-
-		sheets := make([]Cheatsheet, 0, len(s.Cheatsheets))
-		for i, sh := range s.Cheatsheets {
-			sheets = append(sheets, Cheatsheet{
-				ID: sh.ID, Title: sh.Title, Target: sh.Target,
-				Position: i, CommandIDs: nonNil(sh.CommandIDs),
-			})
-		}
-		if err := insertAll(tx, sheets); err != nil {
-			return err
-		}
-
-		// kv maps + settings + initialized flag.
-		if err := kvSet(tx, kvNotes, nonNilMap(s.Notes)); err != nil {
-			return err
-		}
-		if err := kvSet(tx, kvChecks, nonNilMap(s.Checks)); err != nil {
-			return err
-		}
-		if err := kvSet(tx, kvOpenSteps, nonNilMap(s.OpenSteps)); err != nil {
-			return err
-		}
-		if err := kvSet(tx, kvResults, nonNilMap(s.Results)); err != nil {
-			return err
-		}
-		if err := kvSet(tx, kvSettings, s.Settings); err != nil {
-			return err
-		}
-		return kvSet(tx, kvInitialized, true)
+		return nil
 	})
 }
 
-// insertAll batch-inserts a slice (no-op when empty; generics keep it terse).
-func insertAll[T any](tx *gorm.DB, rows []T) error {
-	if len(rows) == 0 {
-		return nil
+// trimName trims whitespace and bounds the length of a profile name.
+func trimName(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) > maxProfileNameLen {
+		s = s[:maxProfileNameLen]
 	}
-	return tx.Create(&rows).Error
+	return s
 }
+
+var (
+	errEmptyName   = errors.New("profile name required")
+	errLastProfile = errors.New("cannot delete the last profile")
+)
 
 // --- kv helpers -------------------------------------------------------------
 
@@ -470,12 +613,6 @@ func nonNil(s []string) []string {
 		return []string{}
 	}
 	return s
-}
-func nonNilMap[K comparable, V any](m map[K]V) map[K]V {
-	if m == nil {
-		return map[K]V{}
-	}
-	return m
 }
 
 // mustOpenDB opens the DB or exits the process (fail loud, SPEC: DB is required).

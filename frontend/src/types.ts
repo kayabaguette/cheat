@@ -58,6 +58,14 @@ export interface VariableDef {
   sensitive: boolean;
 }
 
+// A profile is one isolated dataset (OSCP, RT, a given client…). Each profile
+// owns its whole AppState; the switcher lists them by {id,name}. Variable VALUES
+// are NOT per-profile — they stay global/session (memory-only, D7).
+export interface ProfileMeta {
+  id: string;
+  name: string;
+}
+
 export type ViewKey = 'library' | 'method' | 'refs' | 'cheatsheet';
 
 export type ThemeName = 'dark' | 'light';

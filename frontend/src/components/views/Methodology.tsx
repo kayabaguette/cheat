@@ -5,6 +5,7 @@ import { resolve } from '../../lib/vars';
 import { definedNames } from '../../lib/varsets';
 import { MONO, tabBar, pillBase, pillOn, barTrackBase, codePreCompact } from '../../lib/ui';
 import { CodeBlock } from '../CodeBlock';
+import { CopyToProfile } from '../CopyToProfile';
 import { EmptyState } from '../EmptyState';
 import { CopyButton } from '../CopyButton';
 
@@ -562,6 +563,7 @@ export function Methodology() {
                   <button onClick={onReset} style={editBtnBase}>
                     Réinitialiser la progression
                   </button>
+                  <CopyToProfile kind="roadmap" id={rm.id} />
                 </div>
 
                 {/* Roadmap rename / delete (edit mode) */}
