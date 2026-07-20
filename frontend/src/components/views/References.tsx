@@ -4,6 +4,7 @@ import { useStore } from '../../store';
 import type { Reference } from '../../types';
 import { fold, extractDomain } from '../../lib/format';
 import { MONO, cardBase, cardHead, cardIconBtn, tagBtn, toastShell, toastDot } from '../../lib/ui';
+import { CopyToProfile } from '../CopyToProfile';
 import { EmptyState } from '../EmptyState';
 
 // Références — faithful port of the prototype's refs panel (~lines 303-330):
@@ -180,6 +181,7 @@ export function References() {
                   <button onClick={() => del(r.id)} title="Supprimer" style={cardIconBtn}>
                     ✕
                   </button>
+                  <CopyToProfile kind="reference" id={r.id} />
                 </div>
                 {href ? (
                   <a href={href} {...extLinkProps} style={domainStyle}>
