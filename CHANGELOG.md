@@ -4,6 +4,17 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.7.2] — 2026-07-21
+
+### Fixed
+- **Category change ignored when editing a command.** The edit form submitted via
+  `updateCommand`, which — unlike `addCommand` — didn't handle a newly-created
+  category, so assigning a category to an uncategorized command (via the “+” field)
+  was silently dropped on save. Category resolution is now shared between add and
+  edit (`resolveCategory`): a typed new category is created on edit too, an empty
+  selection falls back to « Autre », and the custom-category color no longer breaks
+  in an empty profile (negative palette index guarded).
+
 ## [0.7.1] — 2026-07-21
 
 ### Fixed
