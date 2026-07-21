@@ -4,6 +4,16 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.7.3] — 2026-07-21
+
+### Fixed
+- **Custom category had no color.** A category created in an empty profile on an
+  earlier build got an undefined palette color (negative index) and was persisted
+  colorless, so its dot/bar in the Bibliothèque stayed blank. Categories are now
+  healed on load — any category without a color is assigned a deterministic palette
+  color (and re-saved), so every category shows one like the built-ins. (The
+  creation path was already guarded in 0.7.2; this repairs already-stored data.)
+
 ## [0.7.2] — 2026-07-21
 
 ### Fixed
