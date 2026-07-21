@@ -695,6 +695,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const color = CUSTOM_CAT_PALETTE[n % CUSTOM_CAT_PALETTE.length];
         setCategories((cs) => [...cs, { key, label: nc, color }]);
         category = key;
+      } else if (!category) {
+        // No category chosen and none typed — happens in a brand-new empty profile
+        // (no built-in categories to preselect). Fall back to a catch-all « Autre »
+        // category (created once, reused after) so the command is never orphaned
+        // and always shows in the Bibliothèque. Mirrors the tool='Divers' default.
+        const existing = categoriesRef.current.find((c) => c.key === 'x-autre');
+        if (!existing) {
+          setCategories((cs) => [...cs, { key: 'x-autre', label: 'Autre', color: '#8a8f98' }]);
+        }
+        category = 'x-autre';
       }
       const tool = input.tool.trim() || 'Divers';
       const id = mint('u');
