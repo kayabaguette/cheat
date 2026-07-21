@@ -224,6 +224,7 @@ export interface StoreActions {
     id: string,
     patch: {
       category?: string;
+      newCategory?: string;
       tool?: string;
       title?: string;
       template?: string;
@@ -669,6 +670,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEditingCommandId(id);
   }, []);
 
+  // Create a custom category from a free-text label; returns its key. Color cycles
+  // the palette (guarded against a negative index in an empty profile, where the
+  // custom count is below the seed baseline).
+  const addCustomCategory = useCallback((label: string): string => {
+    const n = categoriesRef.current.length - CATEGORIES.length;
+    const key = 'x-' + label.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 20) + '-' + n;
+    const L = CUSTOM_CAT_PALETTE.length;
+    const color = CUSTOM_CAT_PALETTE[((n % L) + L) % L];
+    setCategories((cs) => [...cs, { key, label, color }]);
+    return key;
+  }, []);
+
+  // Resolve the category key for an add/edit: a typed new category creates one; an
+  // empty selection falls back to a catch-all « Autre » (created once, reused);
+  // otherwise the chosen key is kept. Shared by addCommand and updateCommand so
+  // creating a category works identically on add AND on edit.
+  const resolveCategory = useCallback(
+    (inputCategory: string, newCategoryRaw?: string): string => {
+      const nc = (newCategoryRaw || '').trim();
+      if (nc) return addCustomCategory(nc);
+      if (!inputCategory) {
+        if (!categoriesRef.current.some((c) => c.key === 'x-autre')) {
+          setCategories((cs) => [...cs, { key: 'x-autre', label: 'Autre', color: '#8a8f98' }]);
+        }
+        return 'x-autre';
+      }
+      return inputCategory;
+    },
+    [addCustomCategory],
+  );
+
   const addCommand = useCallback(
     (input: {
       category: string;
@@ -685,27 +717,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         flash('Titre et commande requis');
         return false;
       }
-      let category = input.category;
       const nc = (input.newCategory || '').trim();
-      if (nc) {
-        // Custom category: key + palette color derived from the count of customs
-        // already present (built-ins seeded from CATEGORIES come first).
-        const n = categoriesRef.current.length - CATEGORIES.length;
-        const key = 'x-' + nc.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 20) + '-' + n;
-        const color = CUSTOM_CAT_PALETTE[n % CUSTOM_CAT_PALETTE.length];
-        setCategories((cs) => [...cs, { key, label: nc, color }]);
-        category = key;
-      } else if (!category) {
-        // No category chosen and none typed — happens in a brand-new empty profile
-        // (no built-in categories to preselect). Fall back to a catch-all « Autre »
-        // category (created once, reused after) so the command is never orphaned
-        // and always shows in the Bibliothèque. Mirrors the tool='Divers' default.
-        const existing = categoriesRef.current.find((c) => c.key === 'x-autre');
-        if (!existing) {
-          setCategories((cs) => [...cs, { key: 'x-autre', label: 'Autre', color: '#8a8f98' }]);
-        }
-        category = 'x-autre';
-      }
+      // Resolve the category (typed new category → created; empty → « Autre »
+      // fallback so a command in a brand-new empty profile is never orphaned).
+      const category = resolveCategory(input.category, input.newCategory);
       const tool = input.tool.trim() || 'Divers';
       const id = mint('u');
       const cmd: Command = {
@@ -722,7 +737,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       flash(nc ? 'Catégorie « ' + nc + ' » créée' : 'Commande ajoutée');
       return true;
     },
-    [flash, setAdding],
+    [flash, setAdding, resolveCategory],
   );
 
   const updateCommand = useCallback(
@@ -730,6 +745,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       id: string,
       patch: {
         category?: string;
+        newCategory?: string;
         tool?: string;
         title?: string;
         template?: string;
@@ -745,7 +761,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         flash('Titre et commande requis');
         return false;
       }
-      const category = patch.category ?? cur.category;
+      // Resolve the category the same way as add: a typed new category is created
+      // here too (previously edit dropped it), otherwise the chosen/current key.
+      const category = resolveCategory(patch.category ?? cur.category, patch.newCategory);
       const tool = patch.tool !== undefined ? patch.tool.trim() || 'Divers' : cur.tool;
       const desc = patch.desc !== undefined ? patch.desc.trim() : cur.desc;
       const tags = dropToolTag(patch.tags !== undefined ? cleanTags(patch.tags) : cur.tags, tool);
@@ -756,7 +774,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       flash('Commande modifiée');
       return true;
     },
-    [flash, setAdding],
+    [flash, setAdding, resolveCategory],
   );
 
   const deleteCommand = useCallback(
