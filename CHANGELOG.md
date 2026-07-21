@@ -4,6 +4,29 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.7.2] — 2026-07-21
+
+### Fixed
+- **Category change ignored when editing a command.** The edit form submitted via
+  `updateCommand`, which — unlike `addCommand` — didn't handle a newly-created
+  category, so assigning a category to an uncategorized command (via the “+” field)
+  was silently dropped on save. Category resolution is now shared between add and
+  edit (`resolveCategory`): a typed new category is created on edit too, an empty
+  selection falls back to « Autre », and the custom-category color no longer breaks
+  in an empty profile (negative palette index guarded).
+
+## [0.7.1] — 2026-07-21
+
+### Fixed
+- **Command invisible in an empty profile.** A brand-new profile has no built-in
+  categories, so a command added without choosing/creating one was saved with an
+  empty category and rendered nowhere (though the count still included it). Now the
+  add form falls back to a catch-all **« Autre »** category when none is given
+  (mirrors the `tool = "Divers"` default), and the Bibliothèque surfaces any command
+  whose category is unknown under a **« Sans catégorie »** group — so existing
+  orphaned commands (and imported datasets with a dangling category) stay visible
+  and editable.
+
 ## [0.7.0] — 2026-07-20
 
 ### Added

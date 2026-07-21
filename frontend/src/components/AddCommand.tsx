@@ -144,7 +144,7 @@ export function AddCommand() {
     const tags = mergeTags(tagsSel, tagsText);
     // addCommand / updateCommand close the modal (store) on success.
     if (editingCommandId) {
-      updateCommand(editingCommandId, { category, tool, title, template, desc, tags });
+      updateCommand(editingCommandId, { category, newCategory, tool, title, template, desc, tags });
     } else {
       addCommand({ category, newCategory, tool, title, template, desc, tags });
     }
