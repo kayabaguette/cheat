@@ -920,7 +920,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Hydrate a slice set from a fetched AppState (shared shape with the seed).
   const hydrateFromState = useCallback((state: AppState) => {
-    setCategories(state.categories);
+    // Heal categories that were persisted without a color (created on an older
+    // build where a custom category in an empty profile got an undefined palette
+    // index) — assign a deterministic palette color so every category shows one,
+    // like the built-ins. Mirrors the tag/URL load-time normalization below.
+    setCategories(
+      state.categories.map((c, i) =>
+        c.color ? c : { ...c, color: CUSTOM_CAT_PALETTE[i % CUSTOM_CAT_PALETTE.length] },
+      ),
+    );
     // Enforce "a tool name is never a tag" on any loaded dataset (DB or a
     // freshly-imported one), independent of add/edit-time enforcement.
     setCommands(state.commands.map((c) => ({ ...c, tags: dropToolTag(c.tags, c.tool) })));
