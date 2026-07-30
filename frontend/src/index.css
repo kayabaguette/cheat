@@ -25,3 +25,38 @@ a:hover{color:var(--acc)}
 .copy-btn:hover{color:var(--acc);border-color:var(--acc-line)}
 .copy-btn:active{transform:scale(.86)}
 .copy-btn.copied{color:var(--acc);border-color:var(--acc-line);background:var(--acc-dim)}
+
+/* --- Top bar compaction --------------------------------------------------
+   The bar keeps its fixed 53px height at every width; what gives way, in
+   order, is the search width, the "Cheat" wordmark, the tab labels (long ->
+   short) and the add-button label. Driven from CSS (not JS) so there is no
+   resize listener and no re-render; the matching elements carry .tb-* classes
+   in TopBar.tsx, which therefore must NOT set these properties inline. */
+.tb{gap:14px;padding:0 16px}
+.tb-search{width:280px;flex:0 1 280px;min-width:104px}
+.tb-tab-short{display:none}
+.tb-tabs{flex:none;min-width:0}
+
+@media (max-width:1080px){
+  .tb-search{width:200px;flex:0 1 200px}
+}
+@media (max-width:940px){
+  /* The logo square alone still identifies the app. */
+  .tb-brand{display:none}
+  .tb-tab-long{display:none}
+  .tb-tab-short{display:inline}
+}
+@media (max-width:780px){
+  /* The add button keeps its "+" glyph; the view it targets is in its title. */
+  .tb-addlabel{display:none}
+  .tb-search{width:150px;flex:0 1 150px;min-width:88px}
+  .tb{gap:8px;padding:0 10px}
+}
+@media (max-width:640px){
+  /* The profile name gives way (its ▦ trigger + title remain), then the tab
+     strip scrolls inside itself rather than pushing the search / actions
+     off-screen. Scrollbar hidden — the strip is 4 items. */
+  .tb-profile-label{display:none}
+  .tb-tabs{flex:0 1 auto;overflow-x:auto;scrollbar-width:none}
+  .tb-tabs::-webkit-scrollbar{display:none}
+}

@@ -4,15 +4,23 @@ import type { ViewKey } from '../types';
 import { DataMenu } from './DataMenu';
 import { ProfileMenu } from './ProfileMenu';
 
-// Fixed 53px top bar: logo, the 4-tab segmented control, search, a contextual
-// add button, and the theme toggle. Markup/styles ported verbatim from the
-// prototype top bar.
+// Fixed 53px top bar: the sidebar fold toggle, logo, the 4-tab segmented
+// control, search, a contextual add button, and the theme toggle. Markup/styles
+// ported verbatim from the prototype top bar.
+//
+// Narrow viewports: the bar compacts instead of overflowing. The three pieces
+// that give way (the "Cheat" wordmark, the search width, the add-button label)
+// are driven by the .tb-brand / .tb-search / .tb-addlabel classes + media
+// queries in index.css — CSS, not JS, because an inline width would win over
+// any class rule.
 
-const TABS: { key: ViewKey; label: string }[] = [
-  { key: 'library', label: 'Bibliothèque' },
-  { key: 'method', label: 'Méthodologie' },
-  { key: 'refs', label: 'Références' },
-  { key: 'cheatsheet', label: 'Cheatsheet' },
+// `short` is the abbreviated label swapped in on narrow viewports (CSS only —
+// both spans are rendered, media queries decide which one shows).
+const TABS: { key: ViewKey; label: string; short: string }[] = [
+  { key: 'library', label: 'Bibliothèque', short: 'Biblio' },
+  { key: 'method', label: 'Méthodologie', short: 'Métho' },
+  { key: 'refs', label: 'Références', short: 'Réfs' },
+  { key: 'cheatsheet', label: 'Cheatsheet', short: 'Cheat' },
 ];
 
 const segBase: CSSProperties = {
@@ -30,6 +38,22 @@ const segBase: CSSProperties = {
 };
 const segOn: CSSProperties = { ...segBase, background: 'var(--border2)', color: 'var(--text)' };
 
+// Sidebar fold toggle (Q145) — same 34px square chrome as the theme toggle.
+const foldBtn: CSSProperties = {
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: '1px solid var(--border2)',
+  background: 'var(--surface2)',
+  color: 'var(--muted)',
+  width: '34px',
+  height: '34px',
+  fontSize: '14px',
+  fontFamily: 'inherit',
+  flex: 'none',
+};
+
 export function TopBar() {
   const {
     view,
@@ -44,6 +68,8 @@ export function TopBar() {
     setNewRmOpen,
     setAddingRef,
     addCheatsheet,
+    sidebarOpen,
+    toggleSidebar,
   } = useStore();
 
   // Cheatsheet tab badge = command count of the ACTIVE sheet.
@@ -69,22 +95,34 @@ export function TopBar() {
 
   return (
     <div
+      className="tb"
       style={{
         height: '53px',
         flex: 'none',
         display: 'flex',
         alignItems: 'center',
-        gap: '14px',
-        padding: '0 16px',
+        // gap + horizontal padding live in .tb (index.css) so they can tighten
+        // on a narrow viewport.
         borderBottom: '1px solid var(--border)',
         background: 'var(--surface)',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+      <button
+        onClick={toggleSidebar}
+        title={sidebarOpen ? 'Replier le menu' : 'Déplier le menu'}
+        aria-label={sidebarOpen ? 'Replier le menu' : 'Déplier le menu'}
+        aria-expanded={sidebarOpen}
+        style={foldBtn}
+      >
+        {sidebarOpen ? '☰' : '›'}
+      </button>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '9px', flex: 'none' }}>
         <div
           style={{
             width: '27px',
             height: '27px',
+            flex: 'none',
             background: 'var(--acc-dim)',
             display: 'flex',
             alignItems: 'center',
@@ -94,16 +132,24 @@ export function TopBar() {
         >
           💩
         </div>
-        <div style={{ fontWeight: 600, fontSize: '14.5px', letterSpacing: '-.01em' }}>Cheat</div>
+        <div
+          className="tb-brand"
+          style={{ fontWeight: 600, fontSize: '14.5px', letterSpacing: '-.01em' }}
+        >
+          Cheat
+        </div>
       </div>
 
       <div
+        className="tb-tabs"
         style={{
           display: 'flex',
           background: 'var(--elev)',
           border: '1px solid var(--border2)',
           padding: '3px',
           gap: '2px',
+          // NB: `flex` is set in .tb-tabs (index.css), not here — the narrow
+          // breakpoint needs to make this strip shrinkable + scrollable.
         }}
       >
         {TABS.map((t) => (
@@ -112,7 +158,8 @@ export function TopBar() {
             onClick={() => setView(t.key)}
             style={view === t.key ? segOn : segBase}
           >
-            {t.label}
+            <span className="tb-tab-long">{t.label}</span>
+            <span className="tb-tab-short">{t.short}</span>
             {t.key === 'cheatsheet' && selectedCount > 0 && (
               <span
                 style={{
@@ -137,7 +184,9 @@ export function TopBar() {
 
       <div style={{ flex: 1 }} />
 
-      <div style={{ position: 'relative', width: '280px' }}>
+      {/* Width lives in .tb-search (index.css) so the media queries can shrink
+          it — an inline width would override them. */}
+      <div className="tb-search" style={{ position: 'relative' }}>
         <span
           style={{
             position: 'absolute',
@@ -172,11 +221,13 @@ export function TopBar() {
 
       <button
         onClick={onAdd}
+        title={'Ajouter — ' + addLabel}
         style={{
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           gap: '6px',
+          flex: 'none',
           border: '1px solid var(--acc-line)',
           background: 'var(--acc)',
           color: 'var(--on-acc)',
@@ -187,7 +238,8 @@ export function TopBar() {
           whiteSpace: 'nowrap',
         }}
       >
-        <span style={{ fontSize: '15px', lineHeight: 1 }}>+</span> {addLabel}
+        <span style={{ fontSize: '15px', lineHeight: 1 }}>+</span>
+        <span className="tb-addlabel">{addLabel}</span>
       </button>
 
       <ProfileMenu />

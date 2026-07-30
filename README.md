@@ -62,6 +62,11 @@ across notes.
 - **Live variables** — substituted everywhere, with three clear states and
   auto-detection of new ones (see below).
 - **Themeable & dense** — dark / light, terminal-style, self-hosted fonts.
+- **Foldable sidebar & responsive panes** — the ☰ button in the top bar folds the
+  left sidebar (remembered per device), and it folds itself below 780px while
+  keeping your manual choice for when the window grows back. The command and
+  reference grids reflow to a single column when the pane gets narrow, and the top
+  bar compacts instead of overflowing.
 - **Local persistence** — everything (except variable *values*) is saved to a
   local SQLite database and survives restarts.
 - **Import / export** — back up or move your whole dataset as a single JSON file.

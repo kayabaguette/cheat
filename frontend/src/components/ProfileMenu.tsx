@@ -137,14 +137,19 @@ export function ProfileMenu() {
   };
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', flex: 'none' }}>
       <button
         onClick={() => setOpen((o) => !o)}
-        title="Profil actif — cliquer pour changer / gérer"
+        title={'Profil actif — ' + (active?.name ?? '—') + ' — cliquer pour changer / gérer'}
         style={trigger}
       >
         <span style={{ opacity: 0.6, flex: 'none' }}>▦</span>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {/* The profile name gives way on a narrow top bar (index.css); the
+            ▦ glyph + the title attribute still identify the trigger. */}
+        <span
+          className="tb-profile-label"
+          style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+        >
           {active?.name ?? '—'}
         </span>
         <span style={{ opacity: 0.6, flex: 'none' }}>▾</span>

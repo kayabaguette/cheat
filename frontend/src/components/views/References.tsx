@@ -32,9 +32,11 @@ function sanitizeHref(raw: string): string | null {
 }
 
 const page: CSSProperties = { padding: '22px 26px 70px' };
+// Same responsive track as the Library grid: min(340px, 100%) lets auto-fill
+// fall back to a single column on a narrow pane instead of overflowing.
 const grid: CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+  gridTemplateColumns: 'repeat(auto-fill, minmax(min(340px, 100%), 1fr))',
   gap: '13px',
 };
 // Card gap is References-specific (8px vs Library's 9px) — spread the shared base.
