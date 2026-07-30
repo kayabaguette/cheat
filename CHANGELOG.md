@@ -4,6 +4,52 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.8.0] — 2026-07-26
+
+### Added
+- **Foldable left sidebar (SPEC Q145).** A ☰ button at the far left of the top bar
+  folds/unfolds the 272px sidebar (Variables + Catégories + Tags); the folded
+  sidebar is unmounted, so its width goes back to the content region. The state is
+  a **device-local** preference persisted in `localStorage['cheat.sidebar']` — the
+  only localStorage key the app uses. It is deliberately **not** part of the
+  profile `AppState`, so it stays out of the import/export contract and is
+  identical across profiles, and it never holds a variable value (D7/OPSEC intact).
+- **Auto-fold below 780px — overrides Q145's "manual only, no auto-collapse".**
+  A `matchMedia('(max-width: 780px)')` listener folds the sidebar when the viewport
+  *crosses into* the narrow range and restores the **manual preference** when it
+  crosses back out; on mount, a narrow viewport starts folded. The auto path never
+  writes `localStorage`, so the user's own choice survives a trip through a narrow
+  window, and a manual toggle still wins at any width (it is only re-evaluated the
+  next time the width class changes). Threshold shared with the top-bar compaction
+  step, so the whole chrome tightens at once.
+
+### Fixed
+- **`Library.tsx` was diffed as a binary file.** The synthetic "Sans catégorie"
+  group key was a literal **NUL byte** (`'\0orphan'`), which made git classify the
+  whole file as binary — no diffs, no grep hits. Replaced by a named
+  `ORPHAN_KEY = '__orphan__'` constant (the key only has to never collide with a
+  real `Category.key`, which is always a slug). Behaviour is unchanged: verified
+  the group still renders for a command with a dangling category.
+
+### Changed
+- **Responsive content region — overrides D8/R4 ("desktop-only strict, no mobile
+  reflow").** The hard ~900px `min-width` on the content region is **removed**: the
+  Bibliothèque and Références card grids now use `minmax(min(370px|340px, 100%), 1fr)`,
+  so `auto-fill` collapses them to a **single stacked column** on a narrow pane
+  instead of forcing a horizontal scroll. Above ~900px the layout is byte-for-byte
+  unchanged (the `min()` only engages once the pane is narrower than one card).
+  Méthodologie and Cheatsheet already used `width:100%; max-width:820/840px`
+  columns and reflow as-is. The content pane keeps its `overflow-x: auto` as a
+  safety net; wide command templates still scroll inside their own `<pre>`.
+- **Top bar compacts instead of overflowing.** Below the breakpoints, in order:
+  search shrinks (1080px), the "Cheat" wordmark is dropped and the tab labels
+  switch to short forms — Biblio / Métho / Réfs / Cheat — (940px), the add-button
+  label is dropped and gaps/padding tighten (780px), the profile name is dropped
+  and the tab strip becomes internally scrollable (640px). Nothing overflows the
+  viewport down to 480px. Implemented as `.tb-*` classes + media queries in
+  `index.css` (no resize listener, no re-render); the affected properties must
+  therefore not be set inline in `TopBar.tsx`.
+
 ## [0.7.3] — 2026-07-21
 
 ### Fixed

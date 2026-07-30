@@ -14,11 +14,12 @@ import { PrintRoot } from './components/PrintRoot';
 import { Toast } from './components/Toast';
 
 // Root application shell. Faithful port of the prototype's three-region layout:
-// a fixed 53px top bar, then a flex row of the 272px sidebar + the routed content
-// region. The root element carries the theme token CSS custom properties so every
+// a fixed 53px top bar, then a flex row of the 272px sidebar (foldable — Q145)
+// + the routed content region. The root element carries the theme token CSS
+// custom properties so every
 // descendant can reference var(--bg), var(--acc)… exactly like the prototype root.
 export default function App() {
-  const { hydrated, theme, view } = useStore();
+  const { hydrated, theme, view, sidebarOpen } = useStore();
 
   // Export resolution preference — memory-only, session-scoped, default RAW.
   // Lifted here so the Cheatsheet toolbar toggle and the print-only <PrintRoot>
@@ -63,19 +64,21 @@ export default function App() {
       <div className="app" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
         <TopBar />
         <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-          <Sidebar />
-          {/* Content region. R4: a hard ~900px floor lives on THIS region only, so
-              the horizontal scroll kicks in once the pane itself drops below 900px
-              (the sidebar's 272px is reclaimed first). No mobile reflow. */}
+          {/* Q145: the sidebar is unmounted when folded, so its 272px go back to
+              the content region (which then re-flows its card grids). */}
+          {sidebarOpen && <Sidebar />}
+          {/* Content region. The former hard ~900px floor (D8/R4, "no mobile
+              reflow") is GONE: the card grids now collapse to a single column on
+              narrow viewports instead of forcing a horizontal scroll. overflowX
+              stays as a safety net for content that cannot shrink (wide code
+              blocks already scroll inside their own <pre>). */}
           <div style={{ flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'auto' }}>
-            <div style={{ minWidth: '900px' }}>
-              {view === 'library' && <Library />}
-              {view === 'method' && <Methodology />}
-              {view === 'refs' && <References />}
-              {view === 'cheatsheet' && (
-                <Cheatsheet exportResolve={exportResolve} setExportResolve={setExportResolve} />
-              )}
-            </div>
+            {view === 'library' && <Library />}
+            {view === 'method' && <Methodology />}
+            {view === 'refs' && <References />}
+            {view === 'cheatsheet' && (
+              <Cheatsheet exportResolve={exportResolve} setExportResolve={setExportResolve} />
+            )}
           </div>
         </div>
       </div>

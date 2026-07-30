@@ -111,6 +111,11 @@ export interface StoreState {
   query: string;
   // Which sidebar categories are expanded to reveal their tool list.
   expanded: Record<string, boolean>;
+  // Left sidebar folded/unfolded (SPEC Q145 — manual toggle, no auto-collapse).
+  // Device-local UI preference: persisted in localStorage, NOT in the profile
+  // state, so it is out of the import/export contract and identical across
+  // profiles. It never holds a variable value, so D7/OPSEC is unaffected.
+  sidebarOpen: boolean;
   // Per-command personal notes (memory-only in M0).
   notes: Record<string, string>;
   // Transient status message (auto-dismisses); shown by <Toast>.
@@ -157,6 +162,7 @@ export interface StoreActions {
   copyReferenceToProfile: (referenceId: string, targetProfileId: string) => Promise<void>;
   copyRoadmapToProfile: (roadmapId: string, targetProfileId: string) => Promise<void>;
   toggleTheme: () => void;
+  toggleSidebar: () => void;
   setView: (v: ViewKey) => void;
   setValue: (name: string, val: string) => void;
   // Variables: adopt a detected token, delete a custom var, or rename one
@@ -247,6 +253,35 @@ export interface StoreActions {
 
 export type Store = StoreState & StoreActions;
 
+// The ONLY localStorage key used by the app: the device-local sidebar
+// folded/unfolded preference (Q145). Deliberately no variable value, no dataset
+// and no theme here — those live in memory / in the profile state (D2, D7).
+const SIDEBAR_KEY = 'cheat.sidebar';
+
+// Below this viewport width the sidebar folds ITSELF: with it open the content
+// pane would be left ~450px. Same threshold as the top-bar compaction step in
+// index.css, so the whole chrome tightens at once. The auto-fold never writes
+// SIDEBAR_KEY — the manual preference is remembered and restored on the way back
+// up, and a manual toggle still wins at any width.
+const NARROW_QUERY = '(max-width: 780px)';
+
+// Both guarded: localStorage throws in some hardened/private contexts, and
+// matchMedia is absent in a non-DOM (test) environment.
+function readSidebarPref(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+function isNarrowViewport(): boolean {
+  try {
+    return window.matchMedia(NARROW_QUERY).matches;
+  } catch {
+    return false;
+  }
+}
+
 const StoreContext = createContext<Store | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -261,6 +296,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [query, setQuery] = useState<string>('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // The user's own choice, read once at mount ('0' = folded) and updated only by
+  // a manual toggle — the auto-fold deliberately leaves it alone so the choice
+  // survives a trip through a narrow window.
+  const sidebarPref = useRef<boolean>(readSidebarPref());
+  // Effective state: folded on a narrow viewport at mount, otherwise the pref.
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(
+    () => !isNarrowViewport() && sidebarPref.current,
+  );
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<string>('');
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -314,6 +357,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => (t === 'light' ? 'dark' : 'light'));
+  }, []);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen((open) => {
+      const next = !open;
+      sidebarPref.current = next;
+      try {
+        localStorage.setItem(SIDEBAR_KEY, next ? '1' : '0');
+      } catch {
+        /* non-persistent context — the toggle still works for this session */
+      }
+      return next;
+    });
+  }, []);
+
+  // Auto-fold: fold when the viewport CROSSES into the narrow range, restore the
+  // manual preference when it crosses back out. Only transitions are handled (the
+  // mount case is the useState initializer above), so a manual toggle taken while
+  // narrow is never overridden until the width class actually changes.
+  useEffect(() => {
+    let mq: MediaQueryList;
+    try {
+      mq = window.matchMedia(NARROW_QUERY);
+    } catch {
+      return;
+    }
+    const onChange = (e: MediaQueryListEvent) =>
+      setSidebarOpen(e.matches ? false : sidebarPref.current);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
   }, []);
 
   const setValue = useCallback((name: string, val: string) => {
@@ -1197,6 +1270,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeTag,
       query,
       expanded,
+      sidebarOpen,
       notes,
       toast,
       commands,
@@ -1217,6 +1291,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addingRef,
       editingRefId,
       toggleTheme,
+      toggleSidebar,
       setView,
       setValue,
       adoptVar,
@@ -1288,6 +1363,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeTag,
       query,
       expanded,
+      sidebarOpen,
       notes,
       toast,
       commands,
@@ -1308,6 +1384,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addingRef,
       editingRefId,
       toggleTheme,
+      toggleSidebar,
       setValue,
       adoptVar,
       deleteVar,

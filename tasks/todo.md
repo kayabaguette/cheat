@@ -84,3 +84,58 @@ cheat/
 
 ## Notes / results
 _(updated as work progresses)_
+
+---
+
+## Task — Collapsible sidebar + responsive content (v0.8.0, 2026-07-26)
+
+**Ask:** fold the left sidebar; make the right region reflow to a **single command
+column** on narrow screens. Deliberately **overrides SPEC D8/R4** ("desktop-only
+strict, hard ~900px content floor, no reflow") — the floor is what blocks the
+single-column reflow today (`App.tsx:71`). Implements the sidebar toggle already
+foreseen by **Q145** (manual toggle in the top bar, persisted device-local).
+
+- [x] `store.tsx` — `sidebarOpen: boolean` + `toggleSidebar()`, initialised from
+      and persisted to `localStorage['cheat.sidebar']` (UI pref only; never a
+      variable value, so D7/OPSEC is untouched). Not part of `persistableState`
+      → stays out of the profile state / import-export contract.
+- [x] `TopBar.tsx` — ☰ toggle left of the logo (Q145) + compaction hooks
+      (classes `tb`, `tb-brand`, `tb-tabs`, `tb-tab-long/short`, `tb-search`,
+      `tb-addlabel`) + `tb-profile-label` in `ProfileMenu.tsx`.
+- [x] `App.tsx` — render `<Sidebar>` only when open; drop the `minWidth: 900px`
+      wrapper (keep `overflowX:auto` as a safety net for wide code blocks).
+- [x] `Library.tsx` / `References.tsx` — `minmax(min(370px|340px, 100%), 1fr)`
+      so `auto-fill` degrades to one column instead of overflowing.
+- [x] `index.css` — top bar media queries at 1080 / 940 / 780 / 640px.
+- [x] Verify with Playwright at 1440 / 900 / 760 / 700 / 640 / 480px, sidebar
+      open + folded, all four views.
+- [x] CHANGELOG 0.8.0 + SPEC implementation-status note (item 10) + README.
+
+### Results
+
+- `npx tsc --noEmit` clean; `npm run build` OK; 0 console errors/warnings.
+- Measured top-bar `scrollWidth` vs viewport: fits exactly at 700px and 640px
+  (tab strip then scrolls internally), nothing overflows the page at 480px.
+- Single command column confirmed at 900px **with the sidebar open** (content
+  pane ≈ 580px) and at 480px folded. 2 columns at 1440 open / 3 folded —
+  identical to pre-change behaviour above ~900px.
+- Verified fold persistence across a reload (`cheat.sidebar=0` → sidebar absent,
+  button flips to « Déplier le menu »).
+**Follow-up (same day, on request):**
+
+- [x] **Auto-fold below 780px** — `matchMedia` listener in the store; folds on
+      crossing INTO the narrow range, restores the manual pref on crossing out,
+      folded at mount if already narrow. The auto path never writes
+      `localStorage`, so the manual choice survives; a manual toggle wins until
+      the width class changes again. Overrides Q145's "manual only" ruling.
+      Verified: 1280→700 auto-folds with `pref` untouched; manual open at 700
+      sticks; manual fold at 1280 survives a 700 round-trip; reload at 700 with
+      `pref=open` mounts folded then reopens on widening.
+- [x] **`Library.tsx` NUL byte fixed** — the "Sans catégorie" group key was a
+      literal `\0` (present in HEAD), which made git treat the file as binary and
+      hid it from grep. Now `ORPHAN_KEY = '__orphan__'`. Verified by injecting a
+      command with a dangling category into a scratch profile: the group and card
+      render, no React key warnings. `file` now reports UTF-8 text.
+- Test setup gotcha: `:8787` was the user's live instance; the throwaway Go API
+  was run on `:8899` with a scratch DB and Vite pointed at it via
+  `VITE_API_TARGET`, so the debounced autosave never touched real data.
