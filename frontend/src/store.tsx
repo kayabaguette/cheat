@@ -27,7 +27,7 @@ import {
 import { STANDARD_VARS } from './lib/theme';
 import { sanitizeUrl, slug } from './lib/format';
 import { definedNames } from './lib/varsets';
-import { isLocalName } from './lib/vars';
+import { isGlobalName, isLocalName } from './lib/vars';
 
 // Names of the 6 built-in variables — value-editable only (never renamed/deleted).
 const STD_NAMES = new Set(STANDARD_VARS.map((v) => v.name));
@@ -522,8 +522,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Adopt a detected token: create an (empty-valued) key so it becomes a defined
-  // variable. No-op if it already exists (standard or already adopted).
+  // variable. No-op if it already exists (standard or already adopted), or if the
+  // name is not of the global class — the strip should never offer such a name,
+  // and adopting one would create a key no template could ever resolve.
   const adoptVar = useCallback((name: string) => {
+    if (!isGlobalName(name)) return;
     setValues((v) => (name in v ? v : { ...v, [name]: '' }));
   }, []);
 
@@ -545,7 +548,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         flash('Variable standard non renommable');
         return -1;
       }
-      if (!/^[A-Z_][A-Z0-9_]*$/.test(next)) {
+      // Same rule as the tokenizer's global class (lib/vars.ts), so the form can
+      // never mint a name the renderer would refuse to treat as a variable —
+      // notably a letter-less one like '_'.
+      if (!isGlobalName(next)) {
         flash('Nom de variable invalide');
         return -1;
       }

@@ -6,16 +6,17 @@ import type { Part } from '../types';
 // otherwise a $TOKEN; when the escaped branch matches, capture group 1 is undefined.
 //
 // TWO CLASSES, and a name must be ENTIRELY in one case to belong to either:
-//   • GLOBAL  — all upper case / digits / '_' ($RHOST, $PASS, $_). App-wide, edited
-//     in the sidebar. Pre-0.9.0 semantics, unchanged.
+//   • GLOBAL  — all upper case / digits / '_', AND at least one letter ($RHOST,
+//     $PASS). App-wide, edited in the sidebar.
 //   • LOCAL   — all lower case / digits / '_' ($svc_ntlm). Scoped to one snippet and
 //     recognised ONLY when the name is DECLARED in that snippet's locals[].
 //   • anything MIXED-case is not a token at all and stays plain text.
 //
-// Those two guards are what make widening the grammar safe, because shells write
-// `$name` constantly. Mixed case covers PowerShell's own variables ($PSVersionTable,
-// $ErrorActionPreference), and the declaration requirement covers lower case
-// ($env:USERNAME, $file). Both fall through to PLAIN TEXT in toParts, so ordinary
+// Those guards are what keep the grammar from swallowing ordinary shell text,
+// because shells write `$name` constantly. Mixed case covers PowerShell's own
+// variables ($PSVersionTable, $ErrorActionPreference), the declaration requirement
+// covers lower case ($env:USERNAME, $file), and the at-least-one-letter rule covers
+// `$_` / `$__`. All of them fall through to PLAIN TEXT in toParts, so ordinary
 // command text can never be mistaken for a variable.
 const TOKEN_RE = /\\\$|\$([A-Za-z_][A-Za-z0-9_]*)/g;
 
@@ -24,12 +25,18 @@ const TOKEN_RE = /\\\$|\$([A-Za-z_][A-Za-z0-9_]*)/g;
 // with String.replace, which resets lastIndex on its own.
 const freshTokenRe = (): RegExp => new RegExp(TOKEN_RE.source, 'g');
 
-// Class tests. A bare '_' stays GLOBAL exactly as before 0.9.0, so `$_` keeps
-// rendering as it always has. A name matching neither is mixed-case: not a token.
+// Class tests. A global name must ALSO contain at least one upper-case LETTER, so
+// a name built only from '_' and digits is not a variable: that is what keeps
+// PowerShell's and bash's own `$_` (and `$__`, `$_1`) out of the grammar. It used
+// to satisfy the leading [A-Z_] and was therefore offered for adoption in the
+// sidebar's « Détectées » strip. `$_FOO` still works — only the letter-less names
+// are excluded. A name matching neither class is mixed-case: not a token.
 const GLOBAL_NAME = /^[A-Z_][A-Z0-9_]*$/;
+const GLOBAL_HAS_LETTER = /[A-Z]/;
 const LOCAL_NAME = /^[a-z][a-z0-9_]*$/;
 
-const isGlobalName = (name: string): boolean => GLOBAL_NAME.test(name);
+export const isGlobalName = (name: string): boolean =>
+  GLOBAL_NAME.test(name) && GLOBAL_HAS_LETTER.test(name);
 export const isLocalName = (name: string): boolean => LOCAL_NAME.test(name);
 // Neither class -> the match is ordinary text and must render untouched.
 const isTokenName = (name: string): boolean => isGlobalName(name) || isLocalName(name);

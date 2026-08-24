@@ -102,10 +102,10 @@ one produced. A **snippet** captures that as a reusable technique:
   clipboard does resolve them, which is the whole point.
 - **One value set per place.** The same snippet used in two methodology steps
   keeps two independent sets of local values, so two targets never mix.
-- **Mixed-case `$Tokens` are left alone.** `$env:USERNAME`, `$PSVersionTable`,
-  `$file` and friends are ordinary shell text, never variables — an undeclared
-  lowercase token is plain text too, so PowerShell and bash one-liners paste in
-  safely.
+- **Shell variables are left alone.** `$env:USERNAME`, `$PSVersionTable`, `$file`,
+  `$_` and friends are ordinary shell text, never Cheat variables — mixed-case
+  names, undeclared lowercase ones, and names without a letter (`$_`, `$__`) are
+  all plain text, so PowerShell and bash one-liners paste in safely.
 
 Snippets carry a category and tags (no tool), can be linked from a methodology
 step — on their own or alongside a command — and go into a cheatsheet's

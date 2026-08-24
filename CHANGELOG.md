@@ -4,6 +4,24 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.9.1] — 2026-08-24
+
+### Fixed
+- **`$_` was offered as a global variable.** The global token class was
+  `^[A-Z_][A-Z0-9_]*$`, and a bare `_` satisfies the leading `[A-Z_]` — so
+  PowerShell's and bash's own `$_` (and `$__`, `$_1`) was picked up by the
+  sidebar's « Détectées » strip with a `+` to adopt it as a variable, and rendered
+  with the dimmed "undefined" hint inside commands. A global name must now
+  contain **at least one upper-case letter**: a name built only from `_` and
+  digits can never be a Cheat variable, so those tokens are now plain text like
+  any other shell text. `$_FOO` and friends are unaffected — only the letter-less
+  names are excluded. The bug predates 0.9.0 (the old grammar had the same
+  leading class); 0.9.0 only made it more visible by also scanning snippet steps.
+- **The rename form and the adopt action now share the tokenizer's rule.**
+  `renameVar` validated against its own copy of the pattern and `adoptVar`
+  validated nothing, so either could mint a variable name (`_`) that the renderer
+  would then refuse to treat as one. Both call `isGlobalName` now.
+
 ## [0.9.0] — 2026-08-24
 
 ### Added
