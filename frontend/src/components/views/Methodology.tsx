@@ -2,9 +2,10 @@ import { Fragment, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../../store';
 import { resolve } from '../../lib/vars';
-import { definedNames } from '../../lib/varsets';
+import { definedNames, definedNamesWithLocals } from '../../lib/varsets';
 import { MONO, tabBar, pillBase, pillOn, barTrackBase, codePreCompact } from '../../lib/ui';
 import { CodeBlock } from '../CodeBlock';
+import { CommandLine } from '../CommandLine';
 import { CopyToProfile } from '../CopyToProfile';
 import { EmptyState } from '../EmptyState';
 import { CopyButton } from '../CopyButton';
@@ -374,9 +375,44 @@ function ReorderControls({
   );
 }
 
+// Embedded snippet chain inside a methodology step panel — same scale as the
+// Snippets view, on the compact code block the panel already uses.
+const snipStepHead: CSSProperties = {
+  display: 'flex',
+  alignItems: 'baseline',
+  gap: '8px',
+  margin: '9px 0 4px',
+};
+const snipStepNum: CSSProperties = {
+  fontFamily: MONO,
+  fontSize: '11px',
+  color: 'var(--acc)',
+  flex: 'none',
+};
+const snipStepLabel: CSSProperties = { fontSize: '12px', color: 'var(--text)', lineHeight: 1.4 };
+const snipCapRow: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  marginTop: '6px',
+};
+const snipCapName: CSSProperties = { fontFamily: MONO, fontSize: '11.5px', flex: 'none' };
+const snipCapInput: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  background: 'var(--code)',
+  border: '1px dashed var(--border2)',
+  color: 'var(--text)',
+  fontFamily: MONO,
+  fontSize: '12px',
+  padding: '5px 8px',
+};
+
 interface StepDraft {
   text: string;
   commandId: string;
+  // A step may link a command, a snippet, or both (cumulative).
+  snippetId: string;
 }
 interface DragStep {
   phaseId: string;
@@ -391,6 +427,8 @@ export function Methodology() {
   const {
     values,
     commands,
+    snippets,
+    localValues,
     roadmaps,
     activeRoadmap,
     methodEdit,
@@ -413,6 +451,7 @@ export function Methodology() {
     toggleCheck,
     toggleOpenStep,
     setResult,
+    setLocalValue,
     resetProgress,
   } = useStore();
 
@@ -442,6 +481,16 @@ export function Methodology() {
       ),
     [commands],
   );
+  // Same for snippets: lookup for step→snippet links + an alphabetical list for
+  // the picker (mirrors the command sort of PR #20).
+  const snipById = useMemo(() => new Map(snippets.map((sn) => [sn.id, sn])), [snippets]);
+  const sortedSnippets = useMemo(
+    () =>
+      [...snippets].sort((a, b) =>
+        a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }),
+      ),
+    [snippets],
+  );
 
   const rm = roadmaps.find((r) => r.id === activeRoadmap) ?? roadmaps[0] ?? null;
 
@@ -460,7 +509,8 @@ export function Methodology() {
     setAddPhaseLabel('');
   };
 
-  const draftFor = (phaseId: string): StepDraft => stepDrafts[phaseId] ?? { text: '', commandId: '' };
+  const draftFor = (phaseId: string): StepDraft =>
+    stepDrafts[phaseId] ?? { text: '', commandId: '', snippetId: '' };
   const setDraft = (phaseId: string, patch: Partial<StepDraft>) =>
     setStepDrafts((s) => ({ ...s, [phaseId]: { ...draftFor(phaseId), ...patch } }));
 
@@ -469,8 +519,8 @@ export function Methodology() {
     const d = draftFor(phaseId);
     const text = d.text.trim();
     if (!text) return;
-    addStep(rm.id, phaseId, text, d.commandId || undefined);
-    setStepDrafts((s) => ({ ...s, [phaseId]: { text: '', commandId: '' } }));
+    addStep(rm.id, phaseId, text, d.commandId || undefined, d.snippetId || undefined);
+    setStepDrafts((s) => ({ ...s, [phaseId]: { text: '', commandId: '', snippetId: '' } }));
   };
 
   const onReset = () => {
@@ -694,6 +744,7 @@ export function Methodology() {
                             {ph.steps.map((st, si) => {
                               const checked = !!checks[st.id];
                               const cmd = st.commandId ? cmdById.get(st.commandId) : undefined;
+                              const snip = st.snippetId ? snipById.get(st.snippetId) : undefined;
                               const expanded = !!openSteps[st.id];
                               const hasResult = !!results[st.id]?.trim();
                               const isDragged = dragStep?.stepId === st.id;
@@ -763,7 +814,13 @@ export function Methodology() {
                                           : noteBtn
                                       }
                                     >
-                                      {expanded ? 'masquer' : cmd ? '▸ ' + cmd.tool : '▸ résultat'}
+                                      {expanded
+                                        ? 'masquer'
+                                        : cmd
+                                          ? '▸ ' + cmd.tool
+                                          : snip
+                                            ? '▸ snippet'
+                                            : '▸ résultat'}
                                     </button>
                                     {methodEdit && (
                                       <ReorderControls
@@ -791,6 +848,59 @@ export function Methodology() {
                                             definedNames={defNames}
                                             preStyle={codePreCompact}
                                           />
+                                        </>
+                                      )}
+                                      {snip && (
+                                        <>
+                                          <div style={cmdTitleLine}>{snip.title}</div>
+                                          {snip.steps.map((ss, k) => (
+                                            <div key={ss.id}>
+                                              <div style={snipStepHead}>
+                                                <span style={snipStepNum}>
+                                                  {String(k + 1).padStart(2, '0')}
+                                                </span>
+                                                {ss.label && <span style={snipStepLabel}>{ss.label}</span>}
+                                              </div>
+                                              <CommandLine
+                                                template={ss.template}
+                                                values={{ ...values, ...(localValues[st.id] ?? {}) }}
+                                                definedNames={definedNamesWithLocals(
+                                                  values,
+                                                  snip.locals.map((l) => l.name),
+                                                )}
+                                                preStyle={codePreCompact}
+                                              />
+                                              {ss.produces && (
+                                                <div style={snipCapRow}>
+                                                  <span
+                                                    style={{
+                                                      ...snipCapName,
+                                                      color: (localValues[st.id] ?? {})[ss.produces]
+                                                        ? 'var(--acc)'
+                                                        : 'var(--muted)',
+                                                    }}
+                                                  >
+                                                    ${ss.produces}
+                                                  </span>
+                                                  <input
+                                                    value={(localValues[st.id] ?? {})[ss.produces] ?? ''}
+                                                    onChange={(e) =>
+                                                      setLocalValue(st.id, ss.produces!, e.target.value)
+                                                    }
+                                                    placeholder={
+                                                      snip.locals.find((l) => l.name === ss.produces)?.hint ||
+                                                      'valeur issue de la sortie…'
+                                                    }
+                                                    spellCheck="false"
+                                                    autoComplete="off"
+                                                    autoCorrect="off"
+                                                    autoCapitalize="off"
+                                                    style={snipCapInput}
+                                                  />
+                                                </div>
+                                              )}
+                                            </div>
+                                          ))}
                                         </>
                                       )}
                                       <div style={resultLabel}>Résultat</div>
@@ -866,6 +976,18 @@ export function Methodology() {
                                     {sortedCommands.map((c) => (
                                       <option key={c.id} value={c.id}>
                                         {c.tool} — {c.title}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <select
+                                    value={d.snippetId}
+                                    onChange={(e) => setDraft(ph.id, { snippetId: e.target.value })}
+                                    style={addStepSelect}
+                                  >
+                                    <option value="">— aucun snippet lié —</option>
+                                    {sortedSnippets.map((sn) => (
+                                      <option key={sn.id} value={sn.id}>
+                                        {sn.title}
                                       </option>
                                     ))}
                                   </select>

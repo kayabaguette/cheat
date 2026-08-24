@@ -2,13 +2,14 @@ import { useMemo, useState } from 'react';
 import type { CSSProperties, Dispatch, SetStateAction } from 'react';
 import { useStore } from '../../store';
 import { resolve, extractTokens } from '../../lib/vars';
-import { definedNames as buildDefinedNames } from '../../lib/varsets';
+import { definedNames as buildDefinedNames, definedNamesWithLocals } from '../../lib/varsets';
 import { STANDARD_VARS } from '../../lib/theme';
 import { dateStamp } from '../../lib/format';
-import { codeWrap, tabBar, pillBase, pillOn } from '../../lib/ui';
+import { MONO, codeWrap, tabBar, pillBase, pillOn } from '../../lib/ui';
 import { CodeBlock } from '../CodeBlock';
+import { CommandLine } from '../CommandLine';
 import { EmptyState } from '../EmptyState';
-import type { Command } from '../../types';
+import type { Command, Snippet } from '../../types';
 
 // Cheatsheet — faithful port of the prototype's cheatsheet view (~lines 332-408),
 // extended for the M2 model (D1 multiple named sheets, D2 single global value
@@ -28,6 +29,13 @@ import type { Command } from '../../types';
 // Non-sensitive meta variables surfaced as chips (PASS/LPORT excluded, matching
 // the prototype's cheatsheet meta strip).
 const META_KEYS = ['RHOST', 'LHOST', 'USER', 'DOMAIN'] as const;
+
+// Usage-context key for a snippet's memory-only local values (v0.9.0). A sheet
+// entry gets its OWN set, independent of the Snippets view and of any Methodology
+// step: one value set per PLACE the snippet appears. Keep the 'sheetId:snippetId'
+// shape — store.deleteSnippet prunes these contexts by matching ':' + snippetId.
+const ctxOf = (sheetId: string | undefined, snippetId: string): string =>
+  (sheetId ?? '') + ':' + snippetId;
 
 // Bare, fence-length-safe code fence: at least ``` but always one backtick longer
 // than the longest backtick run inside the code, so templates containing fences
@@ -112,6 +120,49 @@ const resolveToggleBase: CSSProperties = {
   color: 'var(--muted)',
   whiteSpace: 'nowrap',
 };
+// Chapter separator, shown only when a sheet holds BOTH chapters.
+const chapterHead: CSSProperties = {
+  fontSize: '10.5px',
+  letterSpacing: '.09em',
+  textTransform: 'uppercase',
+  color: 'var(--faint)',
+  fontWeight: 600,
+  padding: '14px 0 6px',
+  borderBottom: '1px solid var(--border)',
+  marginBottom: '4px',
+};
+// Embedded snippet chain — same scale as the Snippets view.
+const snipStepHead: CSSProperties = {
+  display: 'flex',
+  alignItems: 'baseline',
+  gap: '8px',
+  margin: '9px 0 4px',
+};
+const snipStepNum: CSSProperties = {
+  fontFamily: MONO,
+  fontSize: '11px',
+  color: 'var(--acc)',
+  flex: 'none',
+};
+const snipStepLabel: CSSProperties = { fontSize: '12px', color: 'var(--text)', lineHeight: 1.4 };
+const snipCapRow: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  marginTop: '6px',
+};
+const snipCapName: CSSProperties = { fontFamily: MONO, fontSize: '11.5px', flex: 'none' };
+const snipCapInput: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  background: 'var(--code)',
+  border: '1px dashed var(--border2)',
+  color: 'var(--text)',
+  fontFamily: MONO,
+  fontSize: '12px',
+  padding: '5px 8px',
+};
+
 const resolveToggleOn: CSSProperties = {
   ...resolveToggleBase,
   border: '1px solid var(--acc-line)',
@@ -255,6 +306,8 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
     values,
     commands,
     categories,
+    snippets,
+    localValues,
     notes,
     cheatsheets,
     activeSheet,
@@ -265,6 +318,9 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
     deleteCheatsheet,
     removeFromSheet,
     moveInSheet,
+    setLocalValue,
+    removeSnippetFromSheet,
+    moveSnippetInSheet,
     flash,
   } = useStore();
 
@@ -284,6 +340,12 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
     ? sheet.commandIds
         .map((id) => cmdById.get(id))
         .filter((c): c is Command => c !== undefined)
+    : [];
+
+  // « Snippets » chapter — the sheet's second, independently ordered list.
+  const snipById = useMemo(() => new Map(snippets.map((sn) => [sn.id, sn])), [snippets]);
+  const snipItems: Snippet[] = sheet
+    ? (sheet.snippetIds ?? []).map((id) => snipById.get(id)).filter((sn): sn is Snippet => sn !== undefined)
     : [];
 
   const metaChips = META_KEYS.map((k) => ({ k, v: values[k] ?? '' })).filter((x) => x.v);
@@ -329,11 +391,19 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
 
   // « Copier tout » — RESOLVED commands, one per line (Q99: clipboard resolves).
   const copyAll = () => {
-    if (!items.length) {
+    if (!items.length && !snipItems.length) {
       flash('Cheatsheet vide');
       return;
     }
-    copyText(items.map((c) => resolve(c.template, values)).join('\n'));
+    // Clipboard RESOLVES (Q99) — including snippet locals, since the point is to
+    // paste and run. File exports do the opposite for locals (see exportMd).
+    const lines = [
+      ...items.map((c) => resolve(c.template, values)),
+      ...snipItems.flatMap((sn) =>
+        sn.steps.map((ss) => resolve(ss.template, { ...values, ...(localValues[ctxOf(sheet?.id, sn.id)] ?? {}) })),
+      ),
+    ];
+    copyText(lines.join('\n'));
   };
 
   // A resolved export that would substitute a sensitive variable value (e.g.
@@ -342,7 +412,14 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
   const confirmSensitiveExport = (): boolean => {
     if (!exportResolve) return true;
     const sensitive = STANDARD_VARS.filter((v) => v.sensitive).map((v) => v.name);
-    const used = new Set(items.flatMap((c) => extractTokens(c.template)));
+    // Snippet steps count too: a resolved export would substitute a $PASS used
+    // inside one. extractTokens returns GLOBAL-class names only, so snippet
+    // locals are structurally out of scope here — and they are never resolved
+    // into a file anyway.
+    const used = new Set([
+      ...items.flatMap((c) => extractTokens(c.template)),
+      ...snipItems.flatMap((sn) => sn.steps.flatMap((ss) => extractTokens(ss.template))),
+    ]);
     const leaks = sensitive.filter((n) => used.has(n) && (values[n] ?? '').trim() !== '');
     if (leaks.length === 0) return true;
     return window.confirm(
@@ -356,7 +433,7 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
   // (zero egress). RAW $TOKENS by default; resolved only when the toggle is on,
   // and the variable-value meta block is emitted ONLY in resolved mode (§9.6).
   const exportMd = () => {
-    if (!sheet || !items.length) {
+    if (!sheet || (!items.length && !snipItems.length)) {
       flash('Cheatsheet vide');
       return;
     }
@@ -383,6 +460,28 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
       if (note && note.trim()) md += '\n> Note : ' + mdEsc(note.trim()) + '\n';
       md += '\n';
     });
+    // « Snippets » chapter. NOTE the values map: `values` only, NEVER the merged
+    // globals+locals used on screen. So even with « résoudre les variables » on,
+    // a $local stays a raw token in the file — the local values are memory-only
+    // by design (D7) and must not reach the disk. The clipboard still resolves.
+    if (snipItems.length) {
+      md += '# Snippets\n\n';
+      snipItems.forEach((sn, i) => {
+        const catLabel = catByKey.get(sn.category)?.label ?? sn.category;
+        md += '## ' + (i + 1) + '. ' + mdEsc(sn.title) + '\n';
+        md +=
+          '`' + catLabel + '`' +
+          (sn.tags.length ? '  ·  ' + sn.tags.map((t) => '#' + mdEsc(t)).join(' ') : '') +
+          '\n\n';
+        if (sn.desc) md += mdEsc(sn.desc) + '\n\n';
+        sn.steps.forEach((ss, k) => {
+          md += '**' + (k + 1) + '.** ' + (ss.label ? mdEsc(ss.label) : '') + '\n\n';
+          const code = exportResolve ? resolve(ss.template, values) : ss.template;
+          const f = fence(code);
+          md += f + '\n' + code + '\n' + f + '\n\n';
+        });
+      });
+    }
     const blob = new Blob([md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -398,7 +497,7 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
   // « Exporter en PDF » — the print stylesheet swaps in <PrintRoot>; a short
   // deferral lets any pending render flush before the print dialog opens.
   const exportPdf = () => {
-    if (!items.length) {
+    if (!items.length && !snipItems.length) {
       flash('Cheatsheet vide');
       return;
     }
@@ -440,6 +539,13 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
             <div style={toolbar}>
               <div style={toolbarInfo}>
                 <span style={{ color: 'var(--text)', fontWeight: 600 }}>{items.length}</span> commande(s)
+                {snipItems.length > 0 && (
+                  <>
+                    {' · '}
+                    <span style={{ color: 'var(--text)', fontWeight: 600 }}>{snipItems.length}</span>{' '}
+                    snippet(s)
+                  </>
+                )}{' '}
                 sélectionnée(s)
               </div>
               <button
@@ -497,7 +603,12 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
                 )}
               </div>
 
-              {/* Ordered entries, or the « cheatsheet vide » empty state */}
+              {/* Chapter « Commandes ». The heading only appears when the other
+                  chapter is populated too — a single-chapter sheet reads exactly
+                  as it did before 0.9.0. */}
+              {items.length > 0 && snipItems.length > 0 && (
+                <div style={chapterHead}>Commandes</div>
+              )}
               {items.length > 0 ? (
                 <div>
                   {items.map((c, i) => {
@@ -550,12 +661,102 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
                     );
                   })}
                 </div>
-              ) : (
+              ) : snipItems.length === 0 ? (
                 <EmptyState
                   mono="// cheatsheet vide"
-                  sub="Ajoute des commandes depuis la bibliothèque avec le bouton « + Cheatsheet »."
+                  sub="Ajoute des commandes ou des snippets avec le bouton « + Cheatsheet »."
                   padding="64px 20px"
                 />
+              ) : null}
+
+              {/* Chapter « Snippets » */}
+              {snipItems.length > 0 && (
+                <>
+                  {items.length > 0 && <div style={chapterHead}>Snippets</div>}
+                  <div>
+                    {snipItems.map((sn, i) => {
+                      const color = catByKey.get(sn.category)?.color ?? '#8a8e99';
+                      const ctx = ctxOf(sheet.id, sn.id);
+                      const locals = localValues[ctx] ?? {};
+                      const defined = definedNamesWithLocals(
+                        values,
+                        sn.locals.map((l) => l.name),
+                      );
+                      const merged = { ...values, ...locals };
+                      return (
+                        <div key={sn.id} style={itemRow}>
+                          <div style={itemIndex}>{i + 1}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={itemHead}>
+                              <div style={itemTitle}>{sn.title}</div>
+                              <span style={badgeStyle(color)}>{sn.steps.length} étapes</span>
+                              <button
+                                onClick={() => moveSnippetInSheet(sheet.id, sn.id, -1)}
+                                title="Monter"
+                                style={ctrlBtn}
+                              >
+                                ↑
+                              </button>
+                              <button
+                                onClick={() => moveSnippetInSheet(sheet.id, sn.id, 1)}
+                                title="Descendre"
+                                style={ctrlBtn}
+                              >
+                                ↓
+                              </button>
+                              <button
+                                onClick={() => removeSnippetFromSheet(sheet.id, sn.id)}
+                                title="Retirer"
+                                style={ctrlBtn}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                            {sn.desc && <div style={itemDesc}>{sn.desc}</div>}
+                            {sn.steps.map((ss, k) => (
+                              <div key={ss.id}>
+                                <div style={snipStepHead}>
+                                  <span style={snipStepNum}>{String(k + 1).padStart(2, '0')}</span>
+                                  {ss.label && <span style={snipStepLabel}>{ss.label}</span>}
+                                </div>
+                                <CommandLine
+                                  template={ss.template}
+                                  values={merged}
+                                  definedNames={defined}
+                                />
+                                {ss.produces && (
+                                  <div style={snipCapRow}>
+                                    <span
+                                      style={{
+                                        ...snipCapName,
+                                        color: locals[ss.produces] ? 'var(--acc)' : 'var(--muted)',
+                                      }}
+                                    >
+                                      ${ss.produces}
+                                    </span>
+                                    <input
+                                      value={locals[ss.produces] ?? ''}
+                                      onChange={(e) => setLocalValue(ctx, ss.produces!, e.target.value)}
+                                      placeholder={
+                                        sn.locals.find((l) => l.name === ss.produces)?.hint ||
+                                        'valeur issue de la sortie…'
+                                      }
+                                      spellCheck="false"
+                                      autoComplete="off"
+                                      autoCorrect="off"
+                                      autoCapitalize="off"
+                                      style={snipCapInput}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </div>
           </>

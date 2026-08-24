@@ -665,13 +665,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [purgeProgress]);
 
   const addStep = useCallback(
-    (roadmapId: string, phaseId: string, text: string, commandId?: string) => {
+    (roadmapId: string, phaseId: string, text: string, commandId?: string, snippetId?: string) => {
       const t = text.trim();
       if (!t) return;
       setRoadmaps((rms) => {
         const next = cloneRoadmaps(rms);
         const p = next.find((x) => x.id === roadmapId)?.phases.find((ph) => ph.id === phaseId);
-        if (p) p.steps.push({ id: mint('st'), text: t, commandId: commandId || undefined });
+        // A step may link a command, a snippet, or both (cumulative).
+        if (p)
+          p.steps.push({
+            id: mint('st'),
+            text: t,
+            commandId: commandId || undefined,
+            snippetId: snippetId || undefined,
+          });
         return next;
       });
     },
