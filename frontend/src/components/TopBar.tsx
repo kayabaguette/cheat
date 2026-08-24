@@ -19,6 +19,7 @@ import { ProfileMenu } from './ProfileMenu';
 const TABS: { key: ViewKey; label: string; short: string }[] = [
   { key: 'library', label: 'Bibliothèque', short: 'Biblio' },
   { key: 'method', label: 'Méthodologie', short: 'Métho' },
+  { key: 'snippets', label: 'Snippets', short: 'Snip' },
   { key: 'refs', label: 'Références', short: 'Réfs' },
   { key: 'cheatsheet', label: 'Cheatsheet', short: 'Cheat' },
 ];
@@ -67,13 +68,17 @@ export function TopBar() {
     setAdding,
     setNewRmOpen,
     setAddingRef,
+    setAddingSnippet,
     addCheatsheet,
     sidebarOpen,
     toggleSidebar,
   } = useStore();
 
-  // Cheatsheet tab badge = command count of the ACTIVE sheet.
-  const selectedCount = cheatsheets.find((s) => s.id === activeSheet)?.commandIds.length ?? 0;
+  // Cheatsheet tab badge = entry count of the ACTIVE sheet, BOTH chapters
+  // (commands + snippets), so adding a snippet visibly bumps the badge.
+  const activeSheetObj = cheatsheets.find((s) => s.id === activeSheet);
+  const selectedCount =
+    (activeSheetObj?.commandIds.length ?? 0) + (activeSheetObj?.snippetIds?.length ?? 0);
   // The add button is contextual to the active view: library opens the add-command
   // modal, methodology the new-roadmap inline form, references the add-reference
   // modal, and cheatsheet creates a new sheet (A60).
@@ -84,11 +89,14 @@ export function TopBar() {
         ? 'Méthodologie'
         : view === 'cheatsheet'
           ? 'Cheatsheet'
-          : 'Commande';
+          : view === 'snippets'
+            ? 'Snippet'
+            : 'Commande';
   const onAdd = () => {
     if (view === 'method') setNewRmOpen(true);
     else if (view === 'refs') setAddingRef(true);
     else if (view === 'cheatsheet') addCheatsheet();
+    else if (view === 'snippets') setAddingSnippet(true);
     else setAdding(true);
   };
   const themeIcon = theme === 'light' ? '☾' : '☀';

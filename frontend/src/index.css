@@ -40,11 +40,17 @@ a:hover{color:var(--acc)}
 @media (max-width:1080px){
   .tb-search{width:200px;flex:0 1 200px}
 }
+@media (max-width:1200px){
+  /* Five tabs (0.9.0 added Snippets) no longer fit with the long labels: the
+     incompressible bar measures 1312px that way, so it overflowed the page
+     between ~940 and ~1150px. Switching to the short forms early keeps the
+     search box from being squeezed instead. */
+  .tb-tab-long{display:none}
+  .tb-tab-short{display:inline}
+}
 @media (max-width:940px){
   /* The logo square alone still identifies the app. */
   .tb-brand{display:none}
-  .tb-tab-long{display:none}
-  .tb-tab-short{display:inline}
 }
 @media (max-width:780px){
   /* The add button keeps its "+" glyph; the view it targets is in its title. */
@@ -55,7 +61,7 @@ a:hover{color:var(--acc)}
 @media (max-width:640px){
   /* The profile name gives way (its ▦ trigger + title remain), then the tab
      strip scrolls inside itself rather than pushing the search / actions
-     off-screen. Scrollbar hidden — the strip is 4 items. */
+     off-screen. Scrollbar hidden — the strip is 5 items. */
   .tb-profile-label{display:none}
   .tb-tabs{flex:0 1 auto;overflow-x:auto;scrollbar-width:none}
   .tb-tabs::-webkit-scrollbar{display:none}

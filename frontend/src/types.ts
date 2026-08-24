@@ -110,7 +110,7 @@ export interface ProfileMeta {
   name: string;
 }
 
-export type ViewKey = 'library' | 'method' | 'refs' | 'cheatsheet';
+export type ViewKey = 'library' | 'method' | 'snippets' | 'refs' | 'cheatsheet';
 
 export type ThemeName = 'dark' | 'light';
 

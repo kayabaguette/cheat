@@ -1,0 +1,392 @@
+import { useMemo } from 'react';
+import type { CSSProperties } from 'react';
+import { useStore } from '../../store';
+import { fold } from '../../lib/format';
+import { definedNamesWithLocals } from '../../lib/varsets';
+import { MONO, cardBase, cardHead, cardIconBtn, codePreCompact, tagBtn } from '../../lib/ui';
+import { CommandLine } from '../CommandLine';
+import { EmptyState } from '../EmptyState';
+import type { Snippet } from '../../types';
+
+// Snippets — reusable ordered command chains (v0.9.0). A snippet is a technique
+// (silver ticket, kerberoast → crack → reuse…) whose steps are run one after the
+// other, each commonly consuming what the previous one produced.
+//
+// LAYOUT: a SINGLE centred column, like Méthodologie and Cheatsheet, not the
+// Library's card grid. The content is sequential and code-heavy — the mimikatz
+// golden-ticket line alone is ~120 chars — so a 370px grid track would wrap every
+// command over four lines. The column reflows on a narrow pane for free.
+//
+// Two variable classes are live here (lib/vars.ts):
+//   $GLOBALES   app-wide, edited in the sidebar
+//   $locales    declared by this snippet, captured from a step's output; their
+//               VALUES are memory-only, keyed per USAGE CONTEXT (here: the
+//               snippet id), and never persisted or exported (D7).
+
+const page: CSSProperties = { padding: '22px 26px 70px', display: 'flex', justifyContent: 'center' };
+const column: CSSProperties = { width: '100%', maxWidth: '840px' };
+const headRow: CSSProperties = {
+  display: 'flex',
+  alignItems: 'baseline',
+  gap: '12px',
+  marginBottom: '22px',
+};
+const groupsWrap: CSSProperties = { display: 'flex', flexDirection: 'column', gap: '30px' };
+const groupHead: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '9px',
+  paddingBottom: '10px',
+  borderBottom: '1px solid var(--border)',
+  marginBottom: '16px',
+};
+const cardsWrap: CSSProperties = { display: 'flex', flexDirection: 'column', gap: '13px' };
+const card: CSSProperties = { ...cardBase, gap: '11px' };
+const cardTitle: CSSProperties = {
+  fontWeight: 600,
+  fontSize: '13.5px',
+  lineHeight: 1.35,
+  flex: 1,
+  minWidth: 0,
+};
+const cardDesc: CSSProperties = {
+  fontSize: '12px',
+  color: 'var(--muted)',
+  lineHeight: 1.45,
+  marginTop: '-2px',
+};
+const stepsWrap: CSSProperties = { display: 'flex', flexDirection: 'column', gap: '10px' };
+const stepHead: CSSProperties = {
+  display: 'flex',
+  alignItems: 'baseline',
+  gap: '8px',
+  marginBottom: '5px',
+};
+const stepNum: CSSProperties = {
+  fontFamily: MONO,
+  fontSize: '11px',
+  color: 'var(--acc)',
+  flex: 'none',
+};
+const stepLabel: CSSProperties = { fontSize: '12.5px', color: 'var(--text)', lineHeight: 1.4 };
+const capRow: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  marginTop: '6px',
+};
+const capName: CSSProperties = { fontFamily: MONO, fontSize: '11.5px', flex: 'none' };
+const capInput: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  background: 'var(--code)',
+  border: '1px dashed var(--border2)',
+  color: 'var(--text)',
+  fontFamily: MONO,
+  fontSize: '12px',
+  padding: '5px 8px',
+};
+const localsStrip: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '6px',
+  padding: '9px 10px',
+  background: 'var(--surface2)',
+  border: '1px solid var(--border)',
+};
+const tagsRow: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '9px',
+  flexWrap: 'wrap',
+};
+const addBase: CSSProperties = {
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '5px',
+  padding: '4px 10px',
+  fontSize: '11.5px',
+  fontWeight: 600,
+  fontFamily: 'inherit',
+};
+const addOff: CSSProperties = {
+  ...addBase,
+  border: '1px solid var(--border2)',
+  background: 'transparent',
+  color: 'var(--muted)',
+};
+const addOn: CSSProperties = {
+  ...addBase,
+  border: '1px solid var(--acc-line)',
+  background: 'var(--acc-dim)',
+  color: 'var(--acc)',
+};
+
+// Mirrors Library's synthetic group for a snippet whose category is unknown
+// (dangling category in an imported dataset) so it never renders nowhere.
+const ORPHAN_KEY = '__orphan__';
+
+interface CatGroup {
+  key: string;
+  label: string;
+  color: string;
+  snippets: Snippet[];
+}
+
+export function Snippets() {
+  const {
+    values,
+    query,
+    snippets,
+    categories,
+    cheatsheets,
+    activeSheet,
+    activeSnipCat,
+    activeSnipTag,
+    localValues,
+    setActiveSnipTag,
+    setActiveSnipCat,
+    setQuery,
+    setLocalValue,
+    openEditSnippet,
+    deleteSnippet,
+    toggleSnippetInSheet,
+  } = useStore();
+
+  const catByKey = useMemo(() => new Map(categories.map((c) => [c.key, c])), [categories]);
+
+  // Membership of the ACTIVE sheet's « Snippets » chapter — drives the toggle.
+  const sheetIds = useMemo(() => {
+    const s = cheatsheets.find((x) => x.id === activeSheet);
+    return new Set(s?.snippetIds ?? []);
+  }, [cheatsheets, activeSheet]);
+
+  const filtered = useMemo<Snippet[]>(() => {
+    const tokens = fold(query).split(/\s+/).filter(Boolean);
+    return snippets.filter((sn) => {
+      if (activeSnipCat && sn.category !== activeSnipCat) return false;
+      if (activeSnipTag && !sn.tags.includes(activeSnipTag)) return false;
+      if (tokens.length) {
+        const catLabel = catByKey.get(sn.category)?.label ?? sn.category;
+        const hay = fold(
+          [
+            sn.title,
+            sn.desc,
+            sn.tags.join(' '),
+            catLabel,
+            sn.steps.map((st) => st.template + ' ' + (st.label ?? '')).join(' '),
+          ].join(' '),
+        );
+        if (!tokens.every((t) => hay.includes(t))) return false;
+      }
+      return true;
+    });
+  }, [snippets, catByKey, activeSnipCat, activeSnipTag, query]);
+
+  const groups = useMemo<CatGroup[]>(() => {
+    const out: CatGroup[] = [];
+    for (const cat of categories) {
+      const inCat = filtered.filter((sn) => sn.category === cat.key);
+      if (inCat.length) out.push({ key: cat.key, label: cat.label, color: cat.color, snippets: inCat });
+    }
+    const known = new Set(categories.map((c) => c.key));
+    const orphans = filtered.filter((sn) => !known.has(sn.category));
+    if (orphans.length) {
+      out.push({
+        key: ORPHAN_KEY,
+        label: 'Sans catégorie',
+        color: 'var(--faint)',
+        snippets: orphans,
+      });
+    }
+    return out;
+  }, [filtered, categories]);
+
+  const scopeLabel = activeSnipCat
+    ? (catByKey.get(activeSnipCat)?.label ?? activeSnipCat)
+    : activeSnipTag
+      ? '#' + activeSnipTag
+      : '';
+
+  const reset = () => {
+    setActiveSnipCat(null);
+    setActiveSnipTag(null);
+    setQuery('');
+  };
+
+  const askDelete = (sn: Snippet) => {
+    if (window.confirm('Supprimer le snippet « ' + sn.title + ' » ?')) deleteSnippet(sn.id);
+  };
+
+  return (
+    <div style={page}>
+      <div style={column}>
+        <div style={headRow}>
+          <div style={{ fontSize: '12.5px', color: 'var(--muted)' }}>
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>{filtered.length}</span> snippet(s)
+          </div>
+          {scopeLabel && <div style={{ fontSize: '12.5px', color: 'var(--faint)' }}>{scopeLabel}</div>}
+          <button
+            onClick={reset}
+            style={{
+              cursor: 'pointer',
+              border: 'none',
+              background: 'transparent',
+              color: 'var(--faint)',
+              fontSize: '11.5px',
+              fontFamily: 'inherit',
+            }}
+          >
+            réinitialiser
+          </button>
+        </div>
+
+        {groups.length > 0 ? (
+          <div style={groupsWrap}>
+            {groups.map((g) => (
+              <div key={g.key}>
+                <div style={groupHead}>
+                  <span style={{ width: '10px', height: '10px', flex: 'none', background: g.color }} />
+                  <span style={{ fontWeight: 700, fontSize: '14px', letterSpacing: '-.01em' }}>
+                    {g.label}
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'var(--faint)', fontFamily: MONO }}>
+                    {g.snippets.length}
+                  </span>
+                </div>
+                <div style={cardsWrap}>
+                  {g.snippets.map((sn) => {
+                    // The usage context: in this view a snippet's local values are
+                    // keyed by its own id. A Methodology step keys them by stepId,
+                    // so the same snippet used there holds independent values.
+                    const ctx = sn.id;
+                    const locals = localValues[ctx] ?? {};
+                    const names = sn.locals.map((l) => l.name);
+                    const defined = definedNamesWithLocals(values, names);
+                    // Locals win over a same-named global: they are the narrower
+                    // scope. Cannot actually collide (one is lower case, the other
+                    // upper), but merging in this order keeps the intent explicit.
+                    const merged = { ...values, ...locals };
+                    const produced = new Set(
+                      sn.steps.map((st) => st.produces).filter((n): n is string => !!n),
+                    );
+                    const unbound = sn.locals.filter((l) => !produced.has(l.name));
+                    const inSheet = sheetIds.has(sn.id);
+
+                    const capture = (name: string, hint?: string) => (
+                      <div style={capRow} key={name}>
+                        <span
+                          style={{
+                            ...capName,
+                            color: locals[name] ? 'var(--acc)' : 'var(--muted)',
+                          }}
+                        >
+                          ${name}
+                        </span>
+                        <input
+                          value={locals[name] ?? ''}
+                          onChange={(e) => setLocalValue(ctx, name, e.target.value)}
+                          placeholder={hint || 'valeur issue de la sortie…'}
+                          spellCheck="false"
+                          autoComplete="off"
+                          autoCorrect="off"
+                          autoCapitalize="off"
+                          style={capInput}
+                        />
+                      </div>
+                    );
+
+                    return (
+                      <div key={sn.id} style={card}>
+                        <div style={cardHead}>
+                          <div style={cardTitle}>{sn.title}</div>
+                          <span
+                            style={{ fontSize: '11px', color: 'var(--faint)', fontFamily: MONO, flex: 'none' }}
+                          >
+                            {sn.steps.length} étape(s)
+                          </span>
+                          <button
+                            onClick={() => openEditSnippet(sn.id)}
+                            title="Modifier"
+                            style={cardIconBtn}
+                          >
+                            ✎
+                          </button>
+                          <button onClick={() => askDelete(sn)} title="Supprimer" style={cardIconBtn}>
+                            ✕
+                          </button>
+                        </div>
+                        {sn.desc && <div style={cardDesc}>{sn.desc}</div>}
+
+                        {/* Locals no step produces: captured up front rather than inline. */}
+                        {unbound.length > 0 && (
+                          <div style={localsStrip}>
+                            <span style={{ fontSize: '10.5px', letterSpacing: '.09em', textTransform: 'uppercase', color: 'var(--faint)', fontWeight: 600 }}>
+                              Variables locales
+                            </span>
+                            {unbound.map((l) => capture(l.name, l.hint))}
+                          </div>
+                        )}
+
+                        <div style={stepsWrap}>
+                          {sn.steps.map((st, i) => {
+                            const prodHint = st.produces
+                              ? sn.locals.find((l) => l.name === st.produces)?.hint
+                              : undefined;
+                            return (
+                              <div key={st.id}>
+                                <div style={stepHead}>
+                                  <span style={stepNum}>{String(i + 1).padStart(2, '0')}</span>
+                                  {st.label && <span style={stepLabel}>{st.label}</span>}
+                                </div>
+                                <CommandLine
+                                  template={st.template}
+                                  values={merged}
+                                  definedNames={defined}
+                                  preStyle={codePreCompact}
+                                />
+                                {/* The capture sits right under the step that yields
+                                    it, so the output is pasted where it is produced
+                                    and the next step turns green immediately. */}
+                                {st.produces && produced.has(st.produces) && capture(st.produces, prodHint)}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div style={tagsRow}>
+                          {sn.tags.map((t) => (
+                            <button
+                              key={t}
+                              onClick={() => setActiveSnipTag(activeSnipTag === t ? null : t)}
+                              style={tagBtn}
+                            >
+                              #{t}
+                            </button>
+                          ))}
+                          <div style={{ flex: 1 }} />
+                          <button
+                            onClick={() => toggleSnippetInSheet(sn.id)}
+                            style={inSheet ? addOn : addOff}
+                          >
+                            {inSheet ? 'Ajouté ✓' : '+ Cheatsheet'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            mono="// aucun snippet"
+            sub="Crée un enchaînement avec « + Snippet », ou réinitialise les filtres."
+          />
+        )}
+      </div>
+    </div>
+  );
+}
