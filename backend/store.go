@@ -67,6 +67,8 @@ type StepDTO struct {
 	ID        string `json:"id"`
 	Text      string `json:"text"`
 	CommandID string `json:"commandId,omitempty"`
+	// A step may link a command, a snippet, or both (cumulative).
+	SnippetID string `json:"snippetId,omitempty"`
 }
 
 type PhaseDTO struct {
@@ -86,6 +88,36 @@ type CheatsheetDTO struct {
 	Title      string   `json:"title"`
 	Target     string   `json:"target"`
 	CommandIDs []string `json:"commandIds"`
+	// Second, independently ordered chapter. Absent from every pre-0.9.0 export.
+	SnippetIDs []string `json:"snippetIds"`
+}
+
+// --- Snippets (v0.9.0) ------------------------------------------------------
+// A snippet is a reusable ordered chain of commands. Its steps carry INLINE
+// templates (never a command reference) and its locals are DEFINITIONS only —
+// the local VALUES are memory-only on the client and never reach the server (D7).
+
+type SnippetStepDTO struct {
+	ID       string `json:"id"`
+	Label    string `json:"label,omitempty"`
+	Template string `json:"template"`
+	// Name of the local variable this step yields, when any.
+	Produces string `json:"produces,omitempty"`
+}
+
+type SnippetLocalDTO struct {
+	Name string `json:"name"`
+	Hint string `json:"hint,omitempty"`
+}
+
+type SnippetDTO struct {
+	ID       string            `json:"id"`
+	Category string            `json:"category"`
+	Title    string            `json:"title"`
+	Desc     string            `json:"desc"`
+	Tags     []string          `json:"tags"`
+	Steps    []SnippetStepDTO  `json:"steps"`
+	Locals   []SnippetLocalDTO `json:"locals"`
 }
 
 type SettingsDTO struct {
@@ -101,6 +133,7 @@ type AppState struct {
 	References  []ReferenceDTO    `json:"references"`
 	Roadmaps    []RoadmapDTO      `json:"roadmaps"`
 	Cheatsheets []CheatsheetDTO   `json:"cheatsheets"`
+	Snippets    []SnippetDTO      `json:"snippets"`
 	Notes       map[string]string `json:"notes"`
 	Checks      map[string]bool   `json:"checks"`
 	OpenSteps   map[string]bool   `json:"openSteps"`
@@ -117,6 +150,7 @@ func emptyState() AppState {
 		References:  []ReferenceDTO{},
 		Roadmaps:    []RoadmapDTO{},
 		Cheatsheets: []CheatsheetDTO{},
+		Snippets:    []SnippetDTO{},
 		Notes:       map[string]string{},
 		Checks:      map[string]bool{},
 		OpenSteps:   map[string]bool{},
@@ -375,6 +409,7 @@ func legacyLoadState(db *gorm.DB) (AppState, error) {
 	for _, s := range sheets {
 		state.Cheatsheets = append(state.Cheatsheets, CheatsheetDTO{
 			ID: s.ID, Title: s.Title, Target: s.Target, CommandIDs: nonNil(s.CommandIDs),
+			SnippetIDs: []string{}, // no snippets existed pre-0.9.0
 		})
 	}
 
@@ -449,8 +484,14 @@ func loadProfileState(db *gorm.DB, id string) (AppState, error) {
 
 // saveProfileState replaces a profile's AppState blob. Missing profile →
 // gorm.ErrRecordNotFound (never creates a profile implicitly).
+//
+// The single choke point for every writer (PUT state and POST import both land
+// here), so nonNilState is applied ONCE here rather than at each call site: the
+// stored blob can then never contain a JSON null where the client expects an
+// array — see nonNilState for why that would otherwise break the import of our
+// own export.
 func saveProfileState(db *gorm.DB, id string, s AppState) error {
-	blob, err := json.Marshal(s)
+	blob, err := json.Marshal(nonNilState(s))
 	if err != nil {
 		return err
 	}
@@ -608,11 +649,67 @@ func kvUnmarshal(db *gorm.DB, key string, dst any) error {
 
 // --- null-safety helpers (keep JSON arrays/maps non-null) -------------------
 
+// nonNilState fills every nil slice/map of an AppState received over the wire.
+//
+// The write handlers bind into a zero-value AppState, so a key ABSENT from the
+// body stays nil and would be stored as JSON `null`. That matters for `snippets`,
+// which every pre-0.9.0 export legitimately omits: the blob would keep
+// `"snippets":null`, the next export would emit `null`, and the client's import
+// shape check (which demands an array) would then REJECT its own export. Every
+// array is normalised, not just the new one, so no field can reintroduce the bug.
+func nonNilState(s AppState) AppState {
+	if s.Categories == nil {
+		s.Categories = []CategoryDTO{}
+	}
+	if s.Commands == nil {
+		s.Commands = []CommandDTO{}
+	}
+	if s.References == nil {
+		s.References = []ReferenceDTO{}
+	}
+	if s.Roadmaps == nil {
+		s.Roadmaps = []RoadmapDTO{}
+	}
+	if s.Cheatsheets == nil {
+		s.Cheatsheets = []CheatsheetDTO{}
+	}
+	for i := range s.Cheatsheets {
+		s.Cheatsheets[i].CommandIDs = nonNil(s.Cheatsheets[i].CommandIDs)
+		s.Cheatsheets[i].SnippetIDs = nonNil(s.Cheatsheets[i].SnippetIDs)
+	}
+	if s.Snippets == nil {
+		s.Snippets = []SnippetDTO{}
+	}
+	for i := range s.Snippets {
+		s.Snippets[i].Tags = nonNil(s.Snippets[i].Tags)
+		if s.Snippets[i].Steps == nil {
+			s.Snippets[i].Steps = []SnippetStepDTO{}
+		}
+		if s.Snippets[i].Locals == nil {
+			s.Snippets[i].Locals = []SnippetLocalDTO{}
+		}
+	}
+	s.Notes = nonNilMap(s.Notes)
+	s.Checks = nonNilMap(s.Checks)
+	s.OpenSteps = nonNilMap(s.OpenSteps)
+	s.Results = nonNilMap(s.Results)
+	return s
+}
+
 func nonNil(s []string) []string {
 	if s == nil {
 		return []string{}
 	}
 	return s
+}
+
+// nonNilMap returns m, or a fresh empty map when m is nil, so an id-keyed map
+// marshals to {} rather than null. Generic so the bool and string maps share it.
+func nonNilMap[V any](m map[string]V) map[string]V {
+	if m == nil {
+		return map[string]V{}
+	}
+	return m
 }
 
 // mustOpenDB opens the DB or exits the process (fail loud, SPEC: DB is required).
