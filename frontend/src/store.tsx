@@ -451,7 +451,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         flash('Ce nom existe déjà');
         return -1;
       }
-      const re = new RegExp('(?<!\\\\)\\$' + oldName + '(?![A-Z0-9_])', 'g');
+      // The lookahead must exclude LOWER case too (0.9.0): a name that continues
+      // into lower case is mixed-case, hence not a token at all, so `$USERx` must
+      // survive a rename of $USER untouched. Excluding only [A-Z0-9_] would have
+      // rewritten it into `$NEWx` and silently corrupted plain command text.
+      const re = new RegExp('(?<!\\\\)\\$' + oldName + '(?![A-Za-z0-9_])', 'g');
       let n = 0;
       const rewritten = commandsRef.current.map((c) => {
         const nt = c.template.replace(re, '$' + next);

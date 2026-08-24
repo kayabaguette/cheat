@@ -139,3 +139,74 @@ foreseen by **Q145** (manual toggle in the top bar, persisted device-local).
 - Test setup gotcha: `:8787` was the user's live instance; the throwaway Go API
   was run on `:8899` with a scratch DB and Vite pointed at it via
   `VITE_API_TARGET`, so the debounced autosave never touched real data.
+
+---
+
+## Task — Snippets: enchaînements de commandes (v0.9.0, 2026-08-24)
+
+**Ask:** une commande seule ne suffit pas toujours (ex. silver ticket via mimikatz) —
+il faut un objet **réutilisable** décrivant une suite d'actions où chaque étape
+consomme ce que la précédente a produit. Plan approuvé :
+`~/.claude/plans/mossy-honking-steele.md`.
+
+Décisions verrouillées : (1) étape = template **inline** · (2) chapitre « Snippets »
+dans le Cheatsheet à côté de « Commandes » · (3) valeurs des locales
+**mémoire-seule** ET **jamais résolues en export fichier** · (4) snippet =
+catégorie + tags (pas d'outil) · (5) valeurs locales **distinctes par usage** ·
+(6) « Snippets » partout dans l'UI · (7) **une seule PR** gitea.
+
+Déviations SPEC assumées : **§3.2.7** (grammaire de tokens étendue),
+**§9.x** (Cheatsheet à deux chapitres), **§9.6/Q99** (le « résolu sur option »
+ne vaut que pour les globales).
+
+### Palier 1 — grammaire des tokens (bloquant)
+
+- [x] `lib/vars.ts` — `TOKEN_RE` élargi à `[A-Za-z_][A-Za-z0-9_]*`, puis **deux
+      classes strictes** : un nom doit être **entièrement** en majuscules (global)
+      ou **entièrement** en minuscules (local) ; la **casse mixte n'est plus un
+      token** et reste du texte brut. Une locale n'est reconnue que si elle est
+      **déclarée** dans les `locals[]` du snippet.
+- [x] Fusion des parts `plain` adjacentes dans `toParts()` → sortie DOM
+      byte-identique à l'avant-0.9.0 pour tout template sans locale déclarée.
+- [x] `extractTokens()` = classe globale **uniquement** (bande « Détectées » et
+      garde-fou d'export sensible préservés) ; nouveau `extractLocalTokens()`.
+- [x] `lib/varsets.ts` — `definedNamesWithLocals()`.
+- [x] `store.tsx` — **bug évité** : le lookahead de la cascade `renameVar`
+      excluait `[A-Z0-9_]` mais pas les minuscules, donc renommer `$USER` aurait
+      réécrit `$USERx` (désormais du texte brut) en `$OWNERx`. → `[A-Za-z0-9_]`.
+
+### Paliers suivants
+
+- [ ] **2 — Modèle + store** : `types.ts` (`Snippet`/`SnippetStep`/`SnippetLocal`),
+      slice `snippets`, CRUD, `localValues` (hors `persistableState`), cascade de
+      suppression, hydratation.
+- [ ] **3 — Persistance** : `backend/store.go` (DTO + modèle `serializer:json` +
+      load/save + clone de profil), `DataMenu.tsx` (`arrayKeys`).
+- [ ] **4 — Vue + onglet** : `Snippets.tsx`, `AddSnippet.tsx`, `CommandLine.tsx`
+      (copie au clic), `App.tsx`, `TopBar.tsx`, `index.css`, `Sidebar.tsx`.
+- [ ] **5 — Intégrations** : `Methodology.tsx` (`Step.snippetId`),
+      `Cheatsheet.tsx` + `PrintRoot.tsx` (chapitre « Snippets » + exports).
+- [ ] **6 — Docs** : README, CHANGELOG `[0.9.0]`, addendum SPEC pt. 11.
+
+### Résultats — palier 1
+
+Non-régression vérifiée en comparant les **deux implémentations réelles** (ancienne
+extraite de git, nouvelle du disque, toutes deux bundlées par esbuild), comparaison
+sur le rendu (parts de même état fusionnées des deux côtés), 4 gates :
+
+- **GATE 1** — 380 chaînes du dataset OSCP + seed (`toParts` + `resolve` +
+  `extractTokens`) : **0 différence**.
+- **GATE 2** — 10 textes shell/PowerShell (`$env:USERNAME`, `$_`, `$file`,
+  `$(whoami)`, `${HOME}`, `awk '{print $1}'`, `\$literal`, `'$DOMAIN\$USER'`) :
+  **0 régression**.
+- **GATE 3** — casse mixte désormais inerte (changement assumé) : `$PSVersionTable`
+  ne souligne plus `$PSV`, `$ErrorActionPreference` plus `$E`, `$MyInvocation` plus
+  `$M`. Le plus important : **`echo $RHOSTx` substituait silencieusement en
+  `10.10.10.5x`** et rend maintenant le texte tel quel. 0 mixed-case dans le
+  dataset réel ⇒ aucun contenu existant affecté.
+- **GATE 4** — locales : non déclarée → texte brut ; déclarée + valuée →
+  substituée ; `extractTokens` ne remonte que les globales ; `extractLocalTokens`
+  remonte les locales dans l'ordre.
+
+`npx tsc --noEmit` + `npm run build` verts. Script de vérification jetable (hors
+repo — pas de runner de test front installé, on n'ajoute pas vitest pour l'instant).

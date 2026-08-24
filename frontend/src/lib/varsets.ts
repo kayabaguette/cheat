@@ -9,3 +9,16 @@ import { STANDARD_VARS } from './theme';
 export function definedNames(values: Record<string, string>): Set<string> {
   return new Set<string>([...STANDARD_VARS.map((v) => v.name), ...Object.keys(values)]);
 }
+
+// Same set widened with a snippet's DECLARED local names, for rendering that
+// snippet's step templates. Only declared locals count: an undeclared lowercase
+// $token stays plain text (see lib/vars.ts). Values live in a separate
+// memory-only map (never persisted, D7) and are merged by the caller.
+export function definedNamesWithLocals(
+  values: Record<string, string>,
+  localNames: readonly string[],
+): Set<string> {
+  const set = definedNames(values);
+  for (const n of localNames) set.add(n);
+  return set;
+}
