@@ -108,6 +108,30 @@ one produced. A **snippet** captures that as a reusable technique:
   names, undeclared lowercase ones, and names without a letter (`$_`, `$__`) are
   all plain text, so PowerShell and bash one-liners paste in safely.
 
+### Declaring a local variable
+
+A `$lowercase` token is only treated as a variable **once it is declared** — that
+is what keeps `$env:USERNAME` and `$file` from being mistaken for one. So in the
+add/edit form, declaring comes **first** and the per-step **« produit »** dropdown
+only lists locals that already exist: on a fresh snippet its only option is
+`(rien)`, because there is nothing to pick yet.
+
+Two ways to declare one:
+
+1. **Write it, then adopt it.** Type `$svc_ntlm` anywhere in a step's command. A
+   **`détectées : + $svc_ntlm`** chip appears next to `+ variable locale` — click
+   it. This is the quicker path in practice.
+2. **Declare it up front.** In the **« Variables locales »** block above the
+   steps, click **`+ variable locale`**, then type the name in lower case
+   (`svc_ntlm`) plus an optional hint describing what to paste there.
+
+Then, on the step that *yields* that value, pick it in **« produit »**. That is
+what places the capture field directly under that step in the Snippets view —
+so you paste the output where it was produced, and the lines below resolve.
+
+A local that no step produces still gets a field, grouped in a
+**« Variables locales »** strip at the top of the snippet card.
+
 Snippets carry a category and tags (no tool), can be linked from a methodology
 step — on their own or alongside a command — and go into a cheatsheet's
 « Snippets » chapter.

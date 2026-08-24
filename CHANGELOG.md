@@ -30,6 +30,14 @@ development (pre-1.0).
   to actually fail the suite when reintroduced (5 and 8 failing tests
   respectively) — a guard that cannot fail is not a guard.
 
+### Documentation
+- **How to declare a snippet-local variable.** The per-step « produit » dropdown
+  only lists locals that already exist, so on a fresh snippet its only option is
+  `(rien)` — which reads as a broken field rather than as an unmet precondition.
+  The README now spells out the two ways to declare one (type `$svc_ntlm` in a
+  step and click the `détectées` chip, or use `+ variable locale`) and what
+  picking it in « produit » actually does. Behaviour is unchanged.
+
 ### Notes
 - Vitest brings its own newer nested Vite/esbuild; it introduces **no** new
   `npm audit` finding. The two pre-existing dev-only advisories are against the
