@@ -139,3 +139,137 @@ foreseen by **Q145** (manual toggle in the top bar, persisted device-local).
 - Test setup gotcha: `:8787` was the user's live instance; the throwaway Go API
   was run on `:8899` with a scratch DB and Vite pointed at it via
   `VITE_API_TARGET`, so the debounced autosave never touched real data.
+
+---
+
+## Task — Snippets: enchaînements de commandes (v0.9.0, 2026-08-24)
+
+**Ask:** une commande seule ne suffit pas toujours (ex. silver ticket via mimikatz) —
+il faut un objet **réutilisable** décrivant une suite d'actions où chaque étape
+consomme ce que la précédente a produit. Plan approuvé :
+`~/.claude/plans/mossy-honking-steele.md`.
+
+Décisions verrouillées : (1) étape = template **inline** · (2) chapitre « Snippets »
+dans le Cheatsheet à côté de « Commandes » · (3) valeurs des locales
+**mémoire-seule** ET **jamais résolues en export fichier** · (4) snippet =
+catégorie + tags (pas d'outil) · (5) valeurs locales **distinctes par usage** ·
+(6) « Snippets » partout dans l'UI · (7) **une seule PR** gitea.
+
+Déviations SPEC assumées : **§3.2.7** (grammaire de tokens étendue),
+**§9.x** (Cheatsheet à deux chapitres), **§9.6/Q99** (le « résolu sur option »
+ne vaut que pour les globales).
+
+### Palier 1 — grammaire des tokens (bloquant)
+
+- [x] `lib/vars.ts` — `TOKEN_RE` élargi à `[A-Za-z_][A-Za-z0-9_]*`, puis **deux
+      classes strictes** : un nom doit être **entièrement** en majuscules (global)
+      ou **entièrement** en minuscules (local) ; la **casse mixte n'est plus un
+      token** et reste du texte brut. Une locale n'est reconnue que si elle est
+      **déclarée** dans les `locals[]` du snippet.
+- [x] Fusion des parts `plain` adjacentes dans `toParts()` → sortie DOM
+      byte-identique à l'avant-0.9.0 pour tout template sans locale déclarée.
+- [x] `extractTokens()` = classe globale **uniquement** (bande « Détectées » et
+      garde-fou d'export sensible préservés) ; nouveau `extractLocalTokens()`.
+- [x] `lib/varsets.ts` — `definedNamesWithLocals()`.
+- [x] `store.tsx` — **bug évité** : le lookahead de la cascade `renameVar`
+      excluait `[A-Z0-9_]` mais pas les minuscules, donc renommer `$USER` aurait
+      réécrit `$USERx` (désormais du texte brut) en `$OWNERx`. → `[A-Za-z0-9_]`.
+
+### Paliers suivants
+
+- [x] **2 — Modèle + store** : `types.ts` (`Snippet`/`SnippetStep`/`SnippetLocal`),
+      slice `snippets`, CRUD, `localValues` (hors `persistableState`), cascade de
+      suppression, hydratation.
+- [x] **3 — Persistance** : `backend/store.go` (DTO + `AppState.Snippets`),
+      `DataMenu.tsx` (`arrayKeys`).
+- [x] **4 — Vue + onglet** : `Snippets.tsx`, `AddSnippet.tsx`, `CommandLine.tsx`
+      (copie au clic), `App.tsx`, `TopBar.tsx`, `index.css`, `Sidebar.tsx`.
+- [x] **5 — Intégrations** : `Methodology.tsx` (`Step.snippetId`),
+      `Cheatsheet.tsx` + `PrintRoot.tsx` (chapitre « Snippets » + exports).
+- [x] **6 — Docs** : README, CHANGELOG `[0.9.0]`, addendum SPEC pt. 11.
+
+### Résultats — palier 1
+
+Non-régression vérifiée en comparant les **deux implémentations réelles** (ancienne
+extraite de git, nouvelle du disque, toutes deux bundlées par esbuild), comparaison
+sur le rendu (parts de même état fusionnées des deux côtés), 4 gates :
+
+- **GATE 1** — 380 chaînes du dataset OSCP + seed (`toParts` + `resolve` +
+  `extractTokens`) : **0 différence**.
+- **GATE 2** — 10 textes shell/PowerShell (`$env:USERNAME`, `$_`, `$file`,
+  `$(whoami)`, `${HOME}`, `awk '{print $1}'`, `\$literal`, `'$DOMAIN\$USER'`) :
+  **0 régression**.
+- **GATE 3** — casse mixte désormais inerte (changement assumé) : `$PSVersionTable`
+  ne souligne plus `$PSV`, `$ErrorActionPreference` plus `$E`, `$MyInvocation` plus
+  `$M`. Le plus important : **`echo $RHOSTx` substituait silencieusement en
+  `10.10.10.5x`** et rend maintenant le texte tel quel. 0 mixed-case dans le
+  dataset réel ⇒ aucun contenu existant affecté.
+- **GATE 4** — locales : non déclarée → texte brut ; déclarée + valuée →
+  substituée ; `extractTokens` ne remonte que les globales ; `extractLocalTokens`
+  remonte les locales dans l'ordre.
+
+`npx tsc --noEmit` + `npm run build` verts. Script de vérification jetable (hors
+repo — pas de runner de test front installé, on n'ajoute pas vitest pour l'instant).
+
+### Résultats — paliers 2 à 6
+
+**Écart au plan (assumé, en mieux) — palier 3 bien plus léger que prévu.** Le plan
+annonçait une nouvelle table GORM + `serializer:json`. Vérification faite, l'état
+d'un profil est un **blob JSON** (`Profile.State`) depuis la v0.7 : les modèles
+relationnels sont *legacy* (lus seulement par `legacyLoadState` lors de la
+migration pré-profils). Étendre la struct `AppState` a donc suffi — **aucune
+table, aucune migration**, et le clonage de profil embarque les snippets
+gratuitement.
+
+**Écart au plan (assumé) — palier 4, mise en page.** Le plan disait « grille de
+cartes façon Bibliothèque ». Livré en **colonne unique centrée (max-width 840px)**
+comme Méthodologie/Cheatsheet : le contenu est séquentiel et dense en code (la
+ligne `kerberos::golden` fait ~120 caractères), une piste de grille à 370px la
+replierait sur quatre lignes.
+
+**Trois bugs évités/corrigés en route** (aucun n'était dans le périmètre demandé) :
+
+1. `renameVar` — le lookahead de la cascade excluait `[A-Z0-9_]` mais pas les
+   minuscules : renommer `$USER` aurait réécrit `$USERx` (désormais du texte brut).
+2. `echo $RHOSTx` substituait silencieusement en `10.10.10.5x` sous l'ancienne
+   grammaire (un token s'arrêtait à la première minuscule). La casse mixte est
+   maintenant inerte.
+3. Un dataset pré-0.9 devenait **non ré-importable** après un import : les
+   handlers bindent dans un `AppState` zéro, donc une clé absente (`snippets`)
+   était stockée en `null`, ré-exportée en `null`, puis **rejetée** par le
+   contrôle de forme du client. `nonNilState()` normalise tout dans
+   `saveProfileState` (point de passage unique des deux écrivains).
+
+**Vérifications** (backend jeté sur `:8899` + DB scratch, Vite via
+`VITE_API_TARGET` — l'instance live `:8787` jamais touchée) :
+
+- `tsc --noEmit`, `npm run build`, `go build`, `go vet`, `go test` : tous verts.
+- **Persistance** : import d'un dataset pré-0.9 → `snippets: []` et
+  `snippetIds: []` (jamais `null`), reste ré-importable ; round-trip d'un snippet
+  4 étapes fidèle au bit, y compris une étape portant `commandId` **et**
+  `snippetId` ; clone de profil OK ; aucune valeur locale en base.
+- **Chaînage** : saisir le hash/SID capturés fait passer la ligne mimikatz avale
+  en résolu vert, et la copie rend la commande entièrement résolue.
+- **Décision 5** : le même snippet dans deux étapes de méthodologie garde deux
+  jeux de valeurs indépendants (étape 1 résolue, étape 2 encore en tokens bruts).
+- **Copie au clic** : icône ~900 ms au succès seulement ; sélection de texte
+  active ⇒ aucune copie ; `navigator.clipboard` absent (contexte non sécurisé,
+  le cas réel en LAN HTTP) ⇒ toast d'échec, pas d'icône, aucun faux succès.
+- **OPSEC export** (le point verrouillé) : Blob Markdown réel capturé avec
+  « résoudre les variables » **activé** → globales substituées, **`$svc_ntlm` /
+  `$domain_sid` restent bruts**, les secrets saisis n'apparaissent nulle part.
+  `PrintRoot` idem. Le garde-fou `$PASS` **se déclenche désormais depuis une étape
+  de snippet** (invisible à l'ancien scan commandes-seules) : refuser bloque
+  l'export, accepter substitue `$PASS` mais laisse les locales brutes.
+- **Responsive** : régression réelle trouvée et corrigée — avec 5 labels longs la
+  barre exige **1312px incompressibles**, elle débordait donc la page entre ~940 et
+  ~1150px. Palier labels longs→courts déplacé de 940px à **1200px** (bloc scindé,
+  le wordmark tombe toujours à 940px). Revérifié à 1500/1200/1000/480px : aucun
+  débordement, sidebar auto-repliée et lignes qui passent à la ligne à 480px.
+- **0 erreur / 0 avertissement console** sur les 5 vues au chargement propre.
+
+**Note d'outillage** : la non-régression de grammaire a comparé les **deux
+implémentations réelles** (ancienne extraite de git, nouvelle du disque, bundlées
+par esbuild), sur le rendu (parts de même état fusionnées des deux côtés). Script
+jeté, hors repo : aucun runner de test front n'est installé et on n'a pas ajouté
+vitest pour l'occasion.

@@ -170,12 +170,17 @@ export function Sidebar() {
     categories,
     references,
     activeRefTag,
+    snippets,
+    activeSnipCat,
+    activeSnipTag,
     setView,
     setValue,
     setActiveCat,
     setActiveTool,
     setActiveTag,
     setActiveRefTag,
+    setActiveSnipCat,
+    setActiveSnipTag,
     toggleExpand,
     adoptVar,
     deleteVar,
@@ -184,6 +189,7 @@ export function Sidebar() {
 
   const isLibrary = view === 'library';
   const isRefs = view === 'refs';
+  const isSnippets = view === 'snippets';
 
   // Adopted custom variables (a value key that is not one of the 6 built-ins).
   const customVars = useMemo(() => Object.keys(values).filter((k) => !STD.has(k)), [values]);
@@ -192,16 +198,21 @@ export function Sidebar() {
     const known = definedNames(values);
     const seen = new Set<string>();
     const out: string[] = [];
-    for (const c of commands) {
-      for (const tok of extractTokens(c.template)) {
+    const scan = (template: string) => {
+      for (const tok of extractTokens(template)) {
         if (!known.has(tok) && !seen.has(tok)) {
           seen.add(tok);
           out.push(tok);
         }
       }
-    }
+    };
+    for (const c of commands) scan(c.template);
+    // Also scan snippet steps, so a global used ONLY inside a snippet is still
+    // detected. extractTokens returns the GLOBAL class only, so a snippet-local
+    // ($svc_ntlm) can never surface here and pollute the app-wide panel.
+    for (const sn of snippets) for (const st of sn.steps) scan(st.template);
     return out;
-  }, [commands, values]);
+  }, [commands, snippets, values]);
 
   // Inline rename state for a custom variable (no modal, SPEC Q26).
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -227,6 +238,16 @@ export function Sidebar() {
   }, [commands]);
 
   const tagList = useMemo(() => countBy(commands, (c) => c.tags), [commands]);
+
+  // Snippets view facets: per-category counts (FLAT — a snippet has no tool, so
+  // there is no expandable tool tree) and its own tag list.
+  const snipCatCount = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const sn of snippets) m[sn.category] = (m[sn.category] || 0) + 1;
+    return m;
+  }, [snippets]);
+  const snipTagList = useMemo(() => countBy(snippets, (sn) => sn.tags), [snippets]);
+  const snipCats = categories.filter((c) => snipCatCount[c.key]);
 
   // Distinct tags across references, with per-tag counts — the References view's
   // own Tags facet (replaces the library Categories/Tags sections).
@@ -255,6 +276,18 @@ export function Sidebar() {
   const toggleTag = (name: string) => {
     setView('library');
     setActiveTag(activeTag === name ? null : name);
+  };
+  const selectSnipAll = () => {
+    setView('snippets');
+    setActiveSnipCat(null);
+  };
+  const selectSnipCat = (key: string) => {
+    setView('snippets');
+    setActiveSnipCat(activeSnipCat === key ? null : key);
+  };
+  const toggleSnipTag = (name: string) => {
+    setView('snippets');
+    setActiveSnipTag(activeSnipTag === name ? null : name);
   };
   const toggleRefTag = (name: string) => {
     setActiveRefTag(activeRefTag === name ? null : name);
@@ -459,8 +492,43 @@ export function Sidebar() {
           library Categories/Tags sections. */}
       {isRefs && <TagFacet tags={refTagList} active={activeRefTag} onToggle={toggleRefTag} />}
 
+      {/* Snippets view: FLAT categories (no tool tree) + its own tag facet, in
+          place of the library Categories/Tags sections. */}
+      {isSnippets && (
+        <div>
+          <div style={sectionHead}>Catégories</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <button
+              onClick={selectSnipAll}
+              style={{ ...(!activeSnipCat ? rowOn : rowBase), marginLeft: '18px' }}
+            >
+              <span style={{ width: '8px', height: '8px', flex: 'none', background: 'var(--muted)' }} />
+              <span style={{ flex: 1, minWidth: 0 }}>Tous les snippets</span>
+              <span style={countStyle}>{snippets.length}</span>
+            </button>
+            {snipCats.map((c) => (
+              <button
+                key={c.key}
+                onClick={() => selectSnipCat(c.key)}
+                style={{
+                  ...(activeSnipCat === c.key ? rowOn : rowBase),
+                  marginLeft: '18px',
+                }}
+              >
+                <span style={{ width: '8px', height: '8px', flex: 'none', background: c.color }} />
+                <span style={ellipsis}>{c.label}</span>
+                <span style={countStyle}>{snipCatCount[c.key]}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {isSnippets && (
+        <TagFacet tags={snipTagList} active={activeSnipTag} onToggle={toggleSnipTag} />
+      )}
+
       {/* Categories (expandable → tools) — library view only */}
-      {!isRefs && (
+      {!isRefs && !isSnippets && (
       <div>
         <div style={sectionHead}>Catégories</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -532,7 +600,9 @@ export function Sidebar() {
       )}
 
       {/* Tags — library view only */}
-      {!isRefs && <TagFacet tags={tagList} active={activeTag} onToggle={toggleTag} />}
+      {!isRefs && !isSnippets && (
+        <TagFacet tags={tagList} active={activeTag} onToggle={toggleTag} />
+      )}
     </div>
   );
 }

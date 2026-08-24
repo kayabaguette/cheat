@@ -35,7 +35,8 @@ const copyBtnInline: CSSProperties = {
   justifyContent: 'center',
 };
 
-function CopyIcon() {
+// Exported so <CommandLine> can show the same glyphs (0.9.0).
+export function CopyIcon() {
   return (
     <svg
       width="13"
@@ -53,7 +54,8 @@ function CopyIcon() {
   );
 }
 
-function CheckIcon() {
+// Exported so <CommandLine> can show the same glyphs (0.9.0).
+export function CheckIcon() {
   return (
     <svg
       width="13"

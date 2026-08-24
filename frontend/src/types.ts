@@ -32,12 +32,56 @@ export interface Cheatsheet {
   title: string;
   target: string;
   commandIds: string[];
+  // Second, independently ordered chapter: the sheet's snippets. Optional so a
+  // pre-0.9.0 export stays importable unchanged.
+  snippetIds?: string[];
+}
+
+// --- v0.9.0: snippets (ordered command chains) ------------------------------
+// A snippet is a REUSABLE technique: an ordered set of commands run one after
+// the other, where a step commonly consumes what the previous one produced
+// (dump a hash -> craft a ticket -> use it). Unlike a Roadmap it carries no
+// progress state, and unlike a Cheatsheet it is library-level content.
+
+export interface SnippetStep {
+  id: string;
+  // Short human label for the action ("Dump du hash du compte de service").
+  label?: string;
+  // The command line itself. INLINE only — a step never references a Command,
+  // so a snippet is self-contained.
+  template: string;
+  // Name of the local variable this step yields, when any. Purely an anchor: it
+  // places the capture field under the step that produces the value. The
+  // authoritative declaration list is Snippet.locals.
+  produces?: string;
+}
+
+// DEFINITION of a snippet-local variable. Values are NOT here: they are
+// memory-only and never persisted (D7), exactly like the global variable values.
+export interface SnippetLocal {
+  // Lower case, ^[a-z][a-z0-9_]*$ — the token class checked in lib/vars.ts.
+  name: string;
+  // Optional reminder of what to paste ("hash NTLM du compte de service").
+  hint?: string;
+}
+
+export interface Snippet {
+  id: string;
+  // Same key space as Command.category. A snippet has no `tool`.
+  category: string;
+  title: string;
+  desc: string;
+  tags: string[];
+  steps: SnippetStep[];
+  locals: SnippetLocal[];
 }
 
 export interface Step {
   id: string;
   text: string;
   commandId?: string;
+  // A step may link a command, a snippet, or BOTH (they are cumulative).
+  snippetId?: string;
 }
 
 export interface Phase {
@@ -66,7 +110,7 @@ export interface ProfileMeta {
   name: string;
 }
 
-export type ViewKey = 'library' | 'method' | 'refs' | 'cheatsheet';
+export type ViewKey = 'library' | 'method' | 'snippets' | 'refs' | 'cheatsheet';
 
 export type ThemeName = 'dark' | 'light';
 
@@ -79,6 +123,8 @@ export interface AppState {
   references: Reference[];
   roadmaps: Roadmap[];
   cheatsheets: Cheatsheet[];
+  // Optional: absent from every pre-0.9.0 export, which must stay importable.
+  snippets?: Snippet[];
   notes?: Record<string, string>;
   checks?: Record<string, boolean>;
   openSteps?: Record<string, boolean>;

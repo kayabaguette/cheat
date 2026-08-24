@@ -17,6 +17,9 @@
 # Go
 *.test
 /backend/tmp/
+# `go build ./...` run inside backend/ drops the binary here (the container
+# build and the Makefile output elsewhere, so this is a local-only artifact).
+/backend/cheat
 
 # Node / frontend
 node_modules/

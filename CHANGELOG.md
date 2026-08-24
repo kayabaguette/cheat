@@ -4,6 +4,90 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.9.0] — 2026-08-24
+
+### Added
+- **Snippets — ordered command chains.** A fifth module for the case one command
+  cannot cover: a *technique* whose actions run one after the other, each
+  commonly consuming what the previous produced (dump a service account's hash →
+  read the domain SID → forge and inject a silver ticket → use it). A snippet is
+  **reusable library content**, unlike a Roadmap (per-engagement progress) or a
+  Cheatsheet (a deliverable). Shape:
+  `Snippet {id, category, title, desc, tags[], steps[], locals[]}`, with
+  `SnippetStep {id, label?, template, produces?}` carrying an **inline** template
+  (a step never references a command, so a snippet is self-contained) and
+  `SnippetLocal {name, hint?}` being a **definition only**. A snippet has a
+  category and tags but **no tool**, so its sidebar facet is a flat category list
+  instead of the Bibliothèque's category → tool tree.
+- **Two classes of variables.** `$MAJUSCULES` stay the app-wide variables edited
+  in the sidebar. `$minuscules` are **local to one snippet**, filled from the
+  previous step's output, and are what turn an ordered list into an actual chain:
+  type the captured hash under the step that produced it and every downstream
+  line goes green, resolved and ready to paste.
+- **Copy a line by clicking it.** A chain cannot be executed in one go, so each
+  line is its own click target and the copy icon flashes at its right end for
+  ~900 ms — **on success only**. Two deliberate guards: a click that ends a text
+  **selection** copies nothing (selecting a fragment by hand keeps working), and a
+  missing `navigator.clipboard` — the norm over plain HTTP on the LAN since
+  0.3.0 — reports the failure rather than faking it, so you never paste an empty
+  clipboard believing you hold a hash.
+- **Snippets in the Méthodologie and the Cheatsheet.** A step may link a
+  command, a snippet, or **both** (`Step.snippetId` is cumulative with
+  `commandId`); its panel renders the command block, then the chain, then the
+  unchanged « Résultat » textarea. A cheatsheet gains a second
+  « Snippets » chapter next to « Commandes », independently ordered, exported to
+  Markdown and PDF. Chapter headings appear only when both chapters are
+  populated, so a commands-only sheet reads exactly as before.
+
+### Changed
+- **Token grammar — supersedes SPEC §3.2.7.** `$NAME` widens from
+  `[A-Z_][A-Z0-9_]*` to `[A-Za-z_][A-Za-z0-9_]*`, and a name is then classified
+  **strictly**: entirely upper case → global; entirely lower case → snippet-local,
+  **and only when declared** in that snippet's `locals[]`; anything **mixed-case
+  is not a token at all** and stays plain text. Those two guards are what make
+  widening safe, because shells write `$name` constantly — mixed case covers
+  PowerShell's own variables (`$PSVersionTable`, `$ErrorActionPreference`,
+  `$MyInvocation`) and the declaration requirement covers lower case
+  (`$env:USERNAME`, `$file`). Verified by diffing the old and new tokenizers over
+  the real dataset: **all 380 templates render byte-identically**.
+- **Top bar: the long → short tab-label breakpoint moves from 940px to 1200px.**
+  Measured, the bar needs 1312px incompressible with five long labels, so the
+  fifth tab made it overflow the page between ~940 and ~1150px. The wordmark
+  still drops at 940px (the old rule was split in two).
+- **The Cheatsheet tab badge counts both chapters** (commands + snippets).
+
+### Fixed
+- **`echo $RHOSTx` silently substituted to `10.10.10.5x`.** Under the old
+  grammar a token ended at the first lower-case letter, so `$RHOST` matched
+  inside a longer word and was replaced mid-word. Mixed-case names are now inert.
+- **A variable rename could corrupt plain command text.** The `renameVar`
+  cascade's lookahead excluded `[A-Z0-9_]` but not lower case, so renaming
+  `$USER` would have rewritten `$USERx` — plain text under the new grammar — into
+  `$OWNERx`. Now `[A-Za-z0-9_]`.
+- **A pre-0.9.0 dataset became un-re-importable after one import.** The write
+  handlers bind into a zero-value `AppState`, so a key absent from the body
+  (every older export omits `snippets`) was stored as JSON `null`; the next
+  export emitted `null`, and the client's import shape check — which demands an
+  array — then rejected the app's own export. Every array and map is now
+  normalised in `saveProfileState`, the single choke point both `PUT state` and
+  `POST import` go through.
+
+### Security
+- **Snippet-local values are memory-only AND never written to a file.**
+  Definitions persist with the snippet; the **values never touch the disk** —
+  they hold exactly what must not be persisted (an NTLM hash, a SID, a ticket).
+  They live outside `AppState`, keyed per **usage context** so one independent set
+  exists per place a snippet appears, and they are cleared by a reload. In
+  **Markdown and PDF exports a `$local` is never substituted, even with
+  « résoudre les variables » enabled**: SPEC §9.6's "raw by default, resolved on
+  opt-in" now applies to globals only. This is enforced structurally — the export
+  paths resolve against the globals map, in which a local simply does not exist —
+  not by a check that could be forgotten. The clipboard still resolves both
+  classes (Q99), which is the point of a chain.
+- **The sensitive-export guard now scans snippet steps.** A `$PASS` used inside a
+  chain was invisible to the old command-only scan; a resolved export would have
+  written it to disk with no confirmation.
+
 ## [0.8.0] — 2026-07-26
 
 ### Added
