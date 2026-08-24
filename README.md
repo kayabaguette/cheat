@@ -27,6 +27,7 @@ own machine — no cloud, no accounts, no telemetry. The UI is in **French**.
 - [Configuration](#configuration)
 - [Security & OPSEC](#security--opsec)
 - [Import / export](#import--export)
+- [Tests](#tests)
 - [Tech stack](#tech-stack)
 - [Project layout](#project-layout)
 - [License](#license)
@@ -275,6 +276,35 @@ valid; import rejects a file whose `commands` is not an array.
   the `locals[]` declarations are stored.
 - A file produced by an older version (no `snippets` key) imports unchanged.
 
+## Tests
+
+```bash
+make test          # both suites, containerized — no Go or Node needed on the host
+```
+
+Or directly, if you have the toolchains:
+
+```bash
+cd backend  && go test ./...
+cd frontend && npm test          # npm run test:watch while developing
+```
+
+`make test` also runs `tsc --noEmit`, so a type error fails the run.
+
+What is covered:
+
+- `backend/store_migration_test.go` — the one-shot migration of a pre-profiles
+  database into the first profile.
+- `frontend/src/lib/vars.test.ts` — the **variable tokenizer**, which every view
+  renders through and which decides what counts as a variable inside arbitrary
+  shell text. It asserts the two name classes, the four render states, both
+  extractors, and two invariants worth pinning down: that a snippet **local is
+  never substituted by the globals map** (the rule that keeps a captured hash out
+  of a Markdown/PDF export), and that no shipped seed command references anything
+  but the built-in variables. The two bugs it was born from are pinned as named
+  cases — `echo $RHOSTx` substituting mid-word, and `$_` being offered as a
+  variable.
+
 ## Tech stack
 
 One self-contained **Go** binary (Gin) embeds the compiled **Vite + React +
@@ -288,7 +318,8 @@ a JSON blob in a `profiles` row.
 
 ## Project layout
 
-- `frontend/` — Vite + React + TypeScript SPA.
+- `frontend/` — Vite + React + TypeScript SPA. Tests with **Vitest**
+  (`*.test.ts` next to the module under test).
 - `backend/` — Go server (Gin, GORM/SQLite, `go:embed` of the built SPA).
 - `Makefile`, `Dockerfile`, `.dockerignore` — build & delivery.
 - `SPEC.md` — the authoritative specification (with an implementation-status

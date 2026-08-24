@@ -4,6 +4,37 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.9.2] — 2026-08-24
+
+### Added
+- **Vitest, and a replayable test suite for the variable tokenizer.** The
+  non-regression checks that guarded the 0.9.0 grammar change and the 0.9.1 `$_`
+  fix were throwaway scripts living outside the repository — they proved the
+  change once and then vanished. `frontend/src/lib/vars.test.ts` turns them into
+  28 permanent assertions, and `make test` runs both suites in containers (Go +
+  Vitest + `tsc --noEmit`), so no host toolchain is required.
+
+  The suite is written as a **specification**, not as a diff against the previous
+  implementation: it asserts the two name classes, the four render states, both
+  token extractors, and `definedNamesWithLocals`. Two invariants are pinned
+  because nothing else enforces them:
+  - a snippet **local is never substituted by the globals map** — the structural
+    reason a captured hash cannot reach a Markdown/PDF export (SPEC addendum
+    item 11 / D7), so a refactor cannot quietly pass the merged map instead;
+  - **no shipped seed command references anything but the built-in variables**,
+    which would otherwise render as an "undefined variable" hint for every new
+    user.
+
+  The two bugs it was born from are pinned as named cases: `echo $RHOSTx`
+  substituting mid-word, and `$_` being offered as a variable. Both were verified
+  to actually fail the suite when reintroduced (5 and 8 failing tests
+  respectively) — a guard that cannot fail is not a guard.
+
+### Notes
+- Vitest brings its own newer nested Vite/esbuild; it introduces **no** new
+  `npm audit` finding. The two pre-existing dev-only advisories are against the
+  project's top-level `vite@5.4.21` / `esbuild@0.21.5` and are unchanged.
+
 ## [0.9.1] — 2026-08-24
 
 ### Fixed

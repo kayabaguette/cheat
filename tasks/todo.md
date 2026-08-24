@@ -273,3 +273,61 @@ implémentations réelles** (ancienne extraite de git, nouvelle du disque, bundl
 par esbuild), sur le rendu (parts de même état fusionnées des deux côtés). Script
 jeté, hors repo : aucun runner de test front n'est installé et on n'a pas ajouté
 vitest pour l'occasion.
+
+---
+
+## Task — Vitest + test rejouable du tokenizer (v0.9.2, 2026-08-24)
+
+**Ask (utilisateur) :** « ajoute vitest et rends ce test rejouable ». Les
+non-régressions qui avaient validé la grammaire 0.9.0 et le correctif `$_` de la
+0.9.1 étaient des scripts jetés hors dépôt : ils prouvaient le changement une
+fois, puis disparaissaient.
+
+- [x] `vitest` en devDependency + scripts `test` / `test:watch`.
+- [x] `frontend/vitest.config.ts` — config **propre**, pour ne PAS charger le
+      `vite.config.ts` de l'app : le test est de la logique pure, donc plugin
+      React et proxy `/api` sont du poids mort (et le Vite plus récent embarqué
+      par Vitest râlait sur les options esbuild dépréciées du plugin à chaque run).
+      `environment: 'node'` → pas de jsdom, aucune dépendance en plus.
+- [x] `frontend/src/lib/vars.test.ts` — **28 tests**, écrits comme une
+      *spécification* et non comme un diff contre l'ancienne implémentation, pour
+      rester utiles quand l'ancien code a disparu.
+- [x] Cible `make test` — Go + Vitest + `tsc --noEmit`, **en conteneur**
+      (réutilise `GO_IMAGE` / `NODE_IMAGE` déjà définis), donc aucun toolchain
+      hôte requis. Respecte la convention conteneur-only du Makefile.
+- [x] Docs : section « Tests » du README, `[0.9.2]` au CHANGELOG.
+
+### Résultats
+
+**Le test est prouvé capable d'échouer** (un garde-fou qui ne peut pas échouer
+n'en est pas un). Les deux bugs d'origine réintroduits un par un :
+
+- classe globale sans exigence de lettre (le bug `$_`) → **5 tests rouges** ;
+- `TOKEN_RE` remise en `[A-Z_][A-Z0-9_]*` (le bug `$RHOSTx`) → **8 tests rouges** ;
+- restauration → 28/28 verts.
+
+**Deux invariants épinglés** parce que rien d'autre ne les fait respecter :
+
+1. une **locale n'est jamais substituée par la map des globales** — c'est la
+   raison *structurelle* pour laquelle un hash capturé ne peut pas atteindre un
+   export MD/PDF (addendum SPEC item 11 / D7). Sans ce test, un refactor qui
+   passerait la map fusionnée casserait la garantie en silence.
+2. **aucune commande du seed ne référence autre chose que les 7 built-ins**, sinon
+   un nouvel utilisateur voit un indice « variable non définie » dès l'install.
+
+**`make test` vérifié de bout en bout** : `go test` OK, `tsc --noEmit` OK,
+28/28 vitest OK, dans les conteneurs, sans rien sur l'hôte.
+
+**Audit npm** : vitest embarque ses propres Vite/esbuild imbriqués et **plus
+récents** → **aucune** nouvelle vulnérabilité. Les deux advisories existantes
+visent le `vite@5.4.21` / `esbuild@0.21.5` de premier niveau du projet (dev-server
+uniquement) et sont inchangées. Monter Vite 5→6/7 est une décision séparée, non
+prise ici.
+
+### Reste ouvert
+
+- Couverture limitée à `lib/vars.ts` + `lib/varsets.ts` (logique pure). Le store,
+  les cascades de suppression et les vues restent non testés — ça demanderait
+  jsdom + `@testing-library/react`, non demandé.
+- Pas de CI qui exécute `make test` automatiquement (aucun runner configuré sur le
+  dépôt gitea) : le test est *rejouable*, pas encore *automatique*.
