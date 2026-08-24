@@ -21,6 +21,7 @@ own machine — no cloud, no accounts, no telemetry. The UI is in **French**.
 
 - [Why Cheat?](#why-cheat)
 - [Highlights](#highlights)
+- [Snippets](#snippets)
 - [Live variables](#live-variables)
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
@@ -52,10 +53,14 @@ across notes.
   per-phase and global progress. A step can link a command, shown expanded and
   resolved inline. Edit mode with drag-and-drop reordering (including across
   phases) and a progress reset.
+- **Snippets** — reusable **chains of commands** for the goals a single command
+  cannot reach (forge a silver ticket, kerberoast → crack → reuse). Ordered steps
+  with inline templates, **click a line to copy it**, and per-snippet variables
+  fed from the previous step's output (see below).
 - **Références** — external links with auto-extracted domain and tags, full-text
   and tag filtering, and URL validation on add/edit.
 - **Cheatsheet** — assemble named, target-scoped cheatsheets from library
-  commands, then **export to Markdown or PDF** — both emit raw `$TOKEN`s by
+  commands **and snippets** (two chapters), then **export to Markdown or PDF** — both emit raw `$TOKEN`s by
   default; a single opt-in toggle resolves the values into either format, and a
   confirmation guards any resolved export that would write a sensitive value
   (`$PASS`) to disk.
@@ -70,6 +75,41 @@ across notes.
 - **Local persistence** — everything (except variable *values*) is saved to a
   local SQLite database and survives restarts.
 - **Import / export** — back up or move your whole dataset as a single JSON file.
+
+## Snippets
+
+Some results take several commands, where each one needs something the previous
+one produced. A **snippet** captures that as a reusable technique:
+
+```
+01  Dump the service account's hash     mimikatz # sekurlsa::logonpasswords     → $svc_ntlm
+02  Read the domain SID                 whoami /user                            → $domain_sid
+03  Forge and inject                    mimikatz # kerberos::golden /sid:$domain_sid /rc4:$svc_ntlm /domain:$DOMAIN …
+04  Use it                              dir \\$RHOST\c$
+```
+
+- **Two classes of variables.** `$UPPERCASE` are the app-wide ones from the
+  sidebar. `$lowercase` are **local to the snippet**: you declare them, then paste
+  the value read from a step's output into the field that sits right under that
+  step — and every line below turns green, resolved and ready to run.
+- **Click a line to copy it.** A chain can't be run in one go, so each line is its
+  own copy button: click anywhere on it and the icon flashes at its right end.
+  Selecting part of a line with the mouse still works — that never copies.
+- **Local values are never written anywhere.** Not to the database, not to the
+  export, and **not even into a resolved Markdown/PDF export** — a `$local` always
+  leaves the app as a raw token. They hold precisely what shouldn't be persisted
+  (a hash, a ticket, a SID), so they live in memory only and reset on reload. The
+  clipboard does resolve them, which is the whole point.
+- **One value set per place.** The same snippet used in two methodology steps
+  keeps two independent sets of local values, so two targets never mix.
+- **Mixed-case `$Tokens` are left alone.** `$env:USERNAME`, `$PSVersionTable`,
+  `$file` and friends are ordinary shell text, never variables — an undeclared
+  lowercase token is plain text too, so PowerShell and bash one-liners paste in
+  safely.
+
+Snippets carry a category and tags (no tool), can be linked from a methodology
+step — on their own or alongside a command — and go into a cheatsheet's
+« Snippets » chapter.
 
 ## Live variables
 
@@ -171,6 +211,11 @@ run on a machine you control.
   never written to the database, `localStorage`, or the JSON export; they reset
   on reload. They are **global to the session** and are **kept unchanged when you
   switch profiles** (a profile scopes content, not variable values).
+- **Snippet-local values go one step further** — a `$lowercase` local holds what
+  you just captured (an NTLM hash, a SID, a ticket), so on top of being
+  memory-only it is **never substituted into a file export**, even when
+  « résoudre les variables » is enabled: it always leaves as a raw token. Only
+  the clipboard resolves it. Each place a snippet appears keeps its own value set.
 - **No at-rest encryption** — the database stores your commands, methodology,
   references, free-text notes/targets/URLs and any **captured command output**
   (methodology step results, which can contain credentials, hashes or other
@@ -189,7 +234,8 @@ scoped to the **active profile**. Import is a **full REPLACE** of the active
 profile (it overwrites everything in it, so export first to back up); it does not
 touch other profiles. Variable *values* are never part of the file. The easiest way to get a valid
 file is to **Export** one and edit it. Every top-level key must be present (arrays
-may be empty, maps `{}`); import rejects a file whose `commands` is not an array.
+may be empty, maps `{}`) except `snippets`, which is optional so older exports stay
+valid; import rejects a file whose `commands` is not an array.
 
 ```json
 {
@@ -197,7 +243,8 @@ may be empty, maps `{}`); import rejects a file whose `commands` is not an array
   "commands":    [{ "id": "n1", "category": "infogathering", "tool": "nmap", "title": "Scan complet TCP", "template": "nmap -p- $RHOST", "desc": "Tous les ports", "tags": ["recon"], "favorite": true }],
   "references":  [{ "id": "r1", "title": "HackTricks", "url": "https://book.hacktricks.xyz", "desc": "", "tags": ["general"] }],
   "roadmaps":    [{ "id": "services", "label": "Machine — Services", "phases": [{ "id": "p1", "label": "Reconnaissance", "steps": [{ "id": "s1", "text": "Scan TCP complet", "commandId": "n1" }] }] }],
-  "cheatsheets": [{ "id": "cs1", "title": "Cheatsheet — HTB Lab", "target": "", "commandIds": ["n1"] }],
+  "cheatsheets": [{ "id": "cs1", "title": "Cheatsheet — HTB Lab", "target": "", "commandIds": ["n1"], "snippetIds": ["sn1"] }],
+  "snippets":    [{ "id": "sn1", "category": "ad", "title": "Silver ticket (CIFS)", "desc": "", "tags": ["kerberos"], "steps": [{ "id": "ss1", "label": "Dump du hash", "template": "mimikatz # sekurlsa::logonpasswords", "produces": "svc_ntlm" }, { "id": "ss2", "template": "mimikatz # kerberos::golden /rc4:$svc_ntlm /domain:$DOMAIN /ptt" }], "locals": [{ "name": "svc_ntlm", "hint": "hash NTLM du compte de service" }] }],
   "notes":       { "n1": "note perso attachée à la commande n1" },
   "checks":      { "s1": true },
   "openSteps":   { "s1": false },
@@ -211,18 +258,22 @@ may be empty, maps `{}`); import rejects a file whose `commands` is not an array
 | `categories[]` | `{ key, label, color }` | `color` is a CSS hex; the 18 built-ins keep their canonical keys/labels. |
 | `commands[]` | `{ id, category, tool, title, template, desc, tags[], favorite? }` | `category` is a `categories[].key`; `template` may contain `$VAR` tokens; a command's own tool is never one of its tags; `favorite` (optional bool, default `false`) pins the command to the top of its tool group. |
 | `references[]` | `{ id, title, url, desc, tags[] }` | `url` should be `http(s)`/`mailto`. |
-| `roadmaps[]` | `{ id, label, phases[] }` | `phases[] = { id, label, steps[] }`, `steps[] = { id, text, commandId? }`. |
-| `cheatsheets[]` | `{ id, title, target, commandIds[] }` | each `commandIds` entry → a `commands[].id`. |
+| `roadmaps[]` | `{ id, label, phases[] }` | `phases[] = { id, label, steps[] }`, `steps[] = { id, text, commandId?, snippetId? }` — a step may link a command, a snippet, or **both**. |
+| `snippets[]` | `{ id, category, title, desc, tags[], steps[], locals[] }` | Optional key (absent from pre-0.9 exports). `steps[] = { id, label?, template, produces? }` — `template` is **inline** (never a command id); `produces` names the local a step yields. `locals[] = { name, hint? }` are **definitions only**: `name` must be lower case `^[a-z][a-z0-9_]*$`, and the *values* are never in the file. A snippet has no `tool`. |
+| `cheatsheets[]` | `{ id, title, target, commandIds[], snippetIds? }` | each `commandIds` entry → a `commands[].id`; `snippetIds` (optional) → a `snippets[].id`, rendered as the sheet's second chapter. |
 | `notes` | `{ [commandId]: string }` | per-command note. |
 | `checks` / `openSteps` | `{ [stepId]: boolean }` | methodology progress / expanded state. |
 | `results` | `{ [stepId]: string }` | saved command output/result captured per methodology step. |
 | `settings` | `{ theme, activeRoadmap, activeSheet }` | `theme` = `"dark"`\|`"light"`; `activeRoadmap` = a roadmap id or `null`; `activeSheet` = a cheatsheet id. |
 
 - **IDs** are arbitrary unique strings; keep cross-references consistent
-  (`steps[].commandId`, `cheatsheets[].commandIds`, and the `notes`/`checks`/
-  `openSteps`/`results` keys). References to a missing id are dropped.
+  (`steps[].commandId`, `steps[].snippetId`, `cheatsheets[].commandIds` /
+  `snippetIds`, and the `notes`/`checks`/`openSteps`/`results` keys). References to
+  a missing id are dropped.
 - Variable **values** (`$RHOST`, `$PASS`, …) are **not** in the file — they are
-  memory-only and reset on load.
+  memory-only and reset on load. The same holds for **snippet-local values**: only
+  the `locals[]` declarations are stored.
+- A file produced by an older version (no `snippets` key) imports unchanged.
 
 ## Tech stack
 
