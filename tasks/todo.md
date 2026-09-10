@@ -758,3 +758,63 @@ Vérifié dans l'app sur le scénario exact du rapport : un scan ne contenant qu
 `443/tcp open https`, bouton « détecter » → « 2 déclencheur(s) activé(s) : HTTP,
 HTTPS », et les deux étapes taguées s'activent. Avant le correctif, l'étape HTTP
 restait grisée.
+
+---
+
+## v0.15.0 — Mode édition utilisable, étapes éditables, réinitialisation totale
+
+**Demande.** « En mode modification de méthodologie, je ne veux pas qu'il y ait
+des étapes en gris clair, c'est difficile pour éditer. De même en mode
+modification je veux pouvoir éditer une étape (déclencheur, libellé, commande).
+Quand je clique sur réinitialiser la progression, cela réinitialise la totalité
+(donc les résultats des commandes). »
+
+### Implémentation
+
+- [x] **Plus rien de grisé en mode édition.** L'opacité 0.42 rapporte un état de
+      *progression* — « cette cible n'a pas ce service » — sans objet quand on
+      édite la *structure*. Les cases suivent (`disabled` hors édition seulement) :
+      une ligne non grisée avec une case morte aurait l'air cassée. Le suffixe
+      `· inactif` reste, ce n'est pas lui qui gênait.
+- [x] **`updateStep` — la dette M1 soldée.** Depuis M1 le store n'exposait aucune
+      action d'édition d'étape, et la vue le documentait en commentaire depuis
+      quatre milestones. Une seule action prend un patch
+      `{ text?, commandId?, snippetId? }` et **patche l'étape sans toucher à son
+      id** — donc sa coche, son résultat collé et ses variables locales de snippet
+      survivent à une édition. Le seul moyen de renommer jusqu'ici,
+      supprimer/recréer, détruisait les trois.
+- [x] **La réinitialisation efface tout, résultats compris.** Le drapeau
+      `alsoResults` de `purgeProgress` n'avait alors plus qu'une valeur possible à
+      ses cinq points d'appel : **il disparaît**. Le code est donc plus court après
+      le changement qu'avant.
+
+### Un revirement assumé
+
+La 0.11.0 avait décidé que les résultats survivaient à une réinitialisation, au
+motif qu'une sortie de commande est une donnée et non de la progression. C'est
+défendable — mais sur une nouvelle cible on repart propre. Noté comme tel dans le
+CHANGELOG et l'addendum SPEC (item 18) plutôt que glissé comme un détail.
+
+### Résultats
+
+`make test` vert, 94 assertions inchangées : rien de neuf n'est *pur* ici (action
+de store + vue), donc la suite sert de filet de non-régression et la couverture
+réelle est la passe navigateur.
+
+Vérifié dans l'app :
+
+| Vérification | Résultat |
+|---|---|
+| mode lecture | étape inactive à 0.42, case désactivée *(inchangé)* |
+| mode édition | **toutes** les lignes à opacité 1, cases actives, libellé en `<input>`, 2 `<select>` |
+| éditer le libellé + lier une commande | bouton de dépliage passé à `▸ nmap` |
+| **id de l'étape après édition** | `services-p0-s1` conservé → **coche et résultat intacts** |
+| délier la commande | retour à `▸ résultat` |
+| réinitialiser | `checks`, `results` et `activeTriggers` vidés ; libellé édité et déclencheurs déclarés intacts |
+
+Console propre.
+
+### Reste ouvert
+
+- L'édition écrit à chaque frappe, comme le renommage de phase existant. Pas de
+  debounce local : l'autosave du store est déjà débouncé à 500 ms.
