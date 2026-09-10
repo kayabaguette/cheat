@@ -54,7 +54,8 @@ across notes.
   from the **★ Favoris** scope in the sidebar.
 - **Méthodologie** — reusable **roadmaps** of phases and checkable steps with
   per-phase and global progress. A step can link a command, shown expanded and
-  resolved inline. Edit mode with drag-and-drop reordering (including across
+  resolved inline. Edit mode edits a step in place — label, linked command,
+  linked snippet, triggers — with drag-and-drop reordering (including across
   phases) and a progress reset. Steps can be **conditional**: tick what discovery
   found on the target and only the relevant branches apply (see below).
 - **Snippets** — reusable **chains of commands** for the goals a single command
@@ -256,9 +257,22 @@ A bare `ssl` service fires neither: nmap could not say what is behind it.
 worst a bad parse can do is find nothing. Treat it as a pre-fill you correct, not
 as a source of truth.
 
-Trigger *definitions* travel with the roadmap (including a copy to another
-profile); which ones are *on* is per-target progress, so it is what
-« Réinitialiser la progression » clears, alongside the checkboxes.
+### Editing, and resetting
+
+**« ✎ Modifier » edits a step in place**: its label becomes an input, its linked
+command and snippet become dropdowns, and its triggers a chip picker. The step
+keeps its identity through all of it, so **its checkbox, its pasted result and its
+snippet-local values survive an edit** — which was not true of the only previous
+way to change a label, deleting and recreating the step.
+
+Nothing is dimmed in edit mode either: the greying of an inactive step reports
+what *this target* runs, which is beside the point when you are editing the
+roadmap itself.
+
+**« Réinitialiser la progression » clears everything for that roadmap** — the
+checkboxes, the sub-steps, the pasted results and the detected triggers. Trigger
+*definitions* travel with the roadmap (including a copy to another profile) and
+are not touched; only their on/off state is.
 
 ## Live variables
 

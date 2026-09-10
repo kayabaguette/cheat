@@ -4,6 +4,48 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.15.0] — 2026-09-10
+
+### Added
+- **A step is editable in place.** Its label, its linked command and its linked
+  snippet could only be set at creation: since M1 the store exposed no
+  edit-a-step action, a debt the view had been carrying in a comment for four
+  milestones. In edit mode the label is now an input and the two links are
+  dropdowns, on one extra row under the label alongside the trigger picker that
+  was already there.
+
+  All of it goes through a single `updateStep(roadmapId, phaseId, stepId, patch)`,
+  which **patches the step and leaves its id alone** — so its checks, its pasted
+  result and its snippet-local values survive an edit. Delete-and-recreate, the
+  only way to change a label until now, destroyed all three. An empty string in
+  the patch unlinks, the convention `addStep` already used at creation.
+
+### Changed
+- **Nothing is dimmed in edit mode.** The 0.42 opacity on an inactive step reports
+  *progress* state — "this target does not run that service" — which has no bearing
+  on editing the *structure*, and it made the rows genuinely hard to work with. The
+  dimming, and the greyed group sub-header, now apply outside edit mode only. The
+  `· inactif` suffix stays: it is true and useful, and it is not what got in the
+  way.
+
+  The step and sub-step checkboxes follow: `disabled` only outside edit mode, since
+  an undimmed row with a dead box would just look broken.
+
+- **« Réinitialiser la progression » now clears the pasted results too**, and its
+  confirm says so. 0.11.0 had deliberately spared them — "saved command output is
+  data, not progression" — which is defensible, but a new target should start
+  clean. That decision was implemented by an `alsoResults` flag on `purgeProgress`;
+  with the reset now clearing everything, the flag had a single possible value at
+  all five call sites and is **gone**, so the code is shorter than before the
+  change.
+
+### Notes
+- No type, DTO or import/export change: `updateStep` writes fields that already
+  exist, and the purge touches maps that already exist.
+- Nothing new here is pure logic, so the 94 assertions stand as the non-regression
+  net and the coverage is the browser pass — as for every UI change in this
+  project.
+
 ## [0.14.1] — 2026-09-10
 
 ### Fixed

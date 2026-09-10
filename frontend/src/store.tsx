@@ -329,6 +329,13 @@ export interface StoreActions {
     stepId: string,
     substepId: string,
   ) => void;
+  // v0.15.0 — edit an existing step in place. An empty string unlinks.
+  updateStep: (
+    roadmapId: string,
+    phaseId: string,
+    stepId: string,
+    patch: { text?: string; commandId?: string; snippetId?: string },
+  ) => void;
   deleteStep: (roadmapId: string, phaseId: string, stepId: string) => void;
   moveStep: (
     roadmapId: string,
@@ -711,21 +718,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // Drop progression + panel-open state for a set of step ids (shared by the
-  // roadmap/phase/step delete actions and resetProgress).
-  const purgeProgress = useCallback((ids: Set<string>, alsoResults = false) => {
+  // Drop every per-step slice for a set of ids — checks, panel-open state AND the
+  // saved command output. Shared by the roadmap/phase/step/substep delete actions
+  // and by resetProgress.
+  //
+  // v0.15.0: the `alsoResults` flag is gone. It existed so a progress reset could
+  // keep the pasted output ("that is data, not progression", v0.11.0), but a reset
+  // now clears everything — starting a new target should start clean — which left
+  // the flag with a single possible value at all five call sites.
+  const purgeProgress = useCallback((ids: Set<string>) => {
     setChecks((c) => purge(c, ids));
     setOpenSteps((o) => purge(o, ids));
-    // Saved command output is DATA, not progression: purge it only when the steps
-    // are actually deleted (alsoResults), never on a plain progress reset.
-    if (alsoResults) setResults((r) => purge(r, ids));
+    setResults((r) => purge(r, ids));
   }, []);
 
   const deleteRoadmap = useCallback(
     (id: string) => {
       const target = roadmapsRef.current.find((r) => r.id === id);
       const ids = new Set(target ? stepIdsOf(target) : []);
-      purgeProgress(ids, true);
+      purgeProgress(ids);
       // A trigger belongs to its roadmap, so its ON state goes with it (v0.11.0).
       const tgIds = new Set(target ? triggerIdsOf(target) : []);
       if (tgIds.size) setActiveTriggers((a) => purge(a, tgIds));
@@ -764,7 +775,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const r = roadmapsRef.current.find((x) => x.id === roadmapId);
     const p = r?.phases.find((ph) => ph.id === phaseId);
     const ids = new Set(p ? p.steps.map((s) => s.id) : []);
-    purgeProgress(ids, true);
+    purgeProgress(ids);
     setRoadmaps((rms) => {
       const next = cloneRoadmaps(rms);
       const rr = next.find((x) => x.id === roadmapId);
@@ -806,6 +817,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  // Edit an EXISTING step's text or its links (v0.15.0). The step keeps its id,
+  // and therefore its checks, its pasted result and its snippet-local values —
+  // all three of which a delete-and-recreate would drop. An empty string in the
+  // patch UNLINKS, the same convention addStep uses at creation.
+  //
+  // This settles the M1 debt the Méthodologie view documented for four milestones:
+  // "the store contract exposes no edit-step-text action […] a rename action + an
+  // inline field can be added later".
+  const updateStep = useCallback(
+    (
+      roadmapId: string,
+      phaseId: string,
+      stepId: string,
+      patch: { text?: string; commandId?: string; snippetId?: string },
+    ) => {
+      setRoadmaps((rms) => {
+        const next = cloneRoadmaps(rms);
+        const p = next.find((x) => x.id === roadmapId)?.phases.find((ph) => ph.id === phaseId);
+        if (!p) return rms;
+        p.steps = p.steps.map((st) => {
+          if (st.id !== stepId) return st;
+          return {
+            ...st,
+            ...(patch.text !== undefined ? { text: patch.text } : {}),
+            ...(patch.commandId !== undefined ? { commandId: patch.commandId || undefined } : {}),
+            ...(patch.snippetId !== undefined ? { snippetId: patch.snippetId || undefined } : {}),
+          };
+        });
+        return next;
+      });
+    },
+    [],
+  );
+
   const deleteStep = useCallback((roadmapId: string, phaseId: string, stepId: string) => {
     // The step's own id AND its checklist's (v0.13.0), which hold their done
     // state in the same map.
@@ -814,7 +859,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ?.phases.find((ph) => ph.id === phaseId)
       ?.steps.find((st) => st.id === stepId);
     const ids = new Set([stepId, ...(target?.substeps ?? []).map((sb) => sb.id)]);
-    purgeProgress(ids, true);
+    purgeProgress(ids);
     setRoadmaps((rms) => {
       const next = cloneRoadmaps(rms);
       const p = next.find((x) => x.id === roadmapId)?.phases.find((ph) => ph.id === phaseId);
@@ -899,7 +944,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const deleteSubstep = useCallback(
     (roadmapId: string, phaseId: string, stepId: string, substepId: string) => {
-      purgeProgress(new Set([substepId]), true);
+      purgeProgress(new Set([substepId]));
       setRoadmaps((rms) => {
         const next = cloneRoadmaps(rms);
         const p = next.find((x) => x.id === roadmapId)?.phases.find((ph) => ph.id === phaseId);
@@ -928,6 +973,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const resetProgress = useCallback((roadmapId: string) => {
     const r = roadmapsRef.current.find((x) => x.id === roadmapId);
     const ids = new Set(r ? stepIdsOf(r) : []);
+    // Everything per-step goes, pasted results included (v0.15.0).
     purgeProgress(ids);
     // The triggers describe the TARGET ("this host runs an FTP"), so they are
     // part of the progress being reset — otherwise the next target silently
@@ -2006,6 +2052,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       renamePhase,
       deletePhase,
       addStep,
+      updateStep,
       deleteStep,
       moveStep,
       movePhase,
@@ -2109,6 +2156,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       renamePhase,
       deletePhase,
       addStep,
+      updateStep,
       deleteStep,
       moveStep,
       movePhase,

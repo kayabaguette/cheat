@@ -41,10 +41,13 @@ import type { Step } from '../../types';
 //   • ↑/↓ buttons are an accessible reorder fallback in edit mode (SPEC §3.7).
 // Transient drag state lives in local React state, never the store.
 //
-// NOTE: the M1 store contract exposes no "edit step text" action, and the
-// prototype renders step text as a plain (struck-through when checked) div even
-// in edit mode — so step text is NOT an inline input here. It matches the
-// prototype exactly; a rename action + inline field can be added later.
+// v0.15.0 — a step is EDITABLE IN PLACE in edit mode: its label is an input, its
+// command and snippet links are dropdowns, and its triggers a chip picker. All of
+// it goes through `updateStep` / `setStepTriggers`, which patch the step and leave
+// its id alone — so its checks, its pasted result and its snippet-local values
+// survive an edit, which a delete-and-recreate would have destroyed. (This
+// replaces the M1 note that said step text was deliberately not an input because
+// the store exposed no action for it.)
 
 // SPEC §7.5 progress: neutral state for empty scopes, never 0%/100% for a
 // partially-complete scope.
@@ -453,6 +456,30 @@ const subRule: CSSProperties = {
   margin: '10px 0 0',
 };
 
+// v0.15.0 — a step edited in place. The label mirrors phaseRenameInput; the
+// relink row keeps the two dropdowns and the trigger button on ONE line, so
+// editing a step costs one extra row rather than two.
+const stepRenameInput: CSSProperties = {
+  ...inputBase,
+  width: '100%',
+  fontSize: '13px',
+  padding: '3px 7px',
+};
+const stepEditRow: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: '6px',
+  alignItems: 'center',
+  marginTop: '2px',
+};
+const stepEditSelect: CSSProperties = {
+  ...inputBase,
+  flex: '1 1 150px',
+  minWidth: 0,
+  fontSize: '11.5px',
+  padding: '2px 5px',
+};
+
 const detectBtn: CSSProperties = {
   cursor: 'pointer',
   border: '1px solid var(--border2)',
@@ -633,6 +660,7 @@ export function Methodology() {
     renamePhase,
     deletePhase,
     addStep,
+    updateStep,
     deleteStep,
     moveStep,
     movePhase,
@@ -759,11 +787,12 @@ export function Methodology() {
 
   const onReset = () => {
     if (!rm) return;
-    // Say what it clears: since 0.11.0 the detected triggers go too, because they
+    // Say exactly what it clears. Since 0.15.0 that is EVERYTHING per-step, the
+    // pasted results included; the detected triggers go too (0.11.0) because they
     // describe the TARGET and would otherwise be inherited by the next one.
     const msg = (rm.triggers ?? []).length
-      ? 'Réinitialiser la progression de cette méthodologie ?\n\nLes cases cochées ET les déclencheurs détectés seront effacés (les résultats collés sont conservés).'
-      : 'Réinitialiser la progression de cette méthodologie ?';
+      ? 'Réinitialiser la progression de cette méthodologie ?\n\nLes cases cochées, les sous-étapes, les résultats collés ET les déclencheurs détectés seront effacés.'
+      : 'Réinitialiser la progression de cette méthodologie ?\n\nLes cases cochées, les sous-étapes et les résultats collés seront effacés.';
     if (window.confirm(msg)) resetProgress(rm.id);
   };
 
@@ -1206,7 +1235,7 @@ export function Methodology() {
                                     <div
                                       style={{
                                         ...groupHead,
-                                        color: active ? 'var(--acc)' : 'var(--faint)',
+                                        color: methodEdit || active ? 'var(--acc)' : 'var(--faint)',
                                       }}
                                     >
                                       <span>
@@ -1247,9 +1276,13 @@ export function Methodology() {
                                       padding: '9px 0',
                                       borderTop: isOver ? '2px solid var(--acc)' : '1px solid var(--border)',
                                       // An inactive step is dimmed rather than
-                                      // hidden by default, so you can see what this
-                                      // target does not need — and why.
-                                      opacity: isDragged ? 0.45 : active ? 1 : 0.42,
+                                      // hidden, so you can see what this target
+                                      // does not need — and why. NEVER in edit
+                                      // mode though: the dimming reports progress
+                                      // state, which has no bearing on editing the
+                                      // structure, and it made the rows hard to
+                                      // work with (v0.15.0).
+                                      opacity: isDragged ? 0.45 : methodEdit || active ? 1 : 0.42,
                                       cursor: methodEdit ? 'grab' : 'default',
                                     }}
                                   >
@@ -1265,7 +1298,7 @@ export function Methodology() {
                                             ? setChecked(subIds, !checked)
                                             : toggleCheck(st.id)
                                         }
-                                        disabled={!active}
+                                        disabled={!methodEdit && !active}
                                         title={
                                           !active
                                             ? 'Étape inactive — condition : ' + cond
@@ -1310,18 +1343,76 @@ export function Methodology() {
                                         </div>
                                       )}
                                       <div style={stepTextWrap}>
-                                        <div style={checked ? stepTextDone : stepText}>{st.text}</div>
-                                        {methodEdit && roadmapTriggers.length > 0 && (
-                                          <div style={stepChipRow}>
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                setPickerStep(pickerStep === st.id ? null : st.id)
+                                        {/* In edit mode the label is an input and
+                                            the links are dropdowns — all patched
+                                            through updateStep, which leaves the
+                                            step's id (and so its checks, its
+                                            result and its local values) alone. */}
+                                        {methodEdit ? (
+                                          <input
+                                            value={st.text}
+                                            onChange={(e) =>
+                                              updateStep(rm.id, ph.id, st.id, {
+                                                text: e.target.value,
+                                              })
+                                            }
+                                            spellCheck="false"
+                                            autoCorrect="off"
+                                            autoCapitalize="off"
+                                            style={stepRenameInput}
+                                          />
+                                        ) : (
+                                          <div style={checked ? stepTextDone : stepText}>
+                                            {st.text}
+                                          </div>
+                                        )}
+                                        {methodEdit && (
+                                          <div style={stepEditRow}>
+                                            <select
+                                              value={st.commandId ?? ''}
+                                              onChange={(e) =>
+                                                updateStep(rm.id, ph.id, st.id, {
+                                                  commandId: e.target.value,
+                                                })
                                               }
-                                              style={miniBtn}
+                                              style={stepEditSelect}
                                             >
-                                              {stepTrigs.length ? '⚙ déclencheurs' : '＋ déclencheur'}
-                                            </button>
+                                              <option value="">— aucune commande liée —</option>
+                                              {sortedCommands.map((c) => (
+                                                <option key={c.id} value={c.id}>
+                                                  {c.tool} — {c.title}
+                                                </option>
+                                              ))}
+                                            </select>
+                                            <select
+                                              value={st.snippetId ?? ''}
+                                              onChange={(e) =>
+                                                updateStep(rm.id, ph.id, st.id, {
+                                                  snippetId: e.target.value,
+                                                })
+                                              }
+                                              style={stepEditSelect}
+                                            >
+                                              <option value="">— aucun snippet lié —</option>
+                                              {sortedSnippets.map((sn) => (
+                                                <option key={sn.id} value={sn.id}>
+                                                  {sn.title}
+                                                </option>
+                                              ))}
+                                            </select>
+                                            {roadmapTriggers.length > 0 && (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  setPickerStep(pickerStep === st.id ? null : st.id)
+                                                }
+                                                style={miniBtn}
+                                              >
+                                                {stepTrigs.length
+                                                  ? '⚙ déclencheurs'
+                                                  : '＋ déclencheur'}
+                                              </button>
+                                            )}
                                           </div>
                                         )}
                                         {/* The picker, unfolded for ONE step at a
@@ -1432,7 +1523,7 @@ export function Methodology() {
                                                   <div key={sb.id} style={subRow}>
                                                     <button
                                                       onClick={() => toggleCheck(sb.id)}
-                                                      disabled={!active}
+                                                      disabled={!methodEdit && !active}
                                                       style={sbDone ? checkOn : checkOff}
                                                     >
                                                       {sbDone ? '✓' : ''}
