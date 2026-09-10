@@ -21,7 +21,7 @@ const TABS: { key: ViewKey; label: string; short: string }[] = [
   { key: 'method', label: 'Méthodologie', short: 'Métho' },
   { key: 'snippets', label: 'Snippets', short: 'Snip' },
   { key: 'refs', label: 'Références', short: 'Réfs' },
-  { key: 'cheatsheet', label: 'Cheatsheet', short: 'Cheat' },
+  { key: 'cheatsheet', label: 'Cheatsheet', short: 'Sheet' },
 ];
 
 const segBase: CSSProperties = {
@@ -140,11 +140,14 @@ export function TopBar() {
         >
           💩
         </div>
+        {/* The wordmark reads « Cheatsheet », like the window title: a proctor
+            glancing at the screen during an exam should not see the word
+            « Cheat » standing on its own. */}
         <div
           className="tb-brand"
           style={{ fontWeight: 600, fontSize: '14.5px', letterSpacing: '-.01em' }}
         >
-          Cheat
+          Cheatsheet
         </div>
       </div>
 

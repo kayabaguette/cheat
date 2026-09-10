@@ -1380,7 +1380,16 @@ export function Methodology() {
                                         title={hasResult ? 'Résultat enregistré' : undefined}
                                         style={
                                           !expanded && hasResult
-                                            ? { ...noteBtn, background: 'var(--acc-dim)', borderColor: 'var(--acc-line)' }
+                                            ? // The `border` SHORTHAND, not the
+                                              // borderColor longhand: mixing them
+                                              // makes React leave a stale colour
+                                              // when the state flips back (the trap
+                                              // Sidebar.tsx's tagOn documents).
+                                              {
+                                                ...noteBtn,
+                                                background: 'var(--acc-dim)',
+                                                border: '1px solid var(--acc-line)',
+                                              }
                                             : noteBtn
                                         }
                                       >

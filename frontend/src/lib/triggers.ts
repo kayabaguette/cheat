@@ -235,17 +235,40 @@ function normLabel(label: string): string {
   return label.toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
+// nmap describes a TLS-wrapped service by prefixing the tunnel: `ssl/http`,
+// `tls/http`. serviceTokens() splits that into ['ssl', 'http'], which is what
+// lets HTTPS be recognised from the tunnel rather than from the port number.
+const TLS_TOKENS = new Set(['ssl', 'tls']);
+const WEB_TOKENS = new Set(['http', 'http-alt', 'http-proxy', 'https', 'https-alt']);
+
 // Port and service-name aliases per canonical label. Deliberately SHORT: it
 // covers what a pentester actually meets, and a service it does not know simply
 // is not auto-detected — the chip is still one click away. Over-reaching here
 // would trade a missing detection (harmless) for a wrong one (confusing).
-const CATALOG: { label: string; ports: number[]; names: string[] }[] = [
+//
+// `also` is an extra predicate over the service tokens, for the cases an exact
+// name lookup cannot express.
+const CATALOG: {
+  label: string;
+  ports: number[];
+  names: string[];
+  also?: (tokens: string[]) => boolean;
+}[] = [
   { label: 'FTP', ports: [21, 990], names: ['ftp', 'ftps'] },
   { label: 'SSH', ports: [22], names: ['ssh'] },
   { label: 'TELNET', ports: [23], names: ['telnet'] },
   { label: 'SMTP', ports: [25, 465, 587], names: ['smtp', 'smtps'] },
   { label: 'DNS', ports: [53], names: ['domain', 'dns'] },
-  { label: 'HTTP', ports: [80, 8000, 8080, 8081, 8888], names: ['http', 'http-alt', 'http-proxy'] },
+  // A web service is a web service: « HTTP » covers https too, because the web
+  // enumeration steps behind that trigger apply whether or not there is TLS in
+  // front. Before v0.14.1 a target running only `443/tcp open https` left an
+  // HTTP-tagged step inactive, which is the opposite of useful.
+  {
+    label: 'HTTP',
+    ports: [80, 443, 8000, 8080, 8081, 8443, 8888],
+    names: ['http', 'http-alt', 'http-proxy', 'https', 'https-alt'],
+    also: (tokens) => tokens.some((t) => WEB_TOKENS.has(t)),
+  },
   { label: 'KERBEROS', ports: [88, 464], names: ['kerberos-sec', 'kerberos', 'kpasswd5'] },
   { label: 'POP3', ports: [110, 995], names: ['pop3', 'pop3s'] },
   { label: 'RPC', ports: [111, 135], names: ['rpcbind', 'msrpc'] },
@@ -253,7 +276,18 @@ const CATALOG: { label: string; ports: number[]; names: string[] }[] = [
   { label: 'IMAP', ports: [143, 993], names: ['imap', 'imaps'] },
   { label: 'SNMP', ports: [161, 162], names: ['snmp'] },
   { label: 'LDAP', ports: [389, 636, 3268, 3269], names: ['ldap', 'ldapssl'] },
-  { label: 'HTTPS', ports: [443, 8443], names: ['https', 'https-alt'] },
+  // « HTTPS » stays NARROWER than HTTP on purpose: the steps behind it are
+  // TLS-specific (certificate, SNI, weak ciphers), so it must not fire on a plain
+  // http service. It fires on the TLS ports, on an https* service name, and — the
+  // v0.14.1 fix — on a `ssl/http` tunnel at ANY port, which the exact-name lookup
+  // could only catch through the port and therefore missed on 9443 and friends.
+  {
+    label: 'HTTPS',
+    ports: [443, 8443],
+    names: ['https', 'https-alt'],
+    also: (tokens) =>
+      tokens.some((t) => TLS_TOKENS.has(t)) && tokens.some((t) => WEB_TOKENS.has(t)),
+  },
   { label: 'MSSQL', ports: [1433], names: ['ms-sql-s', 'mssql'] },
   { label: 'ORACLE', ports: [1521], names: ['oracle', 'oracle-tns'] },
   { label: 'NFS', ports: [2049], names: ['nfs'] },
@@ -290,9 +324,11 @@ export function matchTriggers(text: string, triggers: readonly Trigger[]): strin
     const hit = services.some((sv) => {
       const tokens = serviceTokens(sv.service);
       if (entry) {
-        // Known label: ports and exact service names only — no substring.
+        // Known label: ports, exact service names, and the entry's own extra
+        // predicate — never a loose substring.
         if (entry.ports.includes(sv.port)) return true;
-        return tokens.some((n) => entry.names.includes(n));
+        if (tokens.some((n) => entry.names.includes(n))) return true;
+        return entry.also ? entry.also(tokens) : false;
       }
       if (label.length < MIN_FALLBACK_LEN) return false;
       return tokens.some((n) => n.includes(lower));

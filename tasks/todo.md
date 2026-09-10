@@ -699,3 +699,62 @@ l'être :
   d'opérateur séparé, écarté par l'utilisateur.
 - `StepDTO.AllTriggerIDs` reste dans le DTO Go le temps que les profils écrits par
   la 0.13.0 soient relus une fois. À supprimer plus tard.
+
+---
+
+## v0.14.1 — Détection web réparée, et le mot « Cheat » quitte l'écran
+
+**Demande.** « Il y a un bug pour le détecteur HTTP/HTTPS, tu ne le prends pas en
+compte dans la détection automatique. Il faudrait aussi changer le nom de la
+fenêtre en cheatsheet, j'ai peur que le proctor le prenne mal. »
+
+### Le bug, reproduit avant d'être corrigé
+
+Plutôt que de deviner, j'ai sondé la détection avec onze lignes nmap réalistes.
+Deux trous, tous deux laissant une étape web inactive sur une vraie cible :
+
+| ligne nmap | avant | après |
+|---|---|---|
+| `443/tcp open https` | HTTPS seul | **HTTP + HTTPS** |
+| `9443/tcp open ssl/http` | HTTP seul | **HTTP + HTTPS** |
+| `80/tcp open http` | HTTP | HTTP *(inchangé)* |
+| `10443/tcp open ssl` | rien | rien *(inchangé, à raison)* |
+
+- [x] **HTTP couvre https.** Un service web est un service web : les étapes
+      d'énumération derrière ce déclencheur s'appliquent avec ou sans TLS.
+- [x] **HTTPS reconnaît le tunnel, pas le port.** nmap écrit `ssl/http` ou
+      `tls/http` sur le port qu'il veut ; l'entrée du catalogue gagne un prédicat
+      `also(tokens)` pour ce que la recherche par nom exact ne sait pas dire.
+- [x] **L'asymétrie est volontaire et épinglée** : HTTP = « il y a une app web »,
+      HTTPS = « il y a du TLS devant ». Leurs étapes diffèrent, donc HTTPS doit
+      rester le plus étroit des deux et ne jamais s'allumer sur un `http` nu.
+
+### Le nom
+
+- [x] Titre de la fenêtre → « Cheatsheet » (demandé).
+- [x] **Étendu, même raison** : le wordmark de la barre du haut et le libellé court
+      de l'onglet Cheatsheet, qui affichait « Cheat » seul sous 1200px. Un proctor
+      regarde l'écran, pas l'onglet — corriger le seul titre n'aurait résolu que la
+      moitié du problème énoncé.
+- [x] Wordmark plus long **mesuré** contre la compaction de la barre : pas de
+      débordement à 1205px, la largeur la plus serrée où les libellés longs
+      s'affichent encore. La barre absorbe en rétrécissant la recherche (150px,
+      son plancher étant à 104px).
+
+### Hors périmètre, trouvé en vérifiant
+
+Deux mélanges `border` / `borderColor` **préexistants** (identiques sur
+`origin/main`), dans `Methodology.tsx` et `Library.tsx` — la classe de bug que
+`Sidebar.tsx:115` documente déjà et que j'avais corrigée pour les pastilles en
+0.13.0 : React laisse une couleur de bordure périmée quand l'état rebascule.
+Corrigés, une ligne chacun, signalés comme hors demande.
+
+### Résultats
+
+**89 → 94 assertions**, `make test` vert. Les trois garde-fous de la détection
+sont prouvés capables d'échouer. Console propre.
+
+Vérifié dans l'app sur le scénario exact du rapport : un scan ne contenant que
+`443/tcp open https`, bouton « détecter » → « 2 déclencheur(s) activé(s) : HTTP,
+HTTPS », et les deux étapes taguées s'activent. Avant le correctif, l'étape HTTP
+restait grisée.

@@ -386,7 +386,13 @@ export function Library() {
                                 title={c.favorite ? 'Retirer des favoris' : 'Marquer comme favori'}
                                 style={
                                   c.favorite
-                                    ? { ...cardIconBtn, color: 'var(--acc)', borderColor: 'var(--acc-line)' }
+                                    ? // The `border` shorthand, not the borderColor
+                                      // longhand — same reason as above.
+                                      {
+                                        ...cardIconBtn,
+                                        color: 'var(--acc)',
+                                        border: '1px solid var(--acc-line)',
+                                      }
                                     : cardIconBtn
                                 }
                               >
