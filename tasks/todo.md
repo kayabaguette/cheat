@@ -331,3 +331,93 @@ prise ici.
   jsdom + `@testing-library/react`, non demandé.
 - Pas de CI qui exécute `make test` automatiquement (aucun runner configuré sur le
   dépôt gitea) : le test est *rejouable*, pas encore *automatique*.
+
+---
+
+## v0.10.0 — Variables locales scopées par outil + double-clic d'édition
+
+**Demande.** Séparer locales (minuscules) et globales (majuscules) dans le menu de
+gauche ; dans les commandes, double-cliquer une variable minuscule pour modifier sa
+valeur, propagée au même outil/catégorie ; vider la valeur réaffiche `$nom`. Revoir
+le même fonctionnement pour les snippets, où un clic sur la ligne copiait dans le
+presse-papier — retirer cette copie et remettre le bouton comme pour les commandes.
+
+### Décisions prises avec l'utilisateur (avant tout code)
+
+- [x] **Reconnaissance automatique**, sans déclaration, mais avec une **liste de
+      noms bannis** — l'utilisateur a explicitement demandé « on ban certains noms
+      de variable pouvant poser problème comme `$env:` ».
+- [x] **Portée = `catégorie || outil`** (et non catégorie seule ni outil seul).
+- [x] **Aucune locale dans la sidebar** — l'utilisateur : « on ne voit jamais les
+      locales dans la sidebar uniquement les globales ». La séparation demandée est
+      donc un *étiquetage* : le panneau devient « Variables globales » et n'accueille
+      rien d'autre. Pas de section « Locales ».
+- [x] **Champs de capture des snippets conservés** (bandeau « Variables locales » +
+      champ sous l'étape « produit ») ; le double-clic est un troisième chemin vers
+      la même valeur.
+
+### Implémentation
+
+- [x] `types.ts` — `Part` gagne `name?` / `local?`. **Aucun cinquième état de
+      rendu** : une locale se projette sur `resolved` / `empty`, donc §5.10 du SPEC
+      reste l'autorité unique et n'est pas touchée.
+- [x] `lib/vars.ts` — les trois règles de bannissement. Deux sont dans
+      `isLocalName` (mono-caractère, liste réservée) donc elles s'appliquent aussi
+      aux **déclarations** (`cleanLocals`) ; la troisième est **positionnelle**
+      (token minuscule suivi de `:`) et vit donc dans le tokenizer, câblée dans
+      `toParts`, `distinctNames` et le callback de `resolve` via son `offset`.
+- [x] `lib/varsets.ts` — `definedNamesWithLocals` supprimée (la déclaration n'étant
+      plus le critère de reconnaissance, la fonction n'avait plus d'objet) ;
+      `commandContext(cmd)` ajoutée comme clé de portée unique, réutilisée par les
+      quatre vues.
+- [x] `CodeBlock.tsx` — l'éditeur inline. Contrôlé **directement par le store**, sans
+      brouillon : chaque frappe atterrit dans la map du contexte, comme les inputs
+      globaux de la sidebar, donc les trois chemins de saisie restent synchronisés
+      sans étape de validation. Une locale est **toujours son propre part**, valuée
+      ou non, sinon il n'y a pas de span sur lequel accrocher le double-clic.
+- [x] `index.css` — `.var-local`, affordance révélée **au survol seulement**.
+      Contour *tireté* et non pointillé : §5.10 réserve le pointillé à `undef`.
+- [x] `CommandLine.tsx` — copier-au-clic retiré, `<CopyButton variant="class"
+      swapIcon />` partagé à la place. Le composant tombe à 55 lignes.
+- [x] Les quatre vues (`Library`, `Snippets`, `Cheatsheet`, `Methodology`) —
+      contexte, valeurs fusionnées et handler d'édition. Les chemins
+      **presse-papier** fusionnent les locales (Q99) ; les chemins **export** non.
+- [x] `Sidebar.tsx` — « Variables globales », plus le commentaire qui explique
+      pourquoi aucune locale ne peut y apparaître.
+- [x] Docs : `CHANGELOG.md` `[0.10.0]`, `README.md` (section « Live variables »
+      restructurée en deux classes + tableau de ce qui n'est *pas* une variable),
+      `SPEC.md` addendum **item 12** (supersède item 11 b1 et b3, étend §5.1).
+
+### Résultats
+
+**`make test` vert de bout en bout** (Go + `tsc --noEmit` + Vitest, en conteneurs).
+Suite du tokenizer **28 → 36 assertions**.
+
+**Les trois nouveaux garde-fous sont prouvés capables d'échouer** — un garde-fou qui
+ne peut pas échouer n'en est pas un, cf. 0.9.2. Retirés un par un :
+
+- règle mono-caractère → **4 tests rouges** ;
+- garde `:` → **2 tests rouges** ;
+- liste réservée → **2 tests rouges** ;
+- restauration → 36/36 verts.
+
+**Non-régression sur les données réelles** : les 380 commandes du dataset et les 27
+du seed ne contiennent **aucun** token minuscule ni mixte (mesuré avant d'écrire une
+ligne de code), donc leur rendu est inchangé au pixel. C'est ce qui a rendu le
+relâchement du garde-fou 0.9.0 acceptable.
+
+**D7 couvert gratuitement** : `exportMd` et `PrintRoot` résolvaient déjà contre la
+map des globales seule. Les locales de commande héritent donc de la garantie
+« jamais substituée dans un fichier, même avec « résoudre les variables » ON » sans
+toucher un seul de ces deux chemins.
+
+### Reste ouvert
+
+- La liste réservée est un jugement, pas une preuve. `$file` et `$path` sont
+  volontairement **autorisés** (ce sont des locales utiles) : dans un one-liner
+  bash ils deviennent donc des variables. Inoffensif tant qu'aucune valeur n'est
+  saisie, corrupteur si on leur en donne une par mégarde. À rouvrir si ça mord.
+- Une locale déjà déclarée dans un snippet avec un nom désormais banni (`$f`,
+  `$env`) est purgée au chargement par `cleanLocals`. Aucun snippet dans le seed.
+- Toujours pas de test de rendu (`CodeBlock`, le double-clic) : il faudrait jsdom +
+  `@testing-library/react`. La logique est couverte, l'interaction ne l'est pas.

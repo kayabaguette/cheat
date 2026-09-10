@@ -8,7 +8,7 @@ import {
   resolve,
   toParts,
 } from './vars';
-import { definedNames, definedNamesWithLocals } from './varsets';
+import { definedNames } from './varsets';
 import { STANDARD_VARS } from './theme';
 import { COMMANDS } from '../data/seed';
 import type { Part } from '../types';
@@ -21,6 +21,11 @@ import type { Part } from '../types';
 // implementation, so it stays meaningful after the old code is gone. The two
 // bugs it was born from are pinned explicitly below: `echo $RHOSTx` substituting
 // mid-word (0.9.0) and `$_` being offered as a variable (0.9.1).
+//
+// v0.10.0 rewrote the local class: a $minuscule no longer has to be DECLARED to be
+// recognised, so the NAME BANS (single character, reserved list, colon prefix) are
+// now the only thing keeping ordinary shell text out of the grammar — and they are
+// asserted here as such.
 
 const STD = STANDARD_VARS.map((v) => v.name);
 
@@ -79,7 +84,7 @@ describe('name classes', () => {
   });
 
   it('accepts a local name: all lower case, leading letter', () => {
-    for (const n of ['svc_ntlm', 'domain_sid', 'a', 'x2', 'a_b_c']) {
+    for (const n of ['svc_ntlm', 'domain_sid', 'share', 'x2', 'a_b_c']) {
       expect(isLocalName(n), `$${n} should be local`).toBe(true);
       expect(isGlobalName(n), `$${n} must not be global`).toBe(false);
     }
@@ -87,6 +92,26 @@ describe('name classes', () => {
 
   it('rejects a local name starting with an underscore or a digit', () => {
     for (const n of ['_foo', '1a']) expect(isLocalName(n)).toBe(false);
+  });
+
+  // 0.10.0. A local no longer has to be DECLARED to be recognised, so the name
+  // class itself is now what keeps ordinary shell text out of the grammar. These
+  // two bans are what replaced the declaration requirement.
+  it('rejects a single-character local, so a shell loop variable is never one', () => {
+    for (const n of ['f', 'i', 'x', 'n']) {
+      expect(isLocalName(n), `$${n} must not be local`).toBe(false);
+      expect(isGlobalName(n), `$${n} must not be global`).toBe(false);
+    }
+  });
+
+  it('rejects a reserved local name but keeps the useful ones', () => {
+    for (const n of ['env', 'global', 'script', 'private', 'using', 'true', 'false', 'null']) {
+      expect(isLocalName(n), `$${n} must not be local`).toBe(false);
+    }
+    // Deliberately NOT banned — these are exactly the names the feature is for.
+    for (const n of ['file', 'path', 'share', 'hash', 'wordlist', 'spn']) {
+      expect(isLocalName(n), `$${n} should be local`).toBe(true);
+    }
   });
 });
 
@@ -123,6 +148,19 @@ describe('resolve', () => {
     );
   });
 
+  // The colon is the tell for a PowerShell scope or drive prefix, and it is
+  // POSITIONAL — so this holds even for a name that is otherwise perfectly valid.
+  it('never substitutes a scope prefix, whatever the value map holds', () => {
+    const poisoned = { ...values, env: 'boom', global: 'boom', file: 'boom' };
+    expect(resolve('powershell -c "$env:USERNAME"', poisoned)).toBe(
+      'powershell -c "$env:USERNAME"',
+    );
+    expect(resolve('$global:x = 1', poisoned)).toBe('$global:x = 1');
+    expect(resolve('$file:x', poisoned)).toBe('$file:x');
+    // …while the very same name resolves normally without the colon.
+    expect(resolve('cat $file', poisoned)).toBe('cat boom');
+  });
+
   it('substitutes a local when its value is supplied', () => {
     const withLocal = { ...values, svc_ntlm: 'b4b9b02e' };
     expect(resolve('/rc4:$svc_ntlm', withLocal)).toBe('/rc4:b4b9b02e');
@@ -144,7 +182,7 @@ describe('toParts render states', () => {
       'Get-ChildItem | ForEach-Object { $_.Name }',
       '$PSVersionTable.PSVersion',
       '$ErrorActionPreference = "Stop"',
-      'for f in $file; do cat "$f"; done',
+      'for f in a b c; do cat "$f"; done',
       'echo $(whoami) && echo ${HOME}',
       "awk '{print $1}' /etc/passwd",
       'echo $RHOSTx',
@@ -155,30 +193,76 @@ describe('toParts render states', () => {
     }
   });
 
-  it('coalesces adjacent plain runs into a single part', () => {
-    // Three regex matches, all plain, must come back as ONE span.
-    const parts = toParts('$env:A $file $_', values, globals);
-    expect(parts).toHaveLength(1);
-    expect(parts[0]).toEqual({ text: '$env:A $file $_', state: 'plain' });
+  // 0.10.0, and the deliberate consequence of dropping the declaration
+  // requirement: an undeclared lower-case token IS a local now. It renders as its
+  // own literal `$file` — pixel for pixel the plain text it used to be — but as
+  // its OWN part, because that part is the double-click edit target.
+  it('turns an undeclared lower-case token into an unvalued local', () => {
+    expect(states('for f in $file; do cat "$f"; done')).toEqual([['empty', '$file']]);
+    // $f stays plain (single character), and resolve() still leaves the whole line
+    // alone, since the globals map holds no `file`.
+    expect(resolve('for f in $file; do cat "$f"; done', values)).toBe(
+      'for f in $file; do cat "$f"; done',
+    );
   });
 
-  it('resolves a DECLARED local and leaves an undeclared one as plain text', () => {
-    const tpl = '/sid:$domain_sid /rc4:$svc_ntlm /domain:$DOMAIN';
-    // Undeclared: only the global resolves; the lower-case tokens are text.
-    expect(states(tpl)).toEqual([['resolved', 'corp.local']]);
+  it('coalesces adjacent plain runs into a single part', () => {
+    // Three regex matches, all plain, must come back as ONE span.
+    const parts = toParts('$env:A $global:B $_', values, globals);
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual({ text: '$env:A $global:B $_', state: 'plain' });
+  });
 
-    const declared = definedNamesWithLocals(values, ['domain_sid', 'svc_ntlm']);
+  // …but a local is NEVER merged into a plain run, valued or not: <CodeBlock>
+  // needs one span per occurrence to hang the double-click editor on.
+  it('never coalesces a local into a plain run', () => {
+    expect(toParts('$env:A $share $_', values, globals)).toEqual([
+      { text: '$env:A ', state: 'plain' },
+      { text: '$share', state: 'empty', name: 'share', local: true },
+      { text: ' $_', state: 'plain' },
+    ]);
+  });
+
+  it('resolves a local from the merged map, with no declaration needed', () => {
+    const tpl = '/sid:$domain_sid /rc4:$svc_ntlm /domain:$DOMAIN';
+    // No values yet: each local shows its own literal token, the global resolves.
+    expect(states(tpl)).toEqual([
+      ['empty', '$domain_sid'],
+      ['empty', '$svc_ntlm'],
+      ['resolved', 'corp.local'],
+    ]);
+
+    // The caller merges the usage context's local values into `values`; NOTHING is
+    // added to the defined-NAMES set, which stays global-only.
     const vals = { ...values, domain_sid: 'S-1-5-21-1004', svc_ntlm: 'b4b9b02e' };
-    expect(states(tpl, declared, vals)).toEqual([
+    expect(states(tpl, globals, vals)).toEqual([
       ['resolved', 'S-1-5-21-1004'],
       ['resolved', 'b4b9b02e'],
       ['resolved', 'corp.local'],
     ]);
   });
 
-  it('marks a declared local with no value as empty, not undef', () => {
-    const declared = definedNamesWithLocals(values, ['svc_ntlm']);
-    expect(states('/rc4:$svc_ntlm', declared)).toEqual([['empty', '$svc_ntlm']]);
+  // A local is never "undefined": there is no declaration list for it to be
+  // missing from, so it is either filled in or waiting to be. The dotted `undef`
+  // hint stays reserved for a GLOBAL pointing at no definition (§5.10).
+  it('marks a valueless local empty, never undef', () => {
+    expect(states('/rc4:$svc_ntlm')).toEqual([['empty', '$svc_ntlm']]);
+    expect(toParts('/rc4:$svc_ntlm', values, globals).some((p) => p.state === 'undef')).toBe(
+      false,
+    );
+  });
+
+  // The two part fields the double-click editor needs: which variable to write,
+  // and whether it is writable at all. A global carries the name but not the flag.
+  it('marks a local part with its name and the local flag', () => {
+    const vals = { ...values, share: 'SYSVOL' };
+    expect(toParts('-M spider_plus --share $share', vals, globals)).toEqual([
+      { text: '-M spider_plus --share ', state: 'plain' },
+      { text: 'SYSVOL', state: 'resolved', name: 'share', local: true },
+    ]);
+    expect(toParts('$RHOST', values, globals)).toEqual([
+      { text: '10.10.10.5', state: 'resolved', name: 'RHOST' },
+    ]);
   });
 });
 
@@ -207,21 +291,28 @@ describe('extractLocalTokens (local class only)', () => {
   it('never returns a global, a mixed-case or a letter-less name', () => {
     expect(extractLocalTokens('$RHOST $PSVersionTable $_ $_foo')).toEqual([]);
   });
+
+  it('never returns a banned or colon-prefixed name', () => {
+    expect(extractLocalTokens('$env:USERNAME $global:x $f $i $true $file:x')).toEqual([]);
+  });
 });
 
-describe('definedNamesWithLocals', () => {
-  it('unions the globals with the declared locals', () => {
-    const set = definedNamesWithLocals(values, ['svc_ntlm']);
+// definedNames stays GLOBAL-only: since 0.10.0 a local is recognised from its
+// name class, never from a defined-name set, which is why the 0.9.0
+// `definedNamesWithLocals` helper is gone.
+describe('definedNames', () => {
+  it('holds the built-ins and the adopted customs, and no local', () => {
+    const set = definedNames({ ...values, MYVAR: 'x' });
     expect(set.has('RHOST')).toBe(true);
-    expect(set.has('svc_ntlm')).toBe(true);
-    expect(set.has('domain_sid')).toBe(false);
+    expect(set.has('MYVAR')).toBe(true);
+    expect(set.has('svc_ntlm')).toBe(false);
   });
 });
 
 // The rule the Markdown/PDF export paths depend on. They resolve against the
-// GLOBALS map, in which a snippet local simply does not exist — that is what
-// keeps a captured hash off the disk (SPEC addendum item 11 / D7). Locked here so
-// a future refactor cannot quietly pass the merged map instead.
+// GLOBALS map, in which a local simply does not exist — that is what keeps a
+// captured hash off the disk (SPEC addendum item 11 / D7). Locked here so a
+// future refactor cannot quietly pass the merged map instead.
 describe('export invariant: a local is never substituted by the globals map', () => {
   it('keeps $local raw while substituting $GLOBAL', () => {
     const tpl = 'kerberos::golden /sid:$domain_sid /rc4:$svc_ntlm /domain:$DOMAIN /target:$RHOST';
@@ -230,6 +321,13 @@ describe('export invariant: a local is never substituted by the globals map', ()
     expect(out).toContain('/rc4:$svc_ntlm');
     expect(out).toContain('/domain:corp.local');
     expect(out).toContain('/target:10.10.10.5');
+  });
+
+  // Same path, same guarantee, for the class of local 0.10.0 added: one living in
+  // a COMMAND, scoped to its category+tool pair.
+  it('keeps a command local raw while substituting the globals around it', () => {
+    const tpl = 'nxc smb $RHOST -u $USER --share $share';
+    expect(resolve(tpl, values)).toBe('nxc smb 10.10.10.5 -u administrator --share $share');
   });
 
   it('does substitute the local once its value is merged in (the clipboard path)', () => {
@@ -251,7 +349,10 @@ describe('shipped seed content', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('contains no snippet-local token (locals belong to snippets, not commands)', () => {
+  // No longer a prohibition — a command MAY hold a local since 0.10.0 — but the
+  // shipped seed deliberately has none: every seed command must render fully
+  // resolved from the built-in globals alone, with nothing left to fill in by hand.
+  it('contains no local token, so no seed command needs a value filled in', () => {
     const offenders: string[] = [];
     for (const c of COMMANDS) {
       for (const tok of extractLocalTokens(c.template)) offenders.push(`${c.id}: $${tok}`);

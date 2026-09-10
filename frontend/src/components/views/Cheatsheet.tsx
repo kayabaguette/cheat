@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { CSSProperties, Dispatch, SetStateAction } from 'react';
 import { useStore } from '../../store';
 import { resolve, extractTokens } from '../../lib/vars';
-import { definedNames as buildDefinedNames, definedNamesWithLocals } from '../../lib/varsets';
+import { definedNames as buildDefinedNames, commandContext } from '../../lib/varsets';
 import { STANDARD_VARS } from '../../lib/theme';
 import { dateStamp } from '../../lib/format';
 import { MONO, codeWrap, tabBar, pillBase, pillOn } from '../../lib/ui';
@@ -350,6 +350,16 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
 
   const metaChips = META_KEYS.map((k) => ({ k, v: values[k] ?? '' })).filter((x) => x.v);
 
+  // A command's LOCAL ($minuscule) values live in its category+tool usage context
+  // (0.10.0) — the SAME context the Library uses, so a value filled in there is
+  // already filled in here, and vice versa. Snippets keep their own per-sheet
+  // context (ctxOf below). Used for the SCREEN and the CLIPBOARD only: the file
+  // exports deliberately resolve against `values` alone (see exportMd).
+  const mergedFor = (c: Command): Record<string, string> => ({
+    ...values,
+    ...(localValues[commandContext(c)] ?? {}),
+  });
+
   // Clipboard write with real-result toast (Q53), matching the other views.
   const copyText = (text: string, onOk?: () => void) => {
     const done = () => {
@@ -375,7 +385,7 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
       flash('Copié dans le presse-papier');
     };
     try {
-      const p = navigator.clipboard?.writeText(resolve(c.template, values));
+      const p = navigator.clipboard?.writeText(resolve(c.template, mergedFor(c)));
       // Success is flashed ONLY when writeText resolves; a missing clipboard API,
       // a rejected promise, or a synchronous throw all surface the failure toast
       // (no false success — matches the shared CopyButton fix).
@@ -398,7 +408,7 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
     // Clipboard RESOLVES (Q99) — including snippet locals, since the point is to
     // paste and run. File exports do the opposite for locals (see exportMd).
     const lines = [
-      ...items.map((c) => resolve(c.template, values)),
+      ...items.map((c) => resolve(c.template, mergedFor(c))),
       ...snipItems.flatMap((sn) =>
         sn.steps.map((ss) => resolve(ss.template, { ...values, ...(localValues[ctxOf(sheet?.id, sn.id)] ?? {}) })),
       ),
@@ -453,6 +463,9 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
         (c.tags.length ? '  ·  ' + c.tags.map((t) => '#' + mdEsc(t)).join(' ') : '') +
         '\n\n';
       if (c.desc) md += mdEsc(c.desc) + '\n\n';
+      // `values` only, never mergedFor(c): a $local must stay a raw token in the
+      // file even with « résoudre les variables » ON (D7, same rule as the
+      // Snippets chapter below).
       const code = exportResolve ? resolve(c.template, values) : c.template;
       const f = fence(code);
       md += f + '\n' + code + '\n' + f + '\n';
@@ -653,7 +666,14 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
                             >
                               <CopyIcon />
                             </button>
-                            <CodeBlock template={c.template} values={values} definedNames={definedNames} />
+                            <CodeBlock
+                              template={c.template}
+                              values={mergedFor(c)}
+                              definedNames={definedNames}
+                              onSetLocal={(name, val) =>
+                                setLocalValue(commandContext(c), name, val)
+                              }
+                            />
                           </div>
                           {hasNote && <div style={noteBlock}>{note}</div>}
                         </div>
@@ -678,10 +698,6 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
                       const color = catByKey.get(sn.category)?.color ?? '#8a8e99';
                       const ctx = ctxOf(sheet.id, sn.id);
                       const locals = localValues[ctx] ?? {};
-                      const defined = definedNamesWithLocals(
-                        values,
-                        sn.locals.map((l) => l.name),
-                      );
                       const merged = { ...values, ...locals };
                       return (
                         <div key={sn.id} style={itemRow}>
@@ -722,7 +738,8 @@ export function Cheatsheet({ exportResolve, setExportResolve }: CheatsheetProps)
                                 <CommandLine
                                   template={ss.template}
                                   values={merged}
-                                  definedNames={defined}
+                                  definedNames={definedNames}
+                                  onSetLocal={(name, val) => setLocalValue(ctx, name, val)}
                                 />
                                 {ss.produces && (
                                   <div style={snipCapRow}>
