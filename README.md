@@ -22,6 +22,7 @@ own machine — no cloud, no accounts, no telemetry. The UI is in **French**.
 - [Why Cheat?](#why-cheat)
 - [Highlights](#highlights)
 - [Snippets](#snippets)
+- [Conditional steps](#conditional-steps)
 - [Live variables](#live-variables)
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
@@ -49,14 +50,16 @@ across notes.
   (tools sorted alphabetically). Tokenized, accent-insensitive search; filter by
   category, tool or tag; full create/edit/delete with on-the-fly
   categories/tools/tags; per-command notes; one-click copy of the *resolved*
-  command; **star a command** to pin it to the top of its tool group.
+  command; **star a command** to pin it to the top of its tool group and reach it
+  from the **★ Favoris** scope in the sidebar.
 - **Méthodologie** — reusable **roadmaps** of phases and checkable steps with
   per-phase and global progress. A step can link a command, shown expanded and
   resolved inline. Edit mode with drag-and-drop reordering (including across
-  phases) and a progress reset.
+  phases) and a progress reset. Steps can be **conditional**: tick what discovery
+  found on the target and only the relevant branches apply (see below).
 - **Snippets** — reusable **chains of commands** for the goals a single command
   cannot reach (forge a silver ticket, kerberoast → crack → reuse). Ordered steps
-  with inline templates, **click a line to copy it**, and per-snippet variables
+  with inline templates, a copy button on every line, and per-snippet variables
   fed from the previous step's output (see below).
 - **Références** — external links with auto-extracted domain and tags, full-text
   and tag filtering, and URL validation on add/edit.
@@ -139,6 +142,75 @@ A declared local that no step produces still gets a field, grouped in a
 Snippets carry a category and tags (no tool), can be linked from a methodology
 step — on their own or alongside a command — and go into a cheatsheet's
 « Snippets » chapter.
+
+## Conditional steps
+
+A generic OSCP roadmap has to list the enumeration steps for FTP, SMB, HTTP, SMTP,
+SNMP, LDAP, MSSQL… On any given target most of them are off topic — and they used
+to count against the progress bar, so a host running 3 services out of 12 could
+never reach 100%.
+
+So a roadmap declares its own **triggers**, and a step can be gated on them.
+
+```
+MÉTHODOLOGIE — OSCP                         ▓▓▓▓▓░░░░░  8/14
+Détecté sur la cible :  [✓ FTP] [✓ SMB] [ HTTP ] [ LDAP ]
+
+▾ 02 · Énumération
+   ☑ Bannière + version des services
+   ── FTP ─────────────────────────
+   ☑ Tester l'accès anonyme
+   ☐ Lister et récupérer les fichiers
+   ── HTTP · inactif ──────────────
+   ░ Fuzzing de répertoires              ← grisé, non cochable, hors progression
+```
+
+- **Declare a trigger** in « ✎ Modifier »: type its name in the « Détecté sur la
+  cible » strip and hit `+ déclencheur`. Then, on any step, `＋ déclencheur` picks
+  which ones make it apply. A step with none is unconditional and always applies.
+- **Tick what the target runs**, outside edit mode, by clicking a chip. Every step
+  carrying that trigger activates **at once, in every phase** — which is the point
+  of a named trigger rather than a per-step note: "this host has an FTP" gates
+  enumeration, exploitation and post-exploitation alike, and the roadmap stays
+  reusable from one target to the next.
+- **Several triggers on one step are OR'd** — any one being on is enough.
+- **An inactive step is dimmed, not checkable, and out of the progress maths** —
+  numerator *and* denominator, which is what lets a target reach 100% without the
+  services it does not run. « ☐ masquer les inactives » hides them (and any phase
+  left with nothing to do) when you want a clean view; edit mode ignores the
+  switch, so you can always edit what this target does not need.
+- **Unticking a trigger destroys nothing.** A checked step that goes inactive
+  keeps its check — it just stops being counted, and re-ticking restores it.
+- **Consecutive steps sharing a trigger read as a block** under a `── FTP ──`
+  sub-header. That is a rendering effect only; the model stays a flat list.
+
+### Detecting triggers from an nmap result
+
+Paste your scan into a step's « Résultat » and hit **`⚡ détecter depuis le
+résultat`**. It reads the open ports and ticks the triggers they vouch for,
+reporting what changed.
+
+```
+21/tcp   open  ftp           vsftpd 3.0.3
+445/tcp  open  microsoft-ds  Windows Server 2019
+3389/tcp closed ms-wbt-server
+        →  2 déclencheur(s) activé(s) : FTP, SMB
+```
+
+It matches on the **port** and on the **service name** — `445` or `microsoft-ds`
+both mean SMB — splits a TLS-wrapped `ssl/http`, drops the trailing `?` of an
+unconfirmed guess, and ignores anything that is not `open` (`closed`, `filtered`,
+and `open|filtered`, which is nmap declining to say). A trigger whose name the
+built-in catalogue does not know still matches by appearing in the service name,
+provided it is at least 3 characters long.
+
+**It only ever ticks, never unticks.** A chip you set by hand always wins, so the
+worst a bad parse can do is find nothing. Treat it as a pre-fill you correct, not
+as a source of truth.
+
+Trigger *definitions* travel with the roadmap (including a copy to another
+profile); which ones are *on* is per-target progress, so it is what
+« Réinitialiser la progression » clears, alongside the checkboxes.
 
 ## Live variables
 
@@ -306,21 +378,22 @@ scoped to the **active profile**. Import is a **full REPLACE** of the active
 profile (it overwrites everything in it, so export first to back up); it does not
 touch other profiles. Variable *values* are never part of the file. The easiest way to get a valid
 file is to **Export** one and edit it. Every top-level key must be present (arrays
-may be empty, maps `{}`) except `snippets`, which is optional so older exports stay
-valid; import rejects a file whose `commands` is not an array.
+may be empty, maps `{}`) except `snippets` and `activeTriggers`, which are optional
+so older exports stay valid; import rejects a file whose `commands` is not an array.
 
 ```json
 {
   "categories":  [{ "key": "infogathering", "label": "Information gathering", "color": "#5e9bff" }],
   "commands":    [{ "id": "n1", "category": "infogathering", "tool": "nmap", "title": "Scan complet TCP", "template": "nmap -p- $RHOST", "desc": "Tous les ports", "tags": ["recon"], "favorite": true }],
   "references":  [{ "id": "r1", "title": "HackTricks", "url": "https://book.hacktricks.xyz", "desc": "", "tags": ["general"] }],
-  "roadmaps":    [{ "id": "services", "label": "Machine — Services", "phases": [{ "id": "p1", "label": "Reconnaissance", "steps": [{ "id": "s1", "text": "Scan TCP complet", "commandId": "n1" }] }] }],
+  "roadmaps":    [{ "id": "services", "label": "Machine — Services", "triggers": [{ "id": "tg1", "label": "SMB" }], "phases": [{ "id": "p1", "label": "Reconnaissance", "steps": [{ "id": "s1", "text": "Scan TCP complet", "commandId": "n1" }, { "id": "s2", "text": "Lister les partages", "triggerIds": ["tg1"] }] }] }],
   "cheatsheets": [{ "id": "cs1", "title": "Cheatsheet — HTB Lab", "target": "", "commandIds": ["n1"], "snippetIds": ["sn1"] }],
   "snippets":    [{ "id": "sn1", "category": "ad", "title": "Silver ticket (CIFS)", "desc": "", "tags": ["kerberos"], "steps": [{ "id": "ss1", "label": "Dump du hash", "template": "mimikatz # sekurlsa::logonpasswords", "produces": "svc_ntlm" }, { "id": "ss2", "template": "mimikatz # kerberos::golden /rc4:$svc_ntlm /domain:$DOMAIN /ptt" }], "locals": [{ "name": "svc_ntlm", "hint": "hash NTLM du compte de service" }] }],
   "notes":       { "n1": "note perso attachée à la commande n1" },
   "checks":      { "s1": true },
   "openSteps":   { "s1": false },
   "results":     { "s1": "22/tcp open ssh\n80/tcp open http" },
+  "activeTriggers": { "tg1": true },
   "settings":    { "theme": "dark", "activeRoadmap": "services", "activeSheet": "cs1" }
 }
 ```
@@ -330,22 +403,25 @@ valid; import rejects a file whose `commands` is not an array.
 | `categories[]` | `{ key, label, color }` | `color` is a CSS hex; the 18 built-ins keep their canonical keys/labels. |
 | `commands[]` | `{ id, category, tool, title, template, desc, tags[], favorite? }` | `category` is a `categories[].key`; `template` may contain `$VAR` tokens; a command's own tool is never one of its tags; `favorite` (optional bool, default `false`) pins the command to the top of its tool group. |
 | `references[]` | `{ id, title, url, desc, tags[] }` | `url` should be `http(s)`/`mailto`. |
-| `roadmaps[]` | `{ id, label, phases[] }` | `phases[] = { id, label, steps[] }`, `steps[] = { id, text, commandId?, snippetId? }` — a step may link a command, a snippet, or **both**. |
+| `roadmaps[]` | `{ id, label, phases[], triggers? }` | `phases[] = { id, label, steps[] }`, `steps[] = { id, text, commandId?, snippetId?, triggerIds? }` — a step may link a command, a snippet, or **both**. `triggers[] = { id, label }` (optional, absent from pre-0.11 exports) is the roadmap's condition vocabulary; a step's `triggerIds` are **OR'd**, and an empty/absent list means the step always applies. A `triggerId` pointing at a trigger the roadmap does not declare is dropped on load. |
 | `snippets[]` | `{ id, category, title, desc, tags[], steps[], locals[] }` | Optional key (absent from pre-0.9 exports). `steps[] = { id, label?, template, produces? }` — `template` is **inline** (never a command id); `produces` names the local a step yields. `locals[] = { name, hint? }` are **definitions only**: `name` must be lower case `^[a-z][a-z0-9_]*$`, and the *values* are never in the file. A snippet has no `tool`. |
 | `cheatsheets[]` | `{ id, title, target, commandIds[], snippetIds? }` | each `commandIds` entry → a `commands[].id`; `snippetIds` (optional) → a `snippets[].id`, rendered as the sheet's second chapter. |
 | `notes` | `{ [commandId]: string }` | per-command note. |
 | `checks` / `openSteps` | `{ [stepId]: boolean }` | methodology progress / expanded state. |
 | `results` | `{ [stepId]: string }` | saved command output/result captured per methodology step. |
+| `activeTriggers` | `{ [triggerId]: boolean }` | Optional key (absent from pre-0.11 exports). Which conditional triggers are ON for the current target — per-engagement progress, like `checks`, and cleared by « Réinitialiser la progression ». |
 | `settings` | `{ theme, activeRoadmap, activeSheet }` | `theme` = `"dark"`\|`"light"`; `activeRoadmap` = a roadmap id or `null`; `activeSheet` = a cheatsheet id. |
 
 - **IDs** are arbitrary unique strings; keep cross-references consistent
-  (`steps[].commandId`, `steps[].snippetId`, `cheatsheets[].commandIds` /
-  `snippetIds`, and the `notes`/`checks`/`openSteps`/`results` keys). References to
-  a missing id are dropped.
+  (`steps[].commandId`, `steps[].snippetId`, `steps[].triggerIds`,
+  `cheatsheets[].commandIds` / `snippetIds`, and the
+  `notes`/`checks`/`openSteps`/`results`/`activeTriggers` keys). References to a
+  missing id are dropped.
 - Variable **values** (`$RHOST`, `$PASS`, …) are **not** in the file — they are
   memory-only and reset on load. The same holds for **snippet-local values**: only
   the `locals[]` declarations are stored.
-- A file produced by an older version (no `snippets` key) imports unchanged.
+- A file produced by an older version (no `snippets`, no `triggers`/`triggerIds`,
+  no `activeTriggers`) imports unchanged: every one of those is optional.
 
 ## Tests
 

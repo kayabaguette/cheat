@@ -69,6 +69,17 @@ type StepDTO struct {
 	CommandID string `json:"commandId,omitempty"`
 	// A step may link a command, a snippet, or both (cumulative).
 	SnippetID string `json:"snippetId,omitempty"`
+	// v0.11.0 — ids of the triggers that make this step apply (OR'd). Empty or
+	// absent = unconditional. Whether a trigger is ON is progress, not structure:
+	// see AppState.ActiveTriggers.
+	TriggerIDs []string `json:"triggerIds,omitempty"`
+}
+
+// v0.11.0 — one named condition a roadmap branches on ("FTP", "SMB"). Declared
+// per roadmap, so each roadmap owns its own condition vocabulary.
+type TriggerDTO struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
 }
 
 type PhaseDTO struct {
@@ -81,6 +92,8 @@ type RoadmapDTO struct {
 	ID     string     `json:"id"`
 	Label  string     `json:"label"`
 	Phases []PhaseDTO `json:"phases"`
+	// Absent from every pre-0.11.0 export, which must stay importable.
+	Triggers []TriggerDTO `json:"triggers,omitempty"`
 }
 
 type CheatsheetDTO struct {
@@ -138,24 +151,28 @@ type AppState struct {
 	Checks      map[string]bool   `json:"checks"`
 	OpenSteps   map[string]bool   `json:"openSteps"`
 	Results     map[string]string `json:"results"`
-	Settings    SettingsDTO       `json:"settings"`
+	// v0.11.0 — which triggers are ON, keyed by triggerId. Per-engagement
+	// progress, exactly like Checks.
+	ActiveTriggers map[string]bool `json:"activeTriggers"`
+	Settings       SettingsDTO     `json:"settings"`
 }
 
 // emptyState returns a zeroed-but-non-null AppState (maps/slices initialized so
 // the JSON marshals to [] / {} rather than null, matching the frontend shape).
 func emptyState() AppState {
 	return AppState{
-		Categories:  []CategoryDTO{},
-		Commands:    []CommandDTO{},
-		References:  []ReferenceDTO{},
-		Roadmaps:    []RoadmapDTO{},
-		Cheatsheets: []CheatsheetDTO{},
-		Snippets:    []SnippetDTO{},
-		Notes:       map[string]string{},
-		Checks:      map[string]bool{},
-		OpenSteps:   map[string]bool{},
-		Results:     map[string]string{},
-		Settings:    SettingsDTO{Theme: "dark", ActiveRoadmap: nil, ActiveSheet: ""},
+		Categories:     []CategoryDTO{},
+		Commands:       []CommandDTO{},
+		References:     []ReferenceDTO{},
+		Roadmaps:       []RoadmapDTO{},
+		Cheatsheets:    []CheatsheetDTO{},
+		Snippets:       []SnippetDTO{},
+		Notes:          map[string]string{},
+		Checks:         map[string]bool{},
+		OpenSteps:      map[string]bool{},
+		Results:        map[string]string{},
+		ActiveTriggers: map[string]bool{},
+		Settings:       SettingsDTO{Theme: "dark", ActiveRoadmap: nil, ActiveSheet: ""},
 	}
 }
 
@@ -190,7 +207,7 @@ type Reference struct {
 }
 
 type Roadmap struct {
-	ID       string  `gorm:"primaryKey"`
+	ID       string `gorm:"primaryKey"`
 	Label    string
 	Position int
 	Phases   []Phase `gorm:"foreignKey:RoadmapID;constraint:OnDelete:CASCADE"`

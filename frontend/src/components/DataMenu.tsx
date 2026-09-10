@@ -102,7 +102,7 @@ export function DataMenu() {
       'cheatsheets',
       'snippets',
     ];
-    const mapKeys = ['notes', 'checks', 'openSteps', 'results', 'settings'];
+    const mapKeys = ['notes', 'checks', 'openSteps', 'results', 'activeTriggers', 'settings'];
     const shapeOk =
       Array.isArray(d.commands) &&
       arrayKeys.every((k) => d[k] === undefined || Array.isArray(d[k])) &&

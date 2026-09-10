@@ -10,6 +10,7 @@ import type {
   Roadmap,
   Snippet,
   SnippetLocal,
+  Trigger,
   SnippetStep,
   ThemeName,
   ViewKey,
@@ -112,6 +113,39 @@ function stepIdsOf(rm: Roadmap): string[] {
   return rm.phases.flatMap((p) => p.steps.map((s) => s.id));
 }
 
+// Every trigger id a roadmap declares — used to purge their ON state, which
+// belongs to the roadmap exactly as `checks` belongs to its steps (v0.11.0).
+function triggerIdsOf(rm: Roadmap): string[] {
+  return (rm.triggers ?? []).map((t) => t.id);
+}
+
+// Normalise loaded roadmaps (v0.11.0): keep only well-formed, de-duplicated
+// triggers, and drop any step triggerId referencing a trigger its roadmap does
+// not declare. A dangling reference would gate the step on a condition nothing
+// can ever turn on — permanently inactive, with no way to fix it from the UI.
+// Mirrors cleanSteps/cleanLocals: normalise once, at the load boundary.
+function cleanRoadmaps(rms: Roadmap[]): Roadmap[] {
+  return rms.map((r) => {
+    const seen = new Set<string>();
+    const triggers: Trigger[] = [];
+    for (const t of r.triggers ?? []) {
+      const id = (t?.id || '').trim();
+      const label = (t?.label || '').trim();
+      if (!id || !label || seen.has(id)) continue;
+      seen.add(id);
+      triggers.push({ id, label });
+    }
+    const phases = r.phases.map((p) => ({
+      ...p,
+      steps: p.steps.map((st) => {
+        const kept = (st.triggerIds ?? []).filter((id) => seen.has(id));
+        return { ...st, triggerIds: kept.length ? kept : undefined };
+      }),
+    }));
+    return { ...r, triggers: triggers.length ? triggers : undefined, phases };
+  });
+}
+
 // Drop any key present in `ids` from an id-keyed map (booleans or strings).
 function purge<T>(obj: Record<string, T>, ids: Set<string>): Record<string, T> {
   const out: Record<string, T> = {};
@@ -147,6 +181,10 @@ export interface StoreState {
   activeCat: string | null;
   activeTool: string | null;
   activeTag: string | null;
+  // v0.11.0 — the « Favoris » scope of the Bibliothèque. A pseudo-category, so
+  // it is its own flag rather than a sentinel activeCat that would match no
+  // command and break the category → tool grouping.
+  favOnly: boolean;
   query: string;
   // Which sidebar categories are expanded to reveal their tool list.
   expanded: Record<string, boolean>;
@@ -179,6 +217,14 @@ export interface StoreState {
   openSteps: Record<string, boolean>;
   // Per-step captured command output (keyed by stable step id, like checks/openSteps).
   results: Record<string, string>;
+  // v0.11.0 — which triggers are ON, keyed by triggerId ("this target has an
+  // FTP"). Per-engagement PROGRESS like `checks`, hence persisted and cleared by
+  // « Réinitialiser la progression ».
+  activeTriggers: Record<string, boolean>;
+  // Hide the steps whose triggers are all off. A view preference, so MEMORY-ONLY
+  // like methodEdit — but held in the store rather than in the view so it
+  // survives a trip through another tab.
+  hideInactiveSteps: boolean;
   newRmOpen: boolean;
   // --- M1: References ---
   references: Reference[];
@@ -227,6 +273,7 @@ export interface StoreActions {
   adoptVar: (name: string) => void;
   deleteVar: (name: string) => void;
   renameVar: (oldName: string, next: string) => number;
+  setFavOnly: (b: boolean) => void;
   setActiveCat: (k: string | null) => void;
   setActiveTool: (t: string | null) => void;
   setActiveTag: (t: string | null) => void;
@@ -251,6 +298,7 @@ export interface StoreActions {
     text: string,
     commandId?: string,
     snippetId?: string,
+    triggerIds?: string[],
   ) => void;
   deleteStep: (roadmapId: string, phaseId: string, stepId: string) => void;
   moveStep: (
@@ -265,6 +313,21 @@ export interface StoreActions {
   toggleOpenStep: (stepId: string) => void;
   setResult: (stepId: string, text: string) => void;
   resetProgress: (roadmapId: string) => void;
+  // --- v0.11.0: conditional steps ---
+  setHideInactiveSteps: (b: boolean) => void;
+  addTrigger: (roadmapId: string, label: string) => void;
+  renameTrigger: (roadmapId: string, triggerId: string, label: string) => void;
+  deleteTrigger: (roadmapId: string, triggerId: string) => void;
+  toggleTrigger: (triggerId: string) => void;
+  // Turn a set of triggers ON, never off (the « détecter depuis le résultat »
+  // path — a chip ticked by hand always wins).
+  activateTriggers: (triggerIds: readonly string[]) => void;
+  setStepTriggers: (
+    roadmapId: string,
+    phaseId: string,
+    stepId: string,
+    triggerIds: string[],
+  ) => void;
   // --- M1: References ---
   setActiveRefTag: (tag: string | null) => void;
   setAddingRef: (b: boolean) => void;
@@ -389,6 +452,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [activeCat, setActiveCat] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [favOnly, setFavOnly] = useState<boolean>(false);
   const [query, setQuery] = useState<string>('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   // The user's own choice, read once at mount ('0' = folded) and updated only by
@@ -420,6 +484,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [openSteps, setOpenSteps] = useState<Record<string, boolean>>({});
   const [results, setResults] = useState<Record<string, string>>({});
+  const [activeTriggers, setActiveTriggers] = useState<Record<string, boolean>>({});
+  const [hideInactiveSteps, setHideInactiveSteps] = useState<boolean>(false);
   const [newRmOpen, setNewRmOpen] = useState<boolean>(false);
   const [references, setReferences] = useState<Reference[]>(() => REFERENCES.slice());
   const [activeRefTag, setActiveRefTag] = useState<string | null>(null);
@@ -501,6 +567,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setActiveCat(null);
     setActiveTool(null);
     setActiveTag(null);
+    setFavOnly(false);
     setQuery('');
     // Reset also collapses the whole category tree and returns to
     // « Toutes les commandes » (activeCat = null).
@@ -626,6 +693,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const target = roadmapsRef.current.find((r) => r.id === id);
       const ids = new Set(target ? stepIdsOf(target) : []);
       purgeProgress(ids, true);
+      // A trigger belongs to its roadmap, so its ON state goes with it (v0.11.0).
+      const tgIds = new Set(target ? triggerIdsOf(target) : []);
+      if (tgIds.size) setActiveTriggers((a) => purge(a, tgIds));
       setRoadmaps((rms) => rms.filter((r) => r.id !== id));
       setActiveRoadmap((prev) => {
         if (prev !== id) return prev;
@@ -671,7 +741,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [purgeProgress]);
 
   const addStep = useCallback(
-    (roadmapId: string, phaseId: string, text: string, commandId?: string, snippetId?: string) => {
+    (
+      roadmapId: string,
+      phaseId: string,
+      text: string,
+      commandId?: string,
+      snippetId?: string,
+      triggerIds?: string[],
+    ) => {
       const t = text.trim();
       if (!t) return;
       setRoadmaps((rms) => {
@@ -684,6 +761,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             text: t,
             commandId: commandId || undefined,
             snippetId: snippetId || undefined,
+            // Absent/empty = unconditional, which is the default (v0.11.0).
+            triggerIds: triggerIds && triggerIds.length ? triggerIds : undefined,
           });
         return next;
       });
@@ -754,7 +833,109 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const r = roadmapsRef.current.find((x) => x.id === roadmapId);
     const ids = new Set(r ? stepIdsOf(r) : []);
     purgeProgress(ids);
+    // The triggers describe the TARGET ("this host runs an FTP"), so they are
+    // part of the progress being reset — otherwise the next target silently
+    // inherits the previous one's service list (v0.11.0).
+    const tgIds = new Set(r ? triggerIdsOf(r) : []);
+    if (tgIds.size) setActiveTriggers((a) => purge(a, tgIds));
   }, [purgeProgress]);
+
+  // --- v0.11.0: conditional steps -------------------------------------------
+  // A roadmap owns its trigger VOCABULARY (structure, persisted with it); which
+  // triggers are ON is per-target PROGRESS, in its own map next to `checks`.
+
+  const addTrigger = useCallback((roadmapId: string, label: string) => {
+    const l = label.trim();
+    if (!l) return;
+    setRoadmaps((rms) => {
+      const next = cloneRoadmaps(rms);
+      const r = next.find((x) => x.id === roadmapId);
+      if (!r) return rms;
+      const triggers = r.triggers ?? [];
+      // Case-insensitive uniqueness: two chips reading « FTP » and « ftp » would
+      // be indistinguishable on screen yet both need ticking.
+      if (triggers.some((t) => t.label.toLowerCase() === l.toLowerCase())) return rms;
+      r.triggers = [...triggers, { id: mint('tg'), label: l }];
+      return next;
+    });
+  }, []);
+
+  const renameTrigger = useCallback((roadmapId: string, triggerId: string, label: string) => {
+    const l = label.trim();
+    if (!l) return;
+    setRoadmaps((rms) => {
+      const next = cloneRoadmaps(rms);
+      const r = next.find((x) => x.id === roadmapId);
+      if (!r?.triggers) return rms;
+      r.triggers = r.triggers.map((t) => (t.id === triggerId ? { ...t, label: l } : t));
+      return next;
+    });
+  }, []);
+
+  // Deleting a trigger has to reach THREE places: the roadmap's vocabulary, the
+  // triggerIds of every step referencing it — otherwise those steps stay gated on
+  // a condition nothing can turn on, i.e. permanently inactive — and its ON state.
+  const deleteTrigger = useCallback((roadmapId: string, triggerId: string) => {
+    setRoadmaps((rms) => {
+      const next = cloneRoadmaps(rms);
+      const r = next.find((x) => x.id === roadmapId);
+      if (!r) return rms;
+      r.triggers = (r.triggers ?? []).filter((t) => t.id !== triggerId);
+      if (!r.triggers.length) r.triggers = undefined;
+      for (const p of r.phases) {
+        p.steps = p.steps.map((st) => {
+          if (!st.triggerIds?.includes(triggerId)) return st;
+          const kept = st.triggerIds.filter((id) => id !== triggerId);
+          return { ...st, triggerIds: kept.length ? kept : undefined };
+        });
+      }
+      return next;
+    });
+    setActiveTriggers((a) => omitKey(a, triggerId));
+  }, []);
+
+  const toggleTrigger = useCallback((triggerId: string) => {
+    setActiveTriggers((a) => ({ ...a, [triggerId]: !a[triggerId] }));
+  }, []);
+
+  // Turn a set of triggers ON, never off — what the « détecter depuis le
+  // résultat » button calls. Nothing here can untick a chip, so a trigger set by
+  // hand always wins and the worst case of a bad parse is "it found nothing".
+  const activateTriggers = useCallback((triggerIds: readonly string[]) => {
+    if (!triggerIds.length) return;
+    setActiveTriggers((a) => {
+      let changed = false;
+      const nextMap = { ...a };
+      for (const id of triggerIds) {
+        if (!nextMap[id]) {
+          nextMap[id] = true;
+          changed = true;
+        }
+      }
+      return changed ? nextMap : a;
+    });
+  }, []);
+
+  // Attach/detach a step's triggers WITHOUT recreating the step: its id carries
+  // its checks, its result and its snippet-local values, so delete-and-recreate
+  // would silently drop all three. This is the narrow action the feature needs —
+  // there is still no generic updateStep.
+  const setStepTriggers = useCallback(
+    (roadmapId: string, phaseId: string, stepId: string, triggerIds: string[]) => {
+      setRoadmaps((rms) => {
+        const next = cloneRoadmaps(rms);
+        const p = next.find((x) => x.id === roadmapId)?.phases.find((ph) => ph.id === phaseId);
+        if (!p) return rms;
+        p.steps = p.steps.map((st) =>
+          st.id === stepId
+            ? { ...st, triggerIds: triggerIds.length ? triggerIds : undefined }
+            : st,
+        );
+        return next;
+      });
+    },
+    [],
+  );
 
   // --- M1: References actions ---
 
@@ -1283,6 +1464,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       checks,
       openSteps,
       results,
+      activeTriggers,
       settings: { theme, activeRoadmap, activeSheet },
     }),
     [
@@ -1296,6 +1478,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       checks,
       openSteps,
       results,
+      activeTriggers,
       theme,
       activeRoadmap,
       activeSheet,
@@ -1327,7 +1510,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // imported dataset can never yield a clickable link — independent of the
     // render-time guard in References.
     setReferences(state.references.map((r) => ({ ...r, url: sanitizeUrl(r.url) ?? '' })));
-    setRoadmaps(state.roadmaps);
+    // Roadmaps used to be hydrated raw. Since 0.11.0 they carry a trigger
+    // vocabulary that steps reference by id, so they go through a normaliser like
+    // commands' tags and references' URLs.
+    setRoadmaps(cleanRoadmaps(state.roadmaps));
     // A pre-0.9.0 sheet has no snippet chapter: normalise it to [] on load so
     // every consumer can treat snippetIds as present.
     setCheatsheets(state.cheatsheets.map((sh) => ({ ...sh, snippetIds: sh.snippetIds ?? [] })));
@@ -1346,6 +1532,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setChecks(state.checks ?? {});
     setOpenSteps(state.openSteps ?? {});
     setResults(state.results ?? {});
+    // Absent from every pre-0.11.0 dataset.
+    setActiveTriggers(state.activeTriggers ?? {});
     setTheme(state.settings.theme);
     setActiveRoadmap(state.settings.activeRoadmap);
     setActiveSheetState(state.settings.activeSheet);
@@ -1519,8 +1707,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           phases: rm.phases.map((p) => ({
             id: mint('ph'),
             label: p.label,
-            steps: p.steps.map((s) => ({ id: mint('st'), text: s.text, commandId: s.commandId })),
+            // Every linked/optional field has to be listed here or it is silently
+            // lost on copy. `snippetId` WAS being dropped since 0.9.0 — fixed
+            // while adding `triggerIds` (0.11.0). Trigger ids stay valid because
+            // the cloned roadmap keeps the same trigger objects, ids included:
+            // only the roadmap/phase/step ids are re-minted, so the references
+            // still resolve inside the clone.
+            steps: p.steps.map((s) => ({
+              id: mint('st'),
+              text: s.text,
+              commandId: s.commandId,
+              snippetId: s.snippetId,
+              triggerIds: s.triggerIds,
+            })),
           })),
+          // The vocabulary travels with the roadmap; its ON state does NOT —
+          // activeTriggers is progress, and a cross-profile copy is structural by
+          // design (same rule as checks/results).
+          triggers: rm.triggers,
         };
         const next: AppState = { ...state, roadmaps: [...state.roadmaps, cloned] };
         await putProfileState(targetProfileId, next);
@@ -1597,6 +1801,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeCat,
       activeTool,
       activeTag,
+      favOnly,
       query,
       expanded,
       sidebarOpen,
@@ -1614,6 +1819,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       checks,
       openSteps,
       results,
+      activeTriggers,
+      hideInactiveSteps,
       newRmOpen,
       references,
       activeRefTag,
@@ -1632,6 +1839,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       adoptVar,
       deleteVar,
       renameVar,
+      setFavOnly,
       setActiveCat,
       setActiveTool,
       setActiveTag,
@@ -1674,6 +1882,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       moveSnippetInSheet,
       setActiveRoadmap,
       toggleMethodEdit,
+      setHideInactiveSteps,
       setNewRmOpen,
       addRoadmap,
       renameRoadmap,
@@ -1689,6 +1898,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleOpenStep,
       setResult,
       resetProgress,
+      addTrigger,
+      renameTrigger,
+      deleteTrigger,
+      toggleTrigger,
+      activateTriggers,
+      setStepTriggers,
       setActiveRefTag,
       setAddingRef,
       addReference,
@@ -1707,6 +1922,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeCat,
       activeTool,
       activeTag,
+      favOnly,
       query,
       expanded,
       sidebarOpen,
@@ -1724,6 +1940,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       checks,
       openSteps,
       results,
+      activeTriggers,
+      hideInactiveSteps,
       newRmOpen,
       references,
       activeRefTag,
@@ -1780,6 +1998,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleOpenStep,
       setResult,
       resetProgress,
+      addTrigger,
+      renameTrigger,
+      deleteTrigger,
+      toggleTrigger,
+      activateTriggers,
+      setStepTriggers,
       setAddingRef,
       addReference,
       openEditRef,

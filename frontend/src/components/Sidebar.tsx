@@ -173,6 +173,7 @@ export function Sidebar() {
     activeCat,
     activeTool,
     activeTag,
+    favOnly,
     expanded,
     commands,
     categories,
@@ -183,6 +184,7 @@ export function Sidebar() {
     activeSnipTag,
     setView,
     setValue,
+    setFavOnly,
     setActiveCat,
     setActiveTool,
     setActiveTag,
@@ -247,6 +249,12 @@ export function Sidebar() {
 
   const tagList = useMemo(() => countBy(commands, (c) => c.tags), [commands]);
 
+  // How many commands are starred (v0.11.0). Like every other sidebar counter
+  // this is a GLOBAL total, independent of the active filters (SPEC Q50) — so
+  // `commands`, never `filtered`. The « Favoris » row exists only when there is
+  // at least one, so the scope can never be an empty dead end.
+  const favCount = useMemo(() => commands.filter((c) => c.favorite).length, [commands]);
+
   // Snippets view facets: per-category counts (FLAT — a snippet has no tool, so
   // there is no expandable tool tree) and its own tag list.
   const snipCatCount = useMemo(() => {
@@ -263,13 +271,25 @@ export function Sidebar() {
 
   const cats = categories.filter((c) => catCount[c.key]);
 
+  // « Favoris » is a SIBLING scope of « Toutes les commandes » and of a category,
+  // so picking any one of them clears the other two. Like them it deliberately
+  // leaves the active tag and the search box alone (SPEC:1376), so the scopes
+  // compose with those.
   const selectAll = () => {
     setView('library');
+    setFavOnly(false);
+    setActiveCat(null);
+    setActiveTool(null);
+  };
+  const selectFav = () => {
+    setView('library');
+    setFavOnly(true);
     setActiveCat(null);
     setActiveTool(null);
   };
   const selectCat = (key: string) => {
     setView('library');
+    setFavOnly(false);
     setActiveCat(key);
     setActiveTool(null);
     // Clicking the category row toggles its tool list: expand on first click,
@@ -278,6 +298,7 @@ export function Sidebar() {
   };
   const selectTool = (key: string, tool: string) => {
     setView('library');
+    setFavOnly(false);
     setActiveCat(key);
     setActiveTool(tool);
   };
@@ -301,7 +322,8 @@ export function Sidebar() {
     setActiveRefTag(activeRefTag === name ? null : name);
   };
 
-  const allActive = isLibrary && !activeCat;
+  const allActive = isLibrary && !activeCat && !favOnly;
+  const favActive = isLibrary && favOnly;
 
   return (
     <div
@@ -540,6 +562,18 @@ export function Sidebar() {
       <div>
         <div style={sectionHead}>Catégories</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          {/* « Favoris » — a pseudo-category, shown only once something is starred.
+              Same recipe as the rows below (the marginLeft:'18px' re-aligns the
+              swatch with the category rows, which are preceded by a 16px chevron
+              plus a 2px gap), with the accent swatch and the ★ tying it to the
+              star button on the cards. */}
+          {favCount > 0 && (
+            <button onClick={selectFav} style={{ ...(favActive ? rowOn : rowBase), marginLeft: '18px' }}>
+              <span style={{ width: '8px', height: '8px', flex: 'none', background: 'var(--acc)' }} />
+              <span style={{ flex: 1, minWidth: 0 }}>★ Favoris</span>
+              <span style={countStyle}>{favCount}</span>
+            </button>
+          )}
           <button onClick={selectAll} style={{ ...(allActive ? rowOn : rowBase), marginLeft: '18px' }}>
             <span style={{ width: '8px', height: '8px', flex: 'none', background: 'var(--muted)' }} />
             <span style={{ flex: 1, minWidth: 0 }}>Toutes les commandes</span>

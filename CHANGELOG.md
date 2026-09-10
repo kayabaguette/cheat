@@ -4,6 +4,112 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.11.0] — 2026-09-10
+
+### Added
+- **A « Favoris » pseudo-category in the Bibliothèque sidebar.** The star has been
+  a *sort* affordance since 0.5 — it pins a command to the top of its tool group
+  and that is all, so there was no way to see *your* commands among 380. A
+  « ★ Favoris » row now sits above « Toutes les commandes », appearing only once
+  something is starred, so the scope can never be an empty dead end. Its counter
+  is a global total like every other sidebar counter (Q50), and the results stay
+  grouped by category → tool: knowing a favourite is an `nxc` of *Active
+  Directory* is part of what makes it findable.
+
+  It is a scope, not a category — a sibling of « Toutes les commandes » and of a
+  category row, so picking any one of the three clears the other two — and like
+  them it deliberately leaves the active tag and the search box alone (SPEC:1376),
+  so « Favoris » + `#kerberos` + a search term compose.
+
+- **Conditional steps in the Méthodologie, driven by named triggers.** A generic
+  OSCP roadmap has to list the enumeration steps for FTP, SMB, HTTP, SMTP, SNMP,
+  LDAP, MSSQL… while on any given target most of them are off topic. Worse, they
+  counted against the progress bar, so a host running 3 services out of 12 could
+  never reach 100%.
+
+  A roadmap now declares its own **trigger vocabulary** (`Roadmap.triggers`), a
+  step references the ones that make it apply (`Step.triggerIds`, OR'd), and which
+  triggers are ON is per-target progress (`AppState.activeTriggers`). Tick « FTP »
+  once in the « Détecté sur la cible » strip and every FTP step lights up, **in
+  every phase at once** — which is the reason the condition is a first-class named
+  thing rather than a per-step string: the same fact gates enumeration,
+  exploitation and post-exploitation steps, and a roadmap stays reusable from one
+  target to the next.
+
+  - **An inactive step is dimmed, not checkable, and out of the progress maths** —
+    numerator *and* denominator, which is what lets a target reach 100% without
+    the services it does not run. A « ☐ masquer les inactives » switch hides them
+    when you want a clean view; it appears only on a roadmap that has a
+    conditional step, and is **ignored in edit mode**, because you must be able to
+    edit what this target does not need. A phase whose every step is inactive is
+    hidden too, or the switch would leave an empty card behind.
+  - **Unticking a trigger destroys nothing.** A checked step that goes inactive
+    keeps its check; it just stops being counted, and re-ticking restores it.
+  - **Consecutive steps sharing a trigger set render under a `── FTP ──`
+    sub-header**, so the chain reads as a block. This adds **no level to the data
+    model**: the grouping is computed at render time from the steps' own trigger
+    sets.
+  - **`⚡ détecter depuis le résultat`** reads the nmap output already pasted in a
+    step's « Résultat » and ticks the triggers it vouches for, reporting what it
+    changed. It matches on port *and* on service name — `445` or `microsoft-ds`
+    both mean SMB — splits a TLS-wrapped `ssl/http`, and drops the trailing `?` of
+    an unconfirmed guess. A label the built-in catalogue does not know still
+    matches by appearing in the service name, provided it is at least 3 characters
+    (or « DS » would tick on `microsoft-ds`). It is a **pre-fill you correct, not a
+    source of truth**: it can only ever tick, never untick, so a chip you set by
+    hand always wins and a bad parse can only ever mean "it found nothing".
+  - **Attaching a trigger keeps the step's id**, hence its check, its pasted
+    result and its snippet-local values — the new `setStepTriggers` action exists
+    precisely so this is not a delete-and-recreate.
+
+### Changed
+- **« Réinitialiser la progression » now also unticks the detected triggers**, and
+  says so in its confirm. They describe the *target* ("this host runs an FTP"), so
+  they are progress; leaving them behind would silently hand the next target the
+  previous one's service list. Pasted results are still kept, as before.
+- **Deleting a trigger reaches three places**: the roadmap's vocabulary, the
+  `triggerIds` of every step referencing it, and its ON state. Skipping the second
+  would leave those steps gated on a condition nothing can ever turn on —
+  permanently inactive, with no way to fix it from the UI.
+- **Roadmaps are normalised on load** (`cleanRoadmaps`), like commands' tags and
+  references' URLs before them: triggers de-duplicated by id, and any step
+  `triggerId` referencing a trigger its roadmap does not declare is dropped. They
+  used to be hydrated raw.
+- **`copyRoadmapToProfile` carries the trigger vocabulary** (its ON state does not
+  — a cross-profile copy is structural, same rule as `checks`/`results`). While
+  rewriting that clone literal, the **`snippetId` it had been silently dropping
+  since 0.9.0** is fixed: every optional step field has to be listed there or it
+  vanishes on copy.
+
+### Notes
+- **The backend was not optional here.** `saveProfileState` unmarshals the PUT
+  into typed DTOs and re-marshals before storing, so any `Step` field not declared
+  in `StepDTO` is silently dropped on the next 500 ms autosave — a frontend-only
+  feature would have worked in memory and died on reload. `StepDTO.triggerIds`,
+  the new `TriggerDTO` on `RoadmapDTO`, and `AppState.activeTriggers` are all
+  present, the last initialised in `emptyState()` so it marshals to `{}` and not
+  `null`. Both new fields are **optional**, so every pre-0.11.0 export stays
+  importable with no migration — the `Step.snippetId?` pattern from 0.9.0.
+- **New suite: `frontend/src/lib/triggers.test.ts`, 31 assertions** (67 in total
+  with the tokenizer's), covering the two things that carry real risk — the
+  progress arithmetic and the nmap parser, which reads text a human pasted from a
+  tool we do not control. Five guards were each verified to redden the suite when
+  removed: the activity filter in `progressOf` (3 tests), the `open` requirement in
+  the port line (2), the 3-character floor on the substring fallback (1), the
+  `ssl/` + `?` normalisation (2), and restricting that fallback to labels the
+  catalogue does not know (1).
+
+  That last one is why the catalogue lookup is now **precise** — ports and exact
+  service names, no substring. The first version let any label of 3+ characters
+  match by substring even when the catalogue knew it, which made « HTTP » tick on
+  an `https`-only host *and* made the `ssl/` splitting unobservable: its test
+  passed with the splitting removed. A guard that cannot fail is not a guard.
+- Progress has no document-export surface (`PrintRoot` and the Markdown export
+  render cheatsheets only), so there was nothing to update there. The JSON dataset
+  export does carry `activeTriggers`, which is why it joins `DataMenu`'s
+  import-shape whitelist — otherwise a legitimate export would be refused on
+  import.
+
 ## [0.10.0] — 2026-09-10
 
 ### Added
