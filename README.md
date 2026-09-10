@@ -246,23 +246,31 @@ includes it.
 - **Rename cascades**: renaming a variable rewrites `$OLD → $NEW` across every
   command that uses it.
 
-### `$locales` — scoped to one tool, or one snippet
+### `$locales` — scoped to one category, or one snippet
 
-A `$lowercase` token is a **local**. It gets no sidebar row, because it isn't
-app-wide: it belongs to one place. `$share` means something to `nxc`, nothing to
-`sqlmap`.
+A `$lowercase` token is a **local**. It isn't app-wide: it belongs to one place.
+`$share` means something in *Active Directory*, nothing in *Web applications*.
 
-- **Double-click it in the command to set its value.** No form, no sidebar — the
-  token turns into an input right where you read it. Enter, Escape or clicking
-  away closes it. Hover a local and its dashed outline shows you it's editable.
-- **It propagates over its scope.** For a **command**, the scope is the
-  **category + tool** pair: fill `$share` on one `nxc` command of *Active
-  Directory* and every other `nxc` command of that category shows it — while no
-  `impacket` command does. For a **snippet**, the scope is that snippet, with one
-  independent value set per place it appears (the same snippet linked from two
-  methodology steps keeps two, so two targets never mix).
+- **Its scope is a category.** Fill `$share` on one command of *Active Directory*
+  and **every** command of that category shows it, whatever the tool — `nxc`,
+  `impacket`, `smbclient` alike — and no command of another category does. A
+  `$share`, a `$spn`, a `$wordlist` describes the target or the goal, not the tool
+  that consumes it.
+
+  For a **snippet** the scope is that snippet, with one independent value set per
+  place it appears (the same snippet linked from two methodology steps keeps two,
+  so two targets never mix).
+
+- **Two ways to set one.** **Double-click the token in the command** — it turns
+  into an input right where you read it; Enter, Escape or clicking away closes it,
+  and hovering a local shows a dashed outline to tell you it is editable. Or use
+  the **« Variables locales » form** that appears in the left sidebar, under the
+  global variables, as soon as you click a category. Both write the same value:
+  the form is the overview, the double-click is the shortcut.
 - **Empty the field and the token comes back.** A local with no value renders as
-  its own `$name` again, everywhere in its scope.
+  its own `$name` again, everywhere in its scope. The form's `✕` does exactly that
+  — it clears the *value*, it does not delete the variable: a local has no
+  definition to delete, it exists because a template mentions it.
 - **Never resolved into a file** — not the JSON export, and **not even a
   Markdown/PDF export with « résoudre les variables » ON**, which resolves globals
   only. A local holds exactly what shouldn't reach the disk (a hash, a ticket, a
@@ -282,6 +290,11 @@ in safely:
 
 Everything else in lower case is fair game: `$share`, `$path`, `$file`, `$hash`,
 `$wordlist`, `$spn`, `$svc_ntlm`…
+
+One consequence of the category scope worth knowing: two tools of the same
+category using the same *name* for different things now share one value — `$path`
+as a web path for `ffuf` and as an SMB path for `smbclient`. Name them apart
+(`$web_path`, `$smb_path`) if you hit it.
 
 ## Quick start
 

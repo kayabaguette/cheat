@@ -2,9 +2,9 @@ import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { STANDARD_VARS } from '../lib/theme';
-import { extractTokens } from '../lib/vars';
+import { extractTokens, extractLocalTokens } from '../lib/vars';
 import { sectionLabel } from '../lib/ui';
-import { definedNames } from '../lib/varsets';
+import { commandContext, definedNames } from '../lib/varsets';
 
 // Names of the 6 built-in variables (value-only; not renamable/deletable).
 const STD = new Set(STANDARD_VARS.map((v) => v.name));
@@ -18,13 +18,14 @@ const MONO = "'IBM Plex Mono',monospace";
 // (each category unfolds to its tools, which filter the Library by tool), and the
 // Tags chips. Markup/styles ported faithfully from the prototype's catTree.
 //
-// The panel is « Variables GLOBALES » (0.10.0), and it holds nothing else: a LOCAL
-// ($minuscule) is scoped to one usage context — a category+tool pair, a snippet —
-// so it has no meaningful row in an app-wide panel and is edited where it is read,
-// by double-clicking it inside the command (see <CodeBlock>). Nothing here can
-// surface one: `customVars` derives from the globals-only `values` map, and
+// TWO variable panels since 0.12.0. « Variables globales » is app-wide and holds
+// nothing else — `customVars` derives from the globals-only `values` map and
 // `extractTokens` returns the GLOBAL class only, so the « Détectées » strip cannot
-// offer a lower-case name for adoption.
+// offer a lower-case name for adoption. « Variables locales » appears BELOW it
+// when a category is picked, because a local's scope is exactly a category
+// (0.12.0 widened it from category+tool), which is exactly what a category row
+// selects. Before that widening the scope matched no single row in this menu,
+// which is why locals were deliberately kept out of the sidebar in 0.10.0.
 
 // Section header: the uppercase tracking label plus the 9px bottom gap shared by
 // the Categories and Tags section headers.
@@ -176,6 +177,7 @@ export function Sidebar() {
     favOnly,
     expanded,
     commands,
+    localValues,
     categories,
     references,
     activeRefTag,
@@ -184,6 +186,7 @@ export function Sidebar() {
     activeSnipTag,
     setView,
     setValue,
+    setLocalValue,
     setFavOnly,
     setActiveCat,
     setActiveTool,
@@ -223,6 +226,30 @@ export function Sidebar() {
     for (const sn of snippets) for (const st of sn.steps) scan(st.template);
     return out;
   }, [commands, snippets, values]);
+
+  // The $minuscules the ACTIVE category's commands reference — i.e. exactly the
+  // contents of the « Variables locales » form. DERIVED from the templates and
+  // never stored, so adding or editing a command updates the form for free.
+  // Empty unless a category is picked in the Bibliothèque, which is also what
+  // gates the panel.
+  const catLocals = useMemo(() => {
+    if (!isLibrary || !activeCat) return [];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const c of commands) {
+      if (c.category !== activeCat) continue;
+      for (const tok of extractLocalTokens(c.template)) {
+        if (seen.has(tok)) continue;
+        seen.add(tok);
+        out.push(tok);
+      }
+    }
+    return out;
+  }, [commands, isLibrary, activeCat]);
+  // The same context key the command cards and the double-click editor write, so
+  // the form and the in-command editor stay in lockstep.
+  const catCtx = activeCat ? commandContext({ category: activeCat }) : '';
+  const catLocalValues = localValues[catCtx] ?? {};
 
   // Inline rename state for a custom variable (no modal, SPEC Q26).
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -517,6 +544,102 @@ export function Sidebar() {
           </div>
         )}
       </div>
+
+      {/* Variables locales — the picked category's $minuscules (0.12.0). A local
+          is scoped to a category, which is exactly what a category row selects,
+          so the form shows up when one is picked and nowhere else: under
+          « Toutes les commandes » or « ★ Favoris » there is no scope to edit.
+          Hidden when the category references none — an empty form is only noise. */}
+      {catLocals.length > 0 && (
+        <div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+              marginBottom: '10px',
+            }}
+          >
+            <span style={sectionLabel}>Variables locales</span>
+            <span
+              style={{
+                fontSize: '10px',
+                color: 'var(--faint)',
+                fontFamily: MONO,
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {categories.find((c) => c.key === activeCat)?.label ?? activeCat}
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {catLocals.map((name) => (
+              <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span
+                  style={{
+                    width: '60px',
+                    flex: 'none',
+                    fontFamily: MONO,
+                    fontSize: '11.5px',
+                    color: 'var(--acc)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  ${name}
+                </span>
+                <input
+                  value={catLocalValues[name] ?? ''}
+                  onChange={(e) => setLocalValue(catCtx, name, e.target.value)}
+                  spellCheck="false"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  autoComplete="off"
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    background: 'var(--code)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text)',
+                    fontFamily: MONO,
+                    fontSize: '11.5px',
+                    padding: '5px 8px',
+                  }}
+                />
+                {/* Clears the VALUE, not the variable: a local has no definition
+                    to delete, it exists because a template mentions it. Kept in
+                    the layout with `visibility` rather than unmounted, so the
+                    input does not resize the moment you type the first
+                    character. */}
+                <button
+                  type="button"
+                  onClick={() => setLocalValue(catCtx, name, '')}
+                  title="Vider la valeur"
+                  disabled={!catLocalValues[name]}
+                  style={{
+                    flex: 'none',
+                    cursor: 'pointer',
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--faint)',
+                    fontSize: '13px',
+                    lineHeight: 1,
+                    padding: '2px 4px',
+                    visibility: catLocalValues[name] ? 'visible' : 'hidden',
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* References view: a references-specific Tags facet in place of the
           library Categories/Tags sections. */}

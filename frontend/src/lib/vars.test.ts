@@ -8,10 +8,10 @@ import {
   resolve,
   toParts,
 } from './vars';
-import { definedNames } from './varsets';
+import { commandContext, definedNames } from './varsets';
 import { STANDARD_VARS } from './theme';
 import { COMMANDS } from '../data/seed';
-import type { Part } from '../types';
+import type { Command, Part } from '../types';
 
 // Specification test for the variable tokenizer — the single riskiest piece of
 // the app, because every view renders through it and it decides what counts as a
@@ -306,6 +306,44 @@ describe('definedNames', () => {
     expect(set.has('RHOST')).toBe(true);
     expect(set.has('MYVAR')).toBe(true);
     expect(set.has('svc_ntlm')).toBe(false);
+  });
+});
+
+// The usage context of a COMMAND's local values. 0.12.0 widened it from
+// `category||tool` to the category alone, so the scope now matches exactly what a
+// sidebar category row selects — which is what let the « Variables locales » form
+// live there. Untested until now, and it is a behavioural decision, not an
+// implementation detail: pin it.
+describe('commandContext', () => {
+  const nxc: Command = {
+    id: 'a',
+    category: 'adenum',
+    tool: 'nxc',
+    title: '',
+    template: '',
+    desc: '',
+    tags: [],
+  };
+
+  it('depends on the category alone, so every tool of one category shares it', () => {
+    const impacket: Command = { ...nxc, id: 'b', tool: 'impacket' };
+    expect(commandContext(impacket)).toBe(commandContext(nxc));
+  });
+
+  it('differs between two categories, even for the same tool', () => {
+    const webNxc: Command = { ...nxc, id: 'c', category: 'webapps' };
+    expect(commandContext(webNxc)).not.toBe(commandContext(nxc));
+  });
+
+  // A snippet's contexts are ids of its own (snippetId / stepId /
+  // sheetId:snippetId). The prefix is what keeps a command context from ever
+  // colliding with one, whatever a category key happens to be — the job the old
+  // '||' separator did for free.
+  it('can never collide with a snippet context key', () => {
+    const looksLikeASnippetId = 'sn0f8c1e2a-4b7d-4e21-9a55-7c3f1b0d9e42';
+    const ctx = commandContext({ ...nxc, category: looksLikeASnippetId });
+    expect(ctx).not.toBe(looksLikeASnippetId);
+    expect(ctx.startsWith('cat:')).toBe(true);
   });
 });
 

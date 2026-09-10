@@ -512,3 +512,68 @@ détache des deux étapes, lesquelles redeviennent inconditionnelles (0/6 → 0/
   si la roadmap déclare déjà un déclencheur. Documenté dans le README.
 - Toujours aucun test de rendu (jsdom + `@testing-library/react` non installés) :
   la logique est couverte, l'interaction ne l'est que par la passe navigateur.
+
+---
+
+## v0.12.0 — Locales par catégorie + formulaire dans la sidebar
+
+**Demande.** « Je voudrais que les variables locales soient communes à une
+catégorie peu importe l'outil à l'intérieur. De plus, quand tu cliques sur une
+catégorie, afficher comme pour les variables globales un formulaire avec les
+variables locales sur la gauche. »
+
+Deux corrections de la 0.10.0, tirées de l'usage réel. Elles **reviennent chacune
+sur une décision** que l'utilisateur avait prise à l'époque — c'est assumé et
+documenté comme tel, pas glissé sous le tapis.
+
+### Implémentation
+
+- [x] `lib/varsets.ts` — `commandContext` renvoie `'cat:' + cmd.category`. Une
+      seule ligne pour les trois vues, parce que la fonction est le **point de
+      passage unique** (`Library`, `Cheatsheet` ×2, `Methodology`).
+      Le préfixe `cat:` reprend le rôle de l'ancien séparateur `||` : garantir
+      *structurellement* qu'un contexte de commande ne peut pas collisionner avec
+      un contexte de snippet, quelle que soit la clé de catégorie.
+- [x] **Aucune migration, par construction** : les valeurs locales sont en mémoire
+      seule (D7), donc les clés `cat||outil` orphelines ne survivent pas au
+      rechargement qui introduit le changement. Rien sur disque, rien dans un
+      export, rien à réconcilier. Zéro ligne de backend.
+- [x] `components/Sidebar.tsx` — le panneau « Variables locales », frère de celui
+      des globales. Liste **dérivée** des templates via `extractLocalTokens`
+      (déjà exporté, déjà utilisé par l'éditeur de snippet), jamais stockée : elle
+      suit une édition de commande gratuitement. Le `✕` vide la **valeur**, pas la
+      variable — une locale n'a pas de définition à supprimer, elle existe parce
+      qu'un template la mentionne — et garde sa place dans la mise en page via
+      `visibility`, pour que l'input ne se redimensionne pas à la première frappe.
+- [x] `lib/vars.test.ts` — `commandContext` n'était pas couvert alors que la portée
+      est une **décision de comportement**, pas un détail d'implémentation.
+- [x] Docs : `CHANGELOG.md` `[0.12.0]`, `README.md` (section `$locales` réécrite :
+      portée, les deux façons de saisir, le compromis), `SPEC.md` addendum
+      **item 14** qui supersède deux affirmations de l'item 12.
+
+### Résultats
+
+**`make test` vert**, 70 assertions. Les deux nouveaux garde-fous sont prouvés
+capables d'échouer : retour à `category||tool` → 1 test rouge ; suppression du
+préfixe anti-collision → 1 test rouge.
+
+**Vérifié dans le navigateur** — voir la passe ci-dessous.
+
+### Pourquoi la 0.10.0 avait tranché l'inverse, et pourquoi ce n'était pas une erreur
+
+Utile à garder pour la prochaine fois : en 0.10.0 la portée `catégorie+outil` ne
+correspondait à **aucune ligne unique** du menu de gauche, donc « pas de locales
+dans la sidebar » était le bon appel *à ce moment-là* — il n'y avait pas de rangée
+à laquelle une locale puisse appartenir. C'est l'élargissement de la portée qui
+rend le formulaire possible, pas un changement d'avis sur l'esthétique. Les deux
+décisions sont liées ; c'est pour ça qu'elles arrivent dans la même release.
+
+### Reste ouvert
+
+- **La portée est plus large, donc plus collisionnable** : deux outils d'une même
+  catégorie qui emploient le même nom pour deux choses différentes (`$path` chemin
+  web pour `ffuf`, chemin SMB pour `smbclient`) partagent désormais une valeur. Le
+  remède est le nommage (`$web_path`, `$smb_path`) ; aucune surcharge par outil
+  n'est introduite, et ce serait le premier endroit à regarder si ça mord.
+- Toujours aucun test de rendu : le formulaire n'est couvert que par la passe
+  navigateur.
