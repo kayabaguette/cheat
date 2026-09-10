@@ -12,30 +12,40 @@ import type { Phase, Step, Trigger } from '../types';
 
 // --- activity ---------------------------------------------------------------
 
-// A step's triggers live in TWO lists and compose as:
+// A step's triggers share ONE operator, held on the step (v0.14.0):
 //
-//     (no OR list, or one of them is on)  AND  (all of the AND list are on)
+//   no trigger      → always — the step is unconditional
+//   mode 'any'      → at least one of them is on          (the default)
+//   mode 'all'      → every one of them is on
 //
-//   OR      AND     active when
-//   ∅       ∅       always — the step is unconditional
-//   A,B     ∅       A or B
-//   ∅       A,B     A and B
-//   A,B     C       (A or B) and C
-//
-// One consequence worth knowing: a SINGLE OR trigger combined with an AND one
-// behaves like two ANDs, since both halves must hold. That is inherent to the
-// composition, not a bug.
-//
-// v0.13.0 added the AND list. `triggerIds` keeps exactly the meaning it had in
-// 0.11.0, so no pre-0.13 step needs migrating.
+// v0.13.0 briefly modelled this as two lists, which allowed a step to be half OR
+// and half AND — a mix the UI never wanted, and whose composition had a genuinely
+// confusing corollary. One list plus one mode is both simpler and closer to what
+// the screen shows: all of a step's chips carry the same border.
 export function isStepActive(step: Step, activeTriggers: Record<string, boolean>): boolean {
-  const anyIds = step.triggerIds ?? [];
-  const allIds = step.allTriggerIds ?? [];
-  if (!anyIds.length && !allIds.length) return true;
+  const ids = step.triggerIds ?? [];
+  if (!ids.length) return true;
   const on = (id: string) => activeTriggers[id] === true;
-  const anyOk = !anyIds.length || anyIds.some(on);
-  const allOk = allIds.every(on);
-  return anyOk && allOk;
+  return step.triggerMode === 'all' ? ids.every(on) : ids.some(on);
+}
+
+// Fold a step written by v0.13.0 — which kept the AND triggers in their own
+// `allTriggerIds` — into the single list plus mode. Called by the store's
+// load-time normaliser; pure, so the migration itself is testable rather than
+// buried in a React callback. Without it a step's AND condition would silently
+// become unconditional on the first load after the upgrade.
+export function normalizeStepTriggers(step: Step): Step {
+  const legacy = step.allTriggerIds ?? [];
+  if (!legacy.length) {
+    const { allTriggerIds: _drop, ...rest } = step;
+    return rest;
+  }
+  const ids = step.triggerIds ?? [];
+  const merged = [...ids];
+  for (const id of legacy) if (!merged.includes(id)) merged.push(id);
+  const { allTriggerIds: _drop, ...rest } = step;
+  // 'all' wins: a step that declared any AND trigger meant "every one of these".
+  return { ...rest, triggerIds: merged, triggerMode: 'all' };
 }
 
 // --- done state -------------------------------------------------------------
@@ -107,77 +117,72 @@ export function allSteps(phases: readonly Phase[]): Step[] {
 // this key is what the view compares against the previous step to decide whether
 // to emit one. '' for an unconditional step, which never gets a header — so the
 // grouping is a pure rendering effect and adds NO level to the data model. The
-// two lists are keyed apart, so `A or B` and `A and B` never share a header.
+// MODE is part of the key: `A ou B` and `A et B` are different conditions and
+// must not share a header.
 export function stepGroupKey(step: Step): string {
-  const anyIds = step.triggerIds ?? [];
-  const allIds = step.allTriggerIds ?? [];
-  if (!anyIds.length && !allIds.length) return '';
-  return 'any:' + anyIds.join(',') + '|all:' + allIds.join(',');
+  const ids = step.triggerIds ?? [];
+  if (!ids.length) return '';
+  return (step.triggerMode === 'all' ? 'all:' : 'any:') + ids.join(',');
 }
 
 // --- per-step trigger assignment --------------------------------------------
 
+// A chip's visual state: unused, or assigned — in which case it wears the STEP's
+// mode, since every chip of a step shares it.
 export type TriggerMode = 'off' | 'any' | 'all';
 
-export interface StepTrigger {
-  trigger: Trigger;
-  mode: 'any' | 'all';
+// The mode of the step itself, defaulting to 'any' when unset.
+export function modeOf(step: Step): 'any' | 'all' {
+  return step.triggerMode === 'all' ? 'all' : 'any';
 }
 
-// How a step uses one trigger. 'any' is the OR list, 'all' the AND list.
+// How a given chip should render on a given step.
 export function stepTriggerMode(step: Step, triggerId: string): TriggerMode {
-  if ((step.allTriggerIds ?? []).includes(triggerId)) return 'all';
-  if ((step.triggerIds ?? []).includes(triggerId)) return 'any';
-  return 'off';
+  return (step.triggerIds ?? []).includes(triggerId) ? modeOf(step) : 'off';
 }
 
-// The next assignment after one click on a trigger chip: off → any → all → off.
-// Returns the two lists to store; pure, so the store action stays a one-liner and
-// the cycle is testable without a DOM.
+// The next state after one click on a chip — the three-state cycle:
+//
+//   unused                → assigned, and the STEP's mode becomes 'any'
+//   assigned, step 'any'  → the STEP's mode becomes 'all' (every chip turns solid)
+//   assigned, step 'all'  → removed (mode untouched)
+//
+// Stateless: a click only ever sees (assigned?, step mode), which is exactly the
+// three cases above, and three clicks return to the start.
+//
+// KNOWN SIDE EFFECT, deliberate and pinned by test: because the first click sets
+// 'any', adding a chip to a step already in 'all' flips the WHOLE step back to
+// 'any'. That is the price of driving a step-level operator from a per-chip
+// control; one more click puts it back. Do not "fix" it by making the first click
+// preserve the mode — that would make the second click ambiguous (flip, or
+// remove?) and lock a step in 'all' with no way back.
 export function cycleStepTrigger(
   step: Step,
   triggerId: string,
-): { triggerIds: string[]; allTriggerIds: string[] } {
-  const anyIds = (step.triggerIds ?? []).filter((id) => id !== triggerId);
-  const allIds = (step.allTriggerIds ?? []).filter((id) => id !== triggerId);
-  switch (stepTriggerMode(step, triggerId)) {
-    case 'off':
-      return { triggerIds: [...anyIds, triggerId], allTriggerIds: allIds };
-    case 'any':
-      return { triggerIds: anyIds, allTriggerIds: [...allIds, triggerId] };
-    default:
-      return { triggerIds: anyIds, allTriggerIds: allIds };
-  }
+): { triggerIds: string[]; triggerMode: 'any' | 'all' } {
+  const ids = step.triggerIds ?? [];
+  const without = ids.filter((id) => id !== triggerId);
+  if (!ids.includes(triggerId)) return { triggerIds: [...ids, triggerId], triggerMode: 'any' };
+  if (modeOf(step) === 'any') return { triggerIds: [...ids], triggerMode: 'all' };
+  return { triggerIds: without, triggerMode: modeOf(step) };
 }
 
-// A step's assigned triggers with their mode, in the ROADMAP's declaration order
-// (so the chips keep a stable order whatever the click sequence), skipping any id
-// that no longer resolves — a dangling reference renders as nothing rather than
-// as a raw uuid.
-export function stepTriggers(step: Step, triggers: readonly Trigger[]): StepTrigger[] {
-  const out: StepTrigger[] = [];
-  for (const t of triggers) {
-    const mode = stepTriggerMode(step, t.id);
-    if (mode !== 'off') out.push({ trigger: t, mode });
-  }
-  return out;
+// A step's assigned triggers, in the ROADMAP's declaration order (so the chips
+// keep a stable order whatever the click sequence), skipping any id that no
+// longer resolves — a dangling reference renders as nothing rather than as a raw
+// uuid.
+export function stepTriggers(step: Step, triggers: readonly Trigger[]): Trigger[] {
+  const ids = step.triggerIds ?? [];
+  return triggers.filter((t) => ids.includes(t.id));
 }
 
-// The step's condition in words — « FTP ou SMB », « FTP et SMB », « (FTP ou SMB)
-// et LDAP ». Used for the group sub-header and the inactive-step tooltip, where a
-// bare list of labels would not say which operator is at work.
+// The step's condition in words — « FTP ou SMB », « FTP et SMB ». Used for the
+// group sub-header and the inactive-step tooltip: the chips carry the operator in
+// their border alone, so everywhere else has to spell it out.
 export function describeStepTriggers(step: Step, triggers: readonly Trigger[]): string {
-  const anyL = stepTriggers(step, triggers)
-    .filter((x) => x.mode === 'any')
-    .map((x) => x.trigger.label);
-  const allL = stepTriggers(step, triggers)
-    .filter((x) => x.mode === 'all')
-    .map((x) => x.trigger.label);
-  if (!anyL.length && !allL.length) return '';
-  if (!allL.length) return anyL.join(' ou ');
-  if (!anyL.length) return allL.join(' et ');
-  const left = anyL.length > 1 ? '(' + anyL.join(' ou ') + ')' : anyL[0];
-  return [left, ...allL].join(' et ');
+  const labels = stepTriggers(step, triggers).map((t) => t.label);
+  if (!labels.length) return '';
+  return labels.join(modeOf(step) === 'all' ? ' et ' : ' ou ');
 }
 
 // --- detection from a pasted nmap result ------------------------------------

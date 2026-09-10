@@ -104,15 +104,25 @@ export interface Step {
   commandId?: string;
   // A step may link a command, a snippet, or BOTH (they are cumulative).
   snippetId?: string;
-  // Triggers this step needs, in TWO lists (v0.13.0 — `triggerIds` keeps the
-  // meaning it had in 0.11.0, so no pre-0.13 step needs migrating):
-  //   triggerIds     — OR: any one being on is enough
-  //   allTriggerIds  — AND: every one must be on
-  // A step is ACTIVE when (no OR list, or one of them is on) AND (all of the AND
-  // list are on); both empty means unconditional. An inactive step is dimmed, not
-  // checkable, and excluded from progress — numerator AND denominator, which is
-  // what lets a target with 3 services out of 12 still reach 100%.
+  // The triggers this step needs, and how they combine. Absent or empty list =
+  // the step is UNCONDITIONAL and always applies.
   triggerIds?: string[];
+  // v0.14.0 — the operator is a property of the STEP, not of each trigger: all of
+  // a step's chips share it, so a step is never half OR and half AND. Absent
+  // means 'any', which is exactly what pre-0.14 steps meant, so nothing to
+  // migrate there.
+  //   'any' — at least one of triggerIds is on
+  //   'all' — every one of them is on
+  // An inactive step is dimmed, not checkable, and excluded from progress —
+  // numerator AND denominator, which is what lets a target with 3 services out of
+  // 12 still reach 100%.
+  triggerMode?: 'any' | 'all';
+  /**
+   * @deprecated v0.13.0 only. The AND list of the short-lived two-list model;
+   * `normalizeStepTriggers` (lib/triggers.ts) folds it into triggerIds +
+   * triggerMode:'all' on load. Read on load, never written; remove once no
+   * profile carries it.
+   */
   allTriggerIds?: string[];
   // The step's checklist. A step that has one is DONE when every item is ticked,
   // and still counts as ONE unit of progress — so a 12-item enumeration cannot

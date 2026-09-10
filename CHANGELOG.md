@@ -4,6 +4,59 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.14.0] — 2026-09-10
+
+Two corrections to the AND/OR shipped in 0.13.0, one of which simplifies the
+model rather than adding to it.
+
+### Changed
+- **The operator belongs to the STEP, not to each trigger.** 0.13.0 modelled it as
+  two lists (`triggerIds` = OR, `allTriggerIds` = AND), which allowed a step to be
+  half dashed and half solid — a mix the screen never wanted — and forced the
+  composition *(any OR) and (all AND)*, whose corollary ("a lone OR beside an AND
+  behaves like a second AND") had to be pinned by test so nobody would treat it as
+  a bug.
+
+  One list plus one `triggerMode` (`'any'` default, `'all'`) replaces both. A step
+  is active when it has no trigger, or one of them is on in `'any'`, or every one
+  of them is on in `'all'`. **The corollary disappears with the model that caused
+  it** — the constraint asked for here is both simpler and more truthful than what
+  it replaces.
+
+  `triggerMode` absent means `'any'`, so pre-0.13 steps need no migration. A step
+  saved by **0.13.0** does: `normalizeStepTriggers` folds `allTriggerIds` into the
+  list and sets `'all'`, and `cleanRoadmaps` calls it on load. It is a pure
+  function in `lib/triggers.ts` precisely so the migration is testable rather than
+  buried in a React callback — without it, an AND condition would have gone
+  silently unconditional on the first load after the upgrade. `StepDTO.AllTriggerIDs`
+  stays in the Go DTO, deprecated and read-only, or the field would be stripped
+  before the client ever saw it; it disappears from stored state after the first
+  save.
+
+- **The chips carry no `OU `/`ET ` text any more.** The border says it — dashed OU,
+  solid ET — and it now says it for every chip of a step at once, which the model
+  guarantees instead of leaving it to convention. An unassigned chip in the picker
+  keeps its finer dotted border, distinct from both. Since the operator left the
+  label, the tooltip spells it out, and it also says what the next click will do.
+
+### Notes
+- **The three-state cycle is unchanged in spirit and now drives a step-level
+  property**: unused → OU → ET → unused, where the middle state restyles the whole
+  step. It is stateless — a click only ever sees *(assigned?, step mode)*, which is
+  exactly three cases.
+
+  **One deliberate side effect, pinned by test**: because the first click sets
+  `'any'`, adding a chip to a step already in `'all'` flips the whole step back to
+  `'any'`; one more click restores it. That is the price of driving a step-level
+  operator from a per-chip control. The alternative — having the first click
+  preserve the mode — makes the second click ambiguous (flip, or remove?) and
+  locks a step in `'all'` with no way back, so the test says so out loud.
+- 89 assertions, unchanged in count: the two-list tests (the composition table and
+  the corollary) were **deleted along with the model they described**, and the
+  migration and cycle tests took their place. Five guards verified to redden the
+  suite when broken, including the group key — the one that was a fake guard last
+  release, now isolated by two steps with the same list and different modes.
+
 ## [0.13.0] — 2026-09-10
 
 ### Added

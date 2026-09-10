@@ -13,6 +13,7 @@ import {
   cycleStepTrigger,
   describeStepTriggers,
   isStepDone,
+  modeOf,
   stepTriggerMode,
   stepTriggers,
   substepProgress,
@@ -593,10 +594,10 @@ interface StepDraft {
   commandId: string;
   // A step may link a command, a snippet, or both (cumulative).
   snippetId: string;
-  // The draft's triggers, in the same two lists a Step uses (v0.13.0 — it used to
-  // be one optional id chosen from a dropdown).
+  // The draft's triggers, in the same shape a Step uses: one list plus one
+  // step-wide operator (v0.14.0).
   triggerIds: string[];
-  allTriggerIds: string[];
+  triggerMode: 'any' | 'all';
 }
 interface DragStep {
   phaseId: string;
@@ -721,7 +722,7 @@ export function Methodology() {
       commandId: '',
       snippetId: '',
       triggerIds: [],
-      allTriggerIds: [],
+      triggerMode: 'any',
     };
   const setDraft = (phaseId: string, patch: Partial<StepDraft>) =>
     setStepDrafts((s) => ({ ...s, [phaseId]: { ...draftFor(phaseId), ...patch } }));
@@ -738,11 +739,11 @@ export function Methodology() {
       d.commandId || undefined,
       d.snippetId || undefined,
       d.triggerIds.length ? d.triggerIds : undefined,
-      d.allTriggerIds.length ? d.allTriggerIds : undefined,
+      d.triggerMode,
     );
     setStepDrafts((s) => ({
       ...s,
-      [phaseId]: { text: '', commandId: '', snippetId: '', triggerIds: [], allTriggerIds: [] },
+      [phaseId]: { text: '', commandId: '', snippetId: '', triggerIds: [], triggerMode: 'any' },
     }));
   };
 
@@ -769,23 +770,25 @@ export function Methodology() {
   // Attach/detach one trigger on an EXISTING step. The step keeps its id, and
   // therefore its checks, its pasted result and its snippet-local values — which
   // a delete-and-recreate would silently drop (there is no updateStep action).
-  // One click on a chip advances it: absent → OU → ET → absent. The step keeps
-  // its id, and therefore its checks, its result and its snippet-local values —
-  // which a delete-and-recreate would drop.
+  // One click on a chip advances it: unused → OU → ET → unused. The operator is a
+  // property of the STEP, so the middle step of that cycle restyles every chip of
+  // the step at once. The step keeps its id, and therefore its checks, its result
+  // and its snippet-local values — which a delete-and-recreate would drop.
   const cycleStepTriggerOn = (phaseId: string, step: Step, triggerId: string) => {
     if (!rm) return;
     const next = cycleStepTrigger(step, triggerId);
-    setStepTriggers(rm.id, phaseId, step.id, next.triggerIds, next.allTriggerIds);
+    setStepTriggers(rm.id, phaseId, step.id, next.triggerIds, next.triggerMode);
   };
 
-  // Same cycle on the add-step draft, which holds the two lists rather than a step.
+  // The same cycle on the add-step draft, which carries a step's trigger shape
+  // without being one.
   const cycleDraftTrigger = (phaseId: string, triggerId: string) => {
     const d = draftFor(phaseId);
     const next = cycleStepTrigger(
-      { id: '', text: '', triggerIds: d.triggerIds, allTriggerIds: d.allTriggerIds },
+      { id: '', text: '', triggerIds: d.triggerIds, triggerMode: d.triggerMode },
       triggerId,
     );
-    setDraft(phaseId, { triggerIds: next.triggerIds, allTriggerIds: next.allTriggerIds });
+    setDraft(phaseId, { triggerIds: next.triggerIds, triggerMode: next.triggerMode });
   };
 
   // « détecter depuis le résultat » — read a pasted nmap run and tick the
@@ -877,9 +880,7 @@ export function Methodology() {
             // The « masquer les inactives » switch is pointless on a roadmap with
             // no conditional step at all, so it only appears once there is one.
             const hasConditional = rm.phases.some((ph) =>
-              ph.steps.some(
-                (st) => (st.triggerIds ?? []).length > 0 || (st.allTriggerIds ?? []).length > 0,
-              ),
+              ph.steps.some((st) => (st.triggerIds ?? []).length > 0),
             );
 
             return (
@@ -1178,6 +1179,7 @@ export function Methodology() {
                               // The step's triggers WITH their mode, in the
                               // roadmap's declaration order (v0.13.0).
                               const stepTrigs = stepTriggers(st, roadmapTriggers);
+                              const stepMode = modeOf(st);
                               const cond = describeStepTriggers(st, roadmapTriggers);
                               const cmd = st.commandId ? cmdById.get(st.commandId) : undefined;
                               const snip = st.snippetId ? snipById.get(st.snippetId) : undefined;
@@ -1276,26 +1278,30 @@ export function Methodology() {
                                         {checked ? '✓' : partial ? '–' : ''}
                                       </button>
                                       {/* Assigned triggers, to the LEFT of the
-                                          label (v0.13.0). Display only — all
-                                          editing happens in the picker below, so
-                                          the row stays readable. The BORDER says
-                                          the mode (dashed OU / solid ET) and the
-                                          COLOUR says whether the target has it. */}
+                                          label. Display only — all editing happens
+                                          in the picker below, so the row stays
+                                          readable. The BORDER carries the step's
+                                          operator (dashed OU / solid ET, the same
+                                          for every chip of a step) and the COLOUR
+                                          carries whether the target has it. Since
+                                          the chip shows no text for the operator,
+                                          the tooltip spells it out. */}
                                       {stepTrigs.length > 0 && (
                                         <div style={stepTrigLeft}>
-                                          {stepTrigs.map(({ trigger, mode }) => (
+                                          {stepTrigs.map((trigger) => (
                                             <span
                                               key={trigger.id}
                                               title={
-                                                (mode === 'all' ? 'ET · ' : 'OU · ') +
                                                 trigger.label +
                                                 (activeTriggers[trigger.id]
                                                   ? ' — détecté sur la cible'
-                                                  : ' — non détecté')
+                                                  : ' — non détecté') +
+                                                ' · condition : ' +
+                                                cond
                                               }
                                               style={chipStyle(
                                                 !!activeTriggers[trigger.id],
-                                                mode,
+                                                stepMode,
                                               )}
                                             >
                                               {trigger.label}
@@ -1338,10 +1344,13 @@ export function Methodology() {
                                                   }
                                                   title={
                                                     mode === 'off'
-                                                      ? 'Inutilisé — cliquer pour OU'
+                                                      ? t.label +
+                                                        ' — inutilisé. Cliquer : ajouter (OU)'
                                                       : mode === 'any'
-                                                        ? 'OU — cliquer pour ET'
-                                                        : 'ET — cliquer pour retirer'
+                                                        ? t.label +
+                                                          ' — OU. Cliquer : passer toute l’étape en ET'
+                                                        : t.label +
+                                                          ' — ET. Cliquer : retirer de l’étape'
                                                   }
                                                   // An unassigned chip is always
                                                   // muted: its colour would
@@ -1352,11 +1361,6 @@ export function Methodology() {
                                                     mode,
                                                   )}
                                                 >
-                                                  {mode === 'all'
-                                                    ? 'ET '
-                                                    : mode === 'any'
-                                                      ? 'OU '
-                                                      : ''}
                                                   {t.label}
                                                 </button>
                                               );
@@ -1658,7 +1662,7 @@ export function Methodology() {
                                             id: '',
                                             text: '',
                                             triggerIds: d.triggerIds,
-                                            allTriggerIds: d.allTriggerIds,
+                                            triggerMode: d.triggerMode,
                                           },
                                           t.id,
                                         );
@@ -1669,17 +1673,16 @@ export function Methodology() {
                                             onClick={() => cycleDraftTrigger(ph.id, t.id)}
                                             title={
                                               mode === 'off'
-                                                ? 'Inutilisé — cliquer pour OU'
+                                                ? t.label + ' — inutilisé. Cliquer : ajouter (OU)'
                                                 : mode === 'any'
-                                                  ? 'OU — cliquer pour ET'
-                                                  : 'ET — cliquer pour retirer'
+                                                  ? t.label + ' — OU. Cliquer : tout passer en ET'
+                                                  : t.label + ' — ET. Cliquer : retirer'
                                             }
                                             style={chipStyle(
                                               mode !== 'off' && !!activeTriggers[t.id],
                                               mode,
                                             )}
                                           >
-                                            {mode === 'all' ? 'ET ' : mode === 'any' ? 'OU ' : ''}
                                             {t.label}
                                           </button>
                                         );

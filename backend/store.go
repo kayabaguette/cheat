@@ -69,11 +69,19 @@ type StepDTO struct {
 	CommandID string `json:"commandId,omitempty"`
 	// A step may link a command, a snippet, or both (cumulative).
 	SnippetID string `json:"snippetId,omitempty"`
-	// v0.11.0 — ids of the triggers that make this step apply. TriggerIDs is the
-	// OR list; v0.13.0 added AllTriggerIDs, the AND list. Both empty or absent =
+	// v0.11.0 — ids of the triggers that make this step apply; empty or absent =
 	// unconditional. Whether a trigger is ON is progress, not structure: see
 	// AppState.ActiveTriggers.
-	TriggerIDs    []string `json:"triggerIds,omitempty"`
+	TriggerIDs []string `json:"triggerIds,omitempty"`
+	// v0.14.0 — how they combine, for the whole step: "any" (default when absent)
+	// or "all".
+	TriggerMode string `json:"triggerMode,omitempty"`
+	// Deprecated: v0.13.0 only, the AND list of the short-lived two-list model.
+	// Kept so a profile written by that version still surfaces the field to the
+	// client, whose normalizeStepTriggers folds it into TriggerIDs + TriggerMode
+	// on load. Read-only in practice — the client never writes it back — so it
+	// vanishes from stored state after the first save. Remove once no profile
+	// carries it.
 	AllTriggerIDs []string `json:"allTriggerIds,omitempty"`
 	// v0.13.0 — the step's checklist. Its items' done state lives in Checks under
 	// their own ids, like a step's.
