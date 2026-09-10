@@ -15,14 +15,22 @@ export function definedNames(values: Record<string, string>): Set<string> {
   return new Set<string>([...STANDARD_VARS.map((v) => v.name), ...Object.keys(values)]);
 }
 
-// The USAGE CONTEXT of a command's local values (0.10.0). Every command sharing a
-// category AND a tool shares one set of local values, so filling `$share` on one
-// nxc command fills it on every other nxc command of that category — and on none
-// of impacket's. Same key shape as the sidebar's per-tool command counter
-// (Sidebar.tsx), which is where the category+tool pair is already the unit.
+// The USAGE CONTEXT of a command's local values. Every command of a CATEGORY
+// shares one set, whatever tool it belongs to: filling `$share` on an nxc command
+// of Active Directory fills it on that category's impacket commands too, and on
+// no other category's.
 //
-// Snippets keep their own context keys (snippetId / stepId / sheetId:snippetId),
-// so the two classes of context never collide: '||' cannot appear in an id.
-export function commandContext(cmd: { category: string; tool: string }): string {
-  return cmd.category + '||' + cmd.tool;
+// 0.12.0 widened this from `category||tool` (0.10.0), which proved too narrow in
+// use — a `$share`, a `$spn`, a `$wordlist` describes the target or the goal, not
+// the tool that consumes it, so the value had to be retyped tool by tool. The
+// trade is that two tools of one category using the same NAME for different
+// things now share a value ($path as a web path for ffuf and as an SMB path for
+// smbclient): name them apart.
+//
+// The `cat:` prefix does the job the old `||` separator did for free — it
+// guarantees STRUCTURALLY that a command context can never collide with a
+// snippet's (snippetId / stepId / sheetId:snippetId), whatever a category key
+// happens to be.
+export function commandContext(cmd: { category: string }): string {
+  return 'cat:' + cmd.category;
 }

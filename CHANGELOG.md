@@ -4,6 +4,71 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.12.0] — 2026-09-10
+
+Two corrections to 0.10.0, both from actually using the thing.
+
+### Changed
+- **A local variable's scope widens from `category + tool` to the CATEGORY.**
+  0.10.0 keyed a command's locals on the pair, so `$share` filled on an `nxc`
+  command of *Active Directory* did not follow onto that category's `impacket`
+  commands. In use that is too narrow: a `$share`, a `$spn`, a `$wordlist`
+  describes the target or the goal, not the tool that consumes it, so the value
+  had to be retyped tool by tool inside one category.
+
+  `commandContext` (`lib/varsets.ts`) is still the single choke point, so this is
+  one line for all three views. The key is now `cat:<category>`, and the `cat:`
+  prefix does the job the old `||` separator did for free — it guarantees
+  **structurally** that a command context cannot collide with a snippet's
+  (`snippetId` / `stepId` / `sheetId:snippetId`), whatever a category key happens
+  to be.
+
+  **No migration, by construction**: local values are memory-only (D7), so the
+  keys the widening orphans do not survive the reload that introduces it. Nothing
+  on disk, nothing in an export, nothing to reconcile.
+
+  The trade is accepted rather than hidden: two tools of one category using the
+  same *name* for different things now share one value — `$path` as a web path for
+  `ffuf` and as an SMB path for `smbclient`. The remedy is naming (`$web_path`,
+  `$smb_path`); no per-tool override is introduced.
+
+### Added
+- **A « Variables locales » form in the sidebar, under the global one.** 0.10.0
+  deliberately kept locals out of the sidebar — and that was right *at the time*:
+  a category+tool pair matched no single row of that menu, so a local had no row to
+  belong to. A category **is** a row. Clicking one now reveals a form of its
+  locals, built from the same row shape as a global (a `$name` label plus a value
+  input), so the two panels read as one system.
+
+  - Shown only in the Bibliothèque with a **category active**. Picking a tool
+    inside it keeps the form, since the scope is the category; « Toutes les
+    commandes » and « ★ Favoris » show none, there being no scope to edit.
+  - Hidden when that category's commands reference no `$minuscule` at all — an
+    empty form is pure noise.
+  - The list is **derived** from the templates (`extractLocalTokens`), never
+    stored, so adding or editing a command updates the form for free.
+  - The `✕` clears the **value**, not the variable: a local has no definition to
+    delete, it exists because a template mentions it. It keeps its slot in the
+    layout (`visibility`) rather than unmounting, so the input does not resize the
+    moment you type the first character.
+  - The form writes the same context as the in-command double-click, so the two
+    stay in lockstep — the form is the overview, the double-click the shortcut.
+
+  « Variables globales » is untouched and still cannot surface a lower-case name:
+  `extractTokens` returns the global class only and `customVars` derives from the
+  globals-only value map.
+
+### Notes
+- Supersedes two rulings of SPEC addendum item 12; recorded as **item 14**.
+- No type, DTO or import/export contract change — local values have never been
+  persisted, so the backend is untouched.
+- `commandContext` was not covered by a test, and the scope is a behavioural
+  decision rather than an implementation detail, so it is pinned now: every tool of
+  one category shares a context, two categories do not, and a command context can
+  never look like a snippet's. Both new guards were verified to redden the suite
+  when broken (reverting to `category||tool`, and dropping the prefix). 70
+  assertions in total.
+
 ## [0.11.0] — 2026-09-10
 
 ### Added
