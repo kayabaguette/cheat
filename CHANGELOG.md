@@ -4,6 +4,86 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.13.0] — 2026-09-10
+
+### Added
+- **A checklist under a step.** An enumeration step is a dozen one-liners too
+  trivial to earn a Bibliothèque entry, but you still want to tick them off.
+  `Step.substeps` holds them; an item's done state goes in `checks` under its own
+  id, so nothing new is persisted and every existing purge applies to it unchanged
+  — widening `stepIdsOf` to return substep ids is what makes `deleteRoadmap`,
+  `deletePhase` and `resetProgress` cascade, with no change of their own.
+
+  **The step stays the unit of progress.** It counts for **1** in the phase and
+  roadmap fractions and is *done* when every item is — a new `isStepDone` that
+  `progressOf` calls, so the three readouts (global, phase counter, phase bar)
+  cannot drift apart. A 12-item enumeration therefore refines a 14-step roadmap
+  instead of swamping it.
+
+  The row's box becomes **derived** once a checklist exists: `✓` when all are
+  ticked, `–` when some are, and clicking it covers the whole block via a new
+  `setChecked(ids, value)` — one state update, where a burst of `toggleCheck`
+  would have raced on the same object. The row shows `3/12` so the state reads
+  without unfolding. The list itself lives at the top of the **existing**
+  expandable panel, above the linked command and the « Résultat », so there is no
+  second folding mechanism to learn; `+ sous-étape` and a per-item `✕` appear in
+  edit mode only, like everything else in that view.
+
+- **AND / OR on a step's triggers.** 0.11.0 shipped OR only. A step now carries
+  two lists — `triggerIds` (OR, unchanged meaning) and the new `allTriggerIds`
+  (AND) — and is active when:
+
+  > (no OR list, or one of them is on) **and** (all of the AND list are on)
+
+  | OR | AND | active when |
+  |---|---|---|
+  | ∅ | ∅ | always — unconditional |
+  | A, B | ∅ | A **or** B |
+  | ∅ | A, B | A **and** B |
+  | A, B | C | (A **or** B) **and** C |
+
+  Because `triggerIds` keeps exactly the meaning it had, **no pre-0.13 step needs
+  migrating** — the optional-field pattern again.
+
+  One corollary is asserted in the suite so nobody "fixes" it by accident: a lone
+  OR next to an AND behaves like a second AND, since both halves must hold.
+
+  A chip cycles on click: **absent → OU → ET → absent**. The visual encoding is
+  two independent axes rather than four styles — the **border** says the mode
+  (dashed OU, solid ET) and the **colour** says whether the target has that
+  trigger. The group sub-header now names the operator (`FTP ou SMB`,
+  `(FTP ou SMB) et LDAP`) instead of the `·` that said nothing.
+
+### Changed
+- **A step's triggers move to the LEFT of its label**, where they read as a
+  condition prefix rather than as an afterthought. They are display-only there;
+  all editing happens in the picker below the label, which keeps the row short.
+- **The add-step form drops its trigger dropdown for chips** on the same
+  three-state cycle as a step's row, so there is one gesture to learn instead of
+  two. The draft now carries the two lists rather than a single optional id.
+- **The « Variables locales » form loses its `✕`.** Emptying the field already
+  clears the value and brings `$nom` back in the commands — the button duplicated
+  the backspace key.
+- **A long local name is readable on hover.** The label is a 60px cell with an
+  ellipsis, so `$wordlist_directories` read `$wordlist_…`; it now carries a
+  `title`.
+
+### Notes
+- **Backend, again not optional**: `StepDTO.Substeps`, the new `SubstepDTO` and
+  `StepDTO.AllTriggerIDs`. A field absent from the typed DTO is dropped on the
+  next autosave, so the feature would have worked in memory and died on reload.
+  Both additions are optional, so pre-0.13 exports import unchanged.
+- **89 assertions** (70 before). Five guards were each verified to redden the
+  suite when broken: the AND semantics, `isStepDone`, `progressOf` using it, the
+  cycle order, and the AND list being part of the group key.
+- **One of those five started as a fake guard, for the second release running.**
+  The group-key test compared an OR-only step with an AND-only step — which
+  differ on the OR half too, so it passed with the AND half removed from the key.
+  The discriminating case is two steps with the *same* OR list and *different* AND
+  lists. Recorded in `tasks/lessons.md`: an assertion that passes for a reason
+  other than the mechanism it names is not a guard, and only deleting the
+  mechanism proves which.
+
 ## [0.12.0] — 2026-09-10
 
 Two corrections to 0.10.0, both from actually using the thing.

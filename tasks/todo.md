@@ -577,3 +577,60 @@ décisions sont liées ; c'est pour ça qu'elles arrivent dans la même release.
   n'est introduite, et ce serait le premier endroit à regarder si ça mord.
 - Toujours aucun test de rendu : le formulaire n'est couvert que par la passe
   navigateur.
+
+---
+
+## v0.13.0 — Sous-étapes, ET/OU sur les déclencheurs, retouches d'ergonomie
+
+**Demande.** Six correctifs : (1) retirer la croix du formulaire des locales,
+(2) survol pour lire un nom de variable tronqué, (3) des sous-étapes cochables
+dans la Méthodologie (énumérations Windows/Linux), (4) les déclencheurs en
+pastilles plutôt qu'en liste déroulante dans le brouillon d'ajout, (5) les
+déclencheurs à gauche du libellé de l'étape, (6) un cycle trois états
+absent → OU → ET sur chaque déclencheur.
+
+### Décisions prises avec l'utilisateur
+
+- [x] **L'étape reste l'unité de progression** : elle compte pour 1 et est
+      terminée quand toutes ses sous-étapes le sont. Retenu contre « chaque
+      sous-étape compte pour 1 » (une énumération de 12 items pèserait la moitié
+      du pourcentage) et contre « checklist hors progression ».
+- [x] **La checklist s'affiche dans le panneau dépliable existant**, pas en
+      permanence sous l'étape ni derrière un second chevron.
+
+### Implémentation
+
+- [x] `types.ts` / `backend/store.go` — `SubStep`, `Step.substeps?`,
+      `Step.allTriggerIds?` ; `SubstepDTO`, `StepDTO.Substeps`,
+      `StepDTO.AllTriggerIDs`. **Le backend n'est jamais optionnel ici** : le PUT
+      passe par des structs typées, un champ absent du DTO disparaît au premier
+      autosave (leçon 0.11.0, appliquée d'emblée cette fois).
+- [x] `lib/triggers.ts` — `isStepDone`, `substepProgress`, `stepTriggerMode`,
+      `cycleStepTrigger`, `stepTriggers`, `describeStepTriggers` ; `isStepActive`
+      et `stepGroupKey` étendus aux deux listes. Tout est pur, donc testable.
+- [x] `store.tsx` — `addSubstep`, `deleteSubstep`, `setChecked(ids, valeur)` en
+      **une** mise à jour (une rafale de `toggleCheck` se marcherait dessus) ;
+      `stepIdsOf` élargi aux sous-étapes, ce qui suffit à faire cascader
+      `deleteRoadmap` / `deletePhase` / `resetProgress` sans les toucher.
+- [x] `Methodology.tsx` — points 3 à 6. `Sidebar.tsx` — points 1 et 2.
+
+### Résultats
+
+**`make test` vert**, **70 → 89 assertions**. Les cinq garde-fous sont prouvés
+capables d'échouer : sémantique ET (1 rouge), `isStepDone` (3), `progressOf` qui
+l'utilise (1), l'ordre du cycle (1), la liste ET dans la clé de groupe (1).
+
+**Un test bidon attrapé, pour la deuxième release d'affilée** — le test de la clé
+de groupe passait avec la moitié ET retirée. Le motif est consigné dans
+`tasks/lessons.md` : construire un test de discrimination en ne faisant varier
+qu'une seule chose.
+
+### Reste ouvert
+
+- La case dérivée retire la possibilité de marquer une étape faite en sautant un
+  item : il faut cocher les 12, ou supprimer la sous-étape non pertinente. C'est
+  le corollaire de « l'étape reste l'unité ».
+- Une seule OU à côté d'une ET se comporte comme deux ET. Inhérent à la
+  composition, épinglé par test pour que personne ne le « corrige » par erreur.
+- Toujours aucun test de rendu : la checklist et le cycle de pastilles ne sont
+  couverts que par la passe navigateur.

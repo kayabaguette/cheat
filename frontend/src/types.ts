@@ -88,19 +88,36 @@ export interface Trigger {
   label: string;
 }
 
+// v0.13.0 — one item of a step's checklist. Made for the enumeration steps whose
+// content is a dozen one-liners too trivial to earn a Bibliothèque entry, but
+// worth ticking off one by one. Its DONE state lives in AppState.checks under its
+// own id, exactly like a step's, so the whole purge/reset machinery applies to it
+// unchanged.
+export interface SubStep {
+  id: string;
+  text: string;
+}
+
 export interface Step {
   id: string;
   text: string;
   commandId?: string;
   // A step may link a command, a snippet, or BOTH (they are cumulative).
   snippetId?: string;
-  // Ids of the triggers that make this step apply. Absent or empty = the step is
-  // UNCONDITIONAL and always applies. Several ids are OR'd: any one being on is
-  // enough (there is deliberately no AND in v1). A step whose triggers are all
-  // off is INACTIVE: dimmed, not checkable, and excluded from progress — both
-  // numerator and denominator, which is what lets a target with 3 services out
-  // of 12 still reach 100%.
+  // Triggers this step needs, in TWO lists (v0.13.0 — `triggerIds` keeps the
+  // meaning it had in 0.11.0, so no pre-0.13 step needs migrating):
+  //   triggerIds     — OR: any one being on is enough
+  //   allTriggerIds  — AND: every one must be on
+  // A step is ACTIVE when (no OR list, or one of them is on) AND (all of the AND
+  // list are on); both empty means unconditional. An inactive step is dimmed, not
+  // checkable, and excluded from progress — numerator AND denominator, which is
+  // what lets a target with 3 services out of 12 still reach 100%.
   triggerIds?: string[];
+  allTriggerIds?: string[];
+  // The step's checklist. A step that has one is DONE when every item is ticked,
+  // and still counts as ONE unit of progress — so a 12-item enumeration cannot
+  // swamp a 14-step roadmap.
+  substeps?: SubStep[];
 }
 
 export interface Phase {

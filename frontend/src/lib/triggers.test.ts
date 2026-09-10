@@ -8,7 +8,12 @@ import {
   phaseHasActiveStep,
   progressOf,
   stepGroupKey,
-  triggerLabels,
+  cycleStepTrigger,
+  describeStepTriggers,
+  isStepDone,
+  stepTriggerMode,
+  stepTriggers,
+  substepProgress,
 } from './triggers';
 import type { Phase, Step, Trigger } from '../types';
 
@@ -32,10 +37,17 @@ const TRIGGERS: Trigger[] = [
   { id: 'tg-ldap', label: 'LDAP' },
 ];
 
-const step = (id: string, triggerIds?: string[]): Step => ({
+const step = (id: string, triggerIds?: string[], allTriggerIds?: string[]): Step => ({
   id,
   text: id,
   ...(triggerIds ? { triggerIds } : {}),
+  ...(allTriggerIds ? { allTriggerIds } : {}),
+});
+// A step carrying a checklist; the items' ids are `${id}-1`, `${id}-2`, …
+const withSubs = (id: string, n: number): Step => ({
+  id,
+  text: id,
+  substeps: Array.from({ length: n }, (_, i) => ({ id: `${id}-${i + 1}`, text: `sub ${i + 1}` })),
 });
 
 // A realistic `nmap -sV` run, including the lines that must NOT be picked up.
@@ -178,6 +190,103 @@ describe('isStepActive', () => {
     expect(isStepActive(s, { 'tg-ftp': false })).toBe(false);
     expect(isStepActive(s, { 'tg-http': true })).toBe(false);
   });
+
+  // v0.13.0: the AND list. Every one of them must be on.
+  it('requires ALL of the AND list', () => {
+    const s = step('s1', undefined, ['tg-ftp', 'tg-smb']);
+    expect(isStepActive(s, {})).toBe(false);
+    expect(isStepActive(s, { 'tg-ftp': true })).toBe(false);
+    expect(isStepActive(s, { 'tg-ftp': true, 'tg-smb': true })).toBe(true);
+  });
+
+  // The composition, spelled out: (no OR, or one on) AND (all ANDs on).
+  it('combines the two lists as (any OR) and (all AND)', () => {
+    const s = step('s1', ['tg-ftp', 'tg-smb'], ['tg-http']);
+    expect(isStepActive(s, { 'tg-ftp': true })).toBe(false); // the AND is missing
+    expect(isStepActive(s, { 'tg-http': true })).toBe(false); // no OR satisfied
+    expect(isStepActive(s, { 'tg-ftp': true, 'tg-http': true })).toBe(true);
+    expect(isStepActive(s, { 'tg-smb': true, 'tg-http': true })).toBe(true);
+  });
+
+  // Known corollary, asserted so nobody "fixes" it by accident: a lone OR next
+  // to an AND behaves like a second AND, since both halves must hold.
+  it('makes a lone OR behave like an AND when combined with one', () => {
+    const s = step('s1', ['tg-ftp'], ['tg-smb']);
+    expect(isStepActive(s, { 'tg-ftp': true })).toBe(false);
+    expect(isStepActive(s, { 'tg-smb': true })).toBe(false);
+    expect(isStepActive(s, { 'tg-ftp': true, 'tg-smb': true })).toBe(true);
+  });
+
+  it('is unconditional when both lists are empty', () => {
+    expect(isStepActive(step('s1', [], []), {})).toBe(true);
+  });
+});
+
+// v0.13.0 — the three-state chip: absent → OU → ET → absent.
+describe('stepTriggerMode / cycleStepTrigger', () => {
+  it('reports the mode a step uses a trigger in', () => {
+    const s = step('s1', ['tg-ftp'], ['tg-smb']);
+    expect(stepTriggerMode(s, 'tg-ftp')).toBe('any');
+    expect(stepTriggerMode(s, 'tg-smb')).toBe('all');
+    expect(stepTriggerMode(s, 'tg-http')).toBe('off');
+  });
+
+  it('cycles off → any → all → off and comes back to the start', () => {
+    let s: Step = step('s1');
+    const click = () => {
+      const next = cycleStepTrigger(s, 'tg-ftp');
+      s = { ...s, ...next };
+      return stepTriggerMode(s, 'tg-ftp');
+    };
+    expect(click()).toBe('any');
+    expect(click()).toBe('all');
+    expect(click()).toBe('off');
+    expect(s.triggerIds).toEqual([]);
+    expect(s.allTriggerIds).toEqual([]);
+  });
+
+  it('never leaves a trigger in both lists at once', () => {
+    const s = step('s1', ['tg-ftp'], []);
+    const next = cycleStepTrigger(s, 'tg-ftp');
+    expect(next.triggerIds).not.toContain('tg-ftp');
+    expect(next.allTriggerIds).toContain('tg-ftp');
+  });
+
+  it('leaves the other triggers alone', () => {
+    const s = step('s1', ['tg-ftp', 'tg-smb'], ['tg-ldap']);
+    const next = cycleStepTrigger(s, 'tg-smb');
+    expect(next.triggerIds).toEqual(['tg-ftp']);
+    expect(next.allTriggerIds).toEqual(['tg-ldap', 'tg-smb']);
+  });
+});
+
+// v0.13.0 — a step with a checklist is done when every item is, and its own
+// `checks` entry is then ignored: the row's box is derived, so the two cannot
+// disagree.
+describe('isStepDone / substepProgress', () => {
+  it('falls back to the step\'s own box when there is no checklist', () => {
+    expect(isStepDone(step('s1'), {})).toBe(false);
+    expect(isStepDone(step('s1'), { s1: true })).toBe(true);
+    expect(substepProgress(step('s1'), {})).toEqual({ done: 0, total: 0 });
+  });
+
+  it('is done only when every item of the checklist is ticked', () => {
+    const s = withSubs('s1', 3);
+    expect(isStepDone(s, { 's1-1': true, 's1-2': true })).toBe(false);
+    expect(isStepDone(s, { 's1-1': true, 's1-2': true, 's1-3': true })).toBe(true);
+  });
+
+  it("ignores the step's own box once it has a checklist", () => {
+    const s = withSubs('s1', 2);
+    expect(isStepDone(s, { s1: true })).toBe(false);
+  });
+
+  it('counts the ticked items', () => {
+    expect(substepProgress(withSubs('s1', 3), { 's1-1': true, 's1-3': true })).toEqual({
+      done: 2,
+      total: 3,
+    });
+  });
 });
 
 describe('progressOf', () => {
@@ -209,6 +318,17 @@ describe('progressOf', () => {
     expect(progressOf(steps, {}, checks)).toEqual({ done: 0, total: 1 });
     expect(progressOf(steps, { 'tg-http': true }, checks)).toEqual({ done: 1, total: 3 });
     expect(checks.c).toBe(true);
+  });
+
+  // A checklist refines a step, it does not multiply it: a 12-item enumeration
+  // must not swamp a 14-step roadmap.
+  it('counts a step with a checklist as ONE unit, done only when all items are', () => {
+    const steps = [step('a'), withSubs('b', 3)];
+    expect(progressOf(steps, {}, { a: true, 'b-1': true })).toEqual({ done: 1, total: 2 });
+    expect(progressOf(steps, {}, { a: true, 'b-1': true, 'b-2': true, 'b-3': true })).toEqual({
+      done: 2,
+      total: 2,
+    });
   });
 
   it('reports 0/0 for a scope where nothing applies', () => {
@@ -256,17 +376,67 @@ describe('stepGroupKey', () => {
     expect(stepGroupKey(step('a', ['tg-ftp']))).toBe(stepGroupKey(step('b', ['tg-ftp'])));
     expect(stepGroupKey(step('a', ['tg-ftp']))).not.toBe(stepGroupKey(step('b', ['tg-smb'])));
   });
+
+  // `A or B` and `A and B` are different conditions and must not share a header.
+  // The discriminating case is two steps with the SAME OR list and different AND
+  // lists: with the AND half missing from the key they would collide. (The
+  // any-only vs all-only pair below does not isolate it — it differs on the OR
+  // half too.)
+  it('keys the AND list into the group, not just the OR one', () => {
+    expect(stepGroupKey(step('a', ['tg-ftp'], ['tg-smb']))).not.toBe(
+      stepGroupKey(step('b', ['tg-ftp'], ['tg-ldap'])),
+    );
+  });
+
+  it('keeps `A ou B` and `A et B` in separate groups', () => {
+    expect(stepGroupKey(step('a', ['tg-ftp']))).not.toBe(
+      stepGroupKey(step('b', undefined, ['tg-ftp'])),
+    );
+  });
 });
 
-describe('triggerLabels', () => {
-  it('follows the roadmap declaration order, not the step order', () => {
-    expect(triggerLabels(step('a', ['tg-http', 'tg-ftp']), TRIGGERS)).toEqual(['FTP', 'HTTP']);
+describe('stepTriggers', () => {
+  it('follows the roadmap declaration order, not the click order', () => {
+    const s = step('a', ['tg-http', 'tg-ftp']);
+    expect(stepTriggers(s, TRIGGERS).map((x) => x.trigger.label)).toEqual(['FTP', 'HTTP']);
+  });
+
+  it('carries each trigger\'s mode', () => {
+    const s = step('a', ['tg-ftp'], ['tg-smb']);
+    expect(stepTriggers(s, TRIGGERS)).toEqual([
+      { trigger: TRIGGERS[0], mode: 'any' },
+      { trigger: TRIGGERS[1], mode: 'all' },
+    ]);
   });
 
   // A dangling id renders as nothing rather than as a raw uuid. The load-time
   // normaliser (store.cleanRoadmaps) prunes them, so this is belt and braces.
   it('skips an id no trigger declares', () => {
-    expect(triggerLabels(step('a', ['tg-ftp', 'tg-gone']), TRIGGERS)).toEqual(['FTP']);
-    expect(triggerLabels(step('a'), TRIGGERS)).toEqual([]);
+    expect(stepTriggers(step('a', ['tg-ftp', 'tg-gone']), TRIGGERS).map((x) => x.trigger.label))
+      .toEqual(['FTP']);
+    expect(stepTriggers(step('a'), TRIGGERS)).toEqual([]);
+  });
+});
+
+// The sub-header and the inactive-step tooltip need the OPERATOR, which a bare
+// list of labels does not convey.
+describe('describeStepTriggers', () => {
+  it('is empty for an unconditional step', () => {
+    expect(describeStepTriggers(step('a'), TRIGGERS)).toBe('');
+  });
+
+  it('joins the OR list with « ou » and the AND list with « et »', () => {
+    expect(describeStepTriggers(step('a', ['tg-ftp', 'tg-smb']), TRIGGERS)).toBe('FTP ou SMB');
+    expect(describeStepTriggers(step('a', undefined, ['tg-ftp', 'tg-smb']), TRIGGERS)).toBe(
+      'FTP et SMB',
+    );
+  });
+
+  it('parenthesises a multi-term OR when an AND is also present', () => {
+    expect(describeStepTriggers(step('a', ['tg-ftp', 'tg-smb'], ['tg-ldap']), TRIGGERS)).toBe(
+      '(FTP ou SMB) et LDAP',
+    );
+    // A single OR term needs no parentheses.
+    expect(describeStepTriggers(step('a', ['tg-ftp'], ['tg-ldap']), TRIGGERS)).toBe('FTP et LDAP');
   });
 });

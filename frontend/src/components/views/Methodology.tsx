@@ -10,7 +10,12 @@ import {
   phaseHasActiveStep,
   progressOf,
   stepGroupKey,
-  triggerLabels,
+  cycleStepTrigger,
+  describeStepTriggers,
+  isStepDone,
+  stepTriggerMode,
+  stepTriggers,
+  substepProgress,
 } from '../../lib/triggers';
 import { MONO, tabBar, pillBase, pillOn, barTrackBase, codePreCompact } from '../../lib/ui';
 import { CodeBlock } from '../CodeBlock';
@@ -18,6 +23,7 @@ import { CommandLine } from '../CommandLine';
 import { CopyToProfile } from '../CopyToProfile';
 import { EmptyState } from '../EmptyState';
 import { CopyButton } from '../CopyButton';
+import type { TriggerMode } from '../../lib/triggers';
 import type { Step } from '../../types';
 
 // Méthodologie — faithful port of the prototype's roadmap/checklist view
@@ -373,10 +379,7 @@ const stepChipRow: CSSProperties = {
   gap: '5px',
   alignItems: 'center',
 };
-const miniChip: CSSProperties = {
-  border: '1px solid var(--acc-line)',
-  background: 'var(--acc-dim)',
-  color: 'var(--acc)',
+const miniChipBase: CSSProperties = {
   padding: '1px 6px',
   fontSize: '10px',
   fontFamily: MONO,
@@ -384,11 +387,29 @@ const miniChip: CSSProperties = {
   gap: '4px',
   alignItems: 'center',
 };
-const miniChipOff: CSSProperties = {
-  ...miniChip,
-  border: '1px solid var(--border2)',
-  background: 'transparent',
-  color: 'var(--faint)',
+
+// A trigger chip carries TWO independent things, and both are resolved into ONE
+// `border` shorthand on purpose: mixing the shorthand with a `borderStyle`
+// longhand makes React leave a stale value behind when the mode toggles — the
+// very trap Sidebar.tsx's `tagOn` documents, and it showed up as a console
+// warning the first time this was written with a longhand override.
+//   the border STYLE says the mode — dotted = inutilisé, dashed = OU, solid = ET
+//   the COLOUR says the target     — accent when that trigger is detected on it
+const chipStyle = (detected: boolean, mode: TriggerMode): CSSProperties => {
+  const line = mode === 'all' ? 'solid' : mode === 'any' ? 'dashed' : 'dotted';
+  return detected
+    ? {
+        ...miniChipBase,
+        border: `1px ${line} var(--acc-line)`,
+        background: 'var(--acc-dim)',
+        color: 'var(--acc)',
+      }
+    : {
+        ...miniChipBase,
+        border: `1px ${line} var(--border2)`,
+        background: 'transparent',
+        color: 'var(--faint)',
+      };
 };
 const miniBtn: CSSProperties = {
   cursor: 'pointer',
@@ -399,6 +420,38 @@ const miniBtn: CSSProperties = {
   fontSize: '10px',
   fontFamily: MONO,
 };
+// Row of assigned chips, now to the LEFT of the step label (v0.13.0).
+const stepTrigLeft: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: '4px',
+  alignItems: 'center',
+  flex: 'none',
+  maxWidth: '190px',
+};
+// --- the checklist, at the top of the expanded panel ---
+const subList: CSSProperties = { display: 'flex', flexDirection: 'column', gap: '2px' };
+const subRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: '8px' };
+const subText: CSSProperties = { flex: 1, minWidth: 0, fontSize: '12.5px', lineHeight: 1.4 };
+const subTextDone: CSSProperties = {
+  ...subText,
+  textDecoration: 'line-through',
+  color: 'var(--faint)',
+};
+const subAddRow: CSSProperties = { display: 'flex', gap: '6px', marginTop: '6px' };
+const subAddInput: CSSProperties = {
+  ...inputBase,
+  flex: 1,
+  minWidth: 0,
+  fontSize: '12px',
+  padding: '4px 8px',
+};
+const subRule: CSSProperties = {
+  border: 'none',
+  borderTop: '1px solid var(--border)',
+  margin: '10px 0 0',
+};
+
 const detectBtn: CSSProperties = {
   cursor: 'pointer',
   border: '1px solid var(--border2)',
@@ -540,9 +593,10 @@ interface StepDraft {
   commandId: string;
   // A step may link a command, a snippet, or both (cumulative).
   snippetId: string;
-  // One optional initial trigger (v0.11.0). More can be attached on the row
-  // afterwards — the model holds a list, the draft form offers the common case.
-  triggerId: string;
+  // The draft's triggers, in the same two lists a Step uses (v0.13.0 — it used to
+  // be one optional id chosen from a dropdown).
+  triggerIds: string[];
+  allTriggerIds: string[];
 }
 interface DragStep {
   phaseId: string;
@@ -582,6 +636,9 @@ export function Methodology() {
     moveStep,
     movePhase,
     toggleCheck,
+    setChecked,
+    addSubstep,
+    deleteSubstep,
     toggleOpenStep,
     setResult,
     setLocalValue,
@@ -602,6 +659,9 @@ export function Methodology() {
   // Transient drag state — never touches the store (SPEC §3.7, Q117).
   const [dragStep, setDragStep] = useState<DragStep | null>(null);
   const [dragOver, setDragOver] = useState<DragOver | null>(null);
+  // One « nouvelle sous-étape » draft per step (v0.13.0), transient like the
+  // step drafts above.
+  const [subDrafts, setSubDrafts] = useState<Record<string, string>>({});
   const [dragPhaseIdx, setDragPhaseIdx] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   // Conditional steps (v0.11.0), all transient: which chip is being renamed, the
@@ -656,7 +716,13 @@ export function Methodology() {
   };
 
   const draftFor = (phaseId: string): StepDraft =>
-    stepDrafts[phaseId] ?? { text: '', commandId: '', snippetId: '', triggerId: '' };
+    stepDrafts[phaseId] ?? {
+      text: '',
+      commandId: '',
+      snippetId: '',
+      triggerIds: [],
+      allTriggerIds: [],
+    };
   const setDraft = (phaseId: string, patch: Partial<StepDraft>) =>
     setStepDrafts((s) => ({ ...s, [phaseId]: { ...draftFor(phaseId), ...patch } }));
 
@@ -671,12 +737,23 @@ export function Methodology() {
       text,
       d.commandId || undefined,
       d.snippetId || undefined,
-      d.triggerId ? [d.triggerId] : undefined,
+      d.triggerIds.length ? d.triggerIds : undefined,
+      d.allTriggerIds.length ? d.allTriggerIds : undefined,
     );
     setStepDrafts((s) => ({
       ...s,
-      [phaseId]: { text: '', commandId: '', snippetId: '', triggerId: '' },
+      [phaseId]: { text: '', commandId: '', snippetId: '', triggerIds: [], allTriggerIds: [] },
     }));
+  };
+
+  const setSubDraft = (stepId: string, text: string) =>
+    setSubDrafts((d) => ({ ...d, [stepId]: text }));
+  const submitSubstep = (phaseId: string, stepId: string) => {
+    if (!rm) return;
+    const text = (subDrafts[stepId] ?? '').trim();
+    if (!text) return;
+    addSubstep(rm.id, phaseId, stepId, text);
+    setSubDrafts((d) => ({ ...d, [stepId]: '' }));
   };
 
   const onReset = () => {
@@ -692,13 +769,23 @@ export function Methodology() {
   // Attach/detach one trigger on an EXISTING step. The step keeps its id, and
   // therefore its checks, its pasted result and its snippet-local values — which
   // a delete-and-recreate would silently drop (there is no updateStep action).
-  const toggleStepTrigger = (phaseId: string, step: Step, triggerId: string) => {
+  // One click on a chip advances it: absent → OU → ET → absent. The step keeps
+  // its id, and therefore its checks, its result and its snippet-local values —
+  // which a delete-and-recreate would drop.
+  const cycleStepTriggerOn = (phaseId: string, step: Step, triggerId: string) => {
     if (!rm) return;
-    const cur = step.triggerIds ?? [];
-    const next = cur.includes(triggerId)
-      ? cur.filter((id) => id !== triggerId)
-      : [...cur, triggerId];
-    setStepTriggers(rm.id, phaseId, step.id, next);
+    const next = cycleStepTrigger(step, triggerId);
+    setStepTriggers(rm.id, phaseId, step.id, next.triggerIds, next.allTriggerIds);
+  };
+
+  // Same cycle on the add-step draft, which holds the two lists rather than a step.
+  const cycleDraftTrigger = (phaseId: string, triggerId: string) => {
+    const d = draftFor(phaseId);
+    const next = cycleStepTrigger(
+      { id: '', text: '', triggerIds: d.triggerIds, allTriggerIds: d.allTriggerIds },
+      triggerId,
+    );
+    setDraft(phaseId, { triggerIds: next.triggerIds, allTriggerIds: next.allTriggerIds });
   };
 
   // « détecter depuis le résultat » — read a pasted nmap run and tick the
@@ -790,7 +877,9 @@ export function Methodology() {
             // The « masquer les inactives » switch is pointless on a roadmap with
             // no conditional step at all, so it only appears once there is one.
             const hasConditional = rm.phases.some((ph) =>
-              ph.steps.some((st) => (st.triggerIds ?? []).length > 0),
+              ph.steps.some(
+                (st) => (st.triggerIds ?? []).length > 0 || (st.allTriggerIds ?? []).length > 0,
+              ),
             );
 
             return (
@@ -968,7 +1057,9 @@ export function Methodology() {
                     const rows = visible.map((x) => {
                       const key = stepGroupKey(x.st);
                       const head =
-                        key !== '' && key !== lastGroup ? triggerLabels(x.st, roadmapTriggers) : null;
+                        key !== '' && key !== lastGroup
+                          ? describeStepTriggers(x.st, roadmapTriggers)
+                          : null;
                       lastGroup = key;
                       return { ...x, head };
                     });
@@ -1076,11 +1167,18 @@ export function Methodology() {
                           {/* Steps */}
                           <div style={phaseBody}>
                             {rows.map(({ st, si, active, head }) => {
-                              const checked = !!checks[st.id];
-                              const stepTrigIds = st.triggerIds ?? [];
-                              const stepTrigs = roadmapTriggers.filter((t) =>
-                                stepTrigIds.includes(t.id),
-                              );
+                              const subs = st.substeps ?? [];
+                              const subIds = subs.map((sb) => sb.id);
+                              const subProg = substepProgress(st, checks);
+                              // DERIVED once the step has a checklist: the row's
+                              // box mirrors its items, so the two can never
+                              // disagree (lib/triggers.isStepDone).
+                              const checked = isStepDone(st, checks);
+                              const partial = subProg.total > 0 && subProg.done > 0 && !checked;
+                              // The step's triggers WITH their mode, in the
+                              // roadmap's declaration order (v0.13.0).
+                              const stepTrigs = stepTriggers(st, roadmapTriggers);
+                              const cond = describeStepTriggers(st, roadmapTriggers);
                               const cmd = st.commandId ? cmdById.get(st.commandId) : undefined;
                               const snip = st.snippetId ? snipById.get(st.snippetId) : undefined;
                               // A linked command's LOCALS live in its own
@@ -1110,7 +1208,7 @@ export function Methodology() {
                                       }}
                                     >
                                       <span>
-                                        {head.join(' · ')}
+                                        {head}
                                         {active ? '' : ' · inactif'}
                                       </span>
                                       <span style={groupRule} />
@@ -1160,73 +1258,105 @@ export function Methodology() {
                                         </span>
                                       )}
                                       <button
-                                        onClick={() => toggleCheck(st.id)}
+                                        onClick={() =>
+                                          subs.length
+                                            ? setChecked(subIds, !checked)
+                                            : toggleCheck(st.id)
+                                        }
                                         disabled={!active}
                                         title={
-                                          active
-                                            ? undefined
-                                            : 'Étape inactive : ' +
-                                              stepTrigs.map((t) => t.label).join(' / ') +
-                                              ' non détecté sur la cible'
+                                          !active
+                                            ? 'Étape inactive — condition : ' + cond
+                                            : subs.length
+                                              ? 'Cocher ou décocher les ' + subs.length + ' sous-étapes'
+                                              : undefined
                                         }
                                         style={checked ? checkOn : checkOff}
                                       >
-                                        {checked ? '✓' : ''}
+                                        {checked ? '✓' : partial ? '–' : ''}
                                       </button>
+                                      {/* Assigned triggers, to the LEFT of the
+                                          label (v0.13.0). Display only — all
+                                          editing happens in the picker below, so
+                                          the row stays readable. The BORDER says
+                                          the mode (dashed OU / solid ET) and the
+                                          COLOUR says whether the target has it. */}
+                                      {stepTrigs.length > 0 && (
+                                        <div style={stepTrigLeft}>
+                                          {stepTrigs.map(({ trigger, mode }) => (
+                                            <span
+                                              key={trigger.id}
+                                              title={
+                                                (mode === 'all' ? 'ET · ' : 'OU · ') +
+                                                trigger.label +
+                                                (activeTriggers[trigger.id]
+                                                  ? ' — détecté sur la cible'
+                                                  : ' — non détecté')
+                                              }
+                                              style={chipStyle(
+                                                !!activeTriggers[trigger.id],
+                                                mode,
+                                              )}
+                                            >
+                                              {trigger.label}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
                                       <div style={stepTextWrap}>
                                         <div style={checked ? stepTextDone : stepText}>{st.text}</div>
-                                        {(stepTrigs.length > 0 ||
-                                          (methodEdit && roadmapTriggers.length > 0)) && (
+                                        {methodEdit && roadmapTriggers.length > 0 && (
                                           <div style={stepChipRow}>
-                                            {stepTrigs.map((t) => (
-                                              <span
-                                                key={t.id}
-                                                style={activeTriggers[t.id] ? miniChip : miniChipOff}
-                                              >
-                                                {t.label}
-                                                {methodEdit && (
-                                                  <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                      toggleStepTrigger(ph.id, st, t.id)
-                                                    }
-                                                    title="Détacher ce déclencheur de l'étape"
-                                                    style={chipXBtn}
-                                                  >
-                                                    ✕
-                                                  </button>
-                                                )}
-                                              </span>
-                                            ))}
-                                            {methodEdit && roadmapTriggers.length > 0 && (
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  setPickerStep(pickerStep === st.id ? null : st.id)
-                                                }
-                                                style={miniBtn}
-                                              >
-                                                ＋ déclencheur
-                                              </button>
-                                            )}
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setPickerStep(pickerStep === st.id ? null : st.id)
+                                              }
+                                              style={miniBtn}
+                                            >
+                                              {stepTrigs.length ? '⚙ déclencheurs' : '＋ déclencheur'}
+                                            </button>
                                           </div>
                                         )}
                                         {/* The picker, unfolded for ONE step at a
                                             time so a roadmap with a dozen triggers
                                             does not turn edit mode into a wall of
-                                            chips. */}
+                                            chips. One click advances the chip:
+                                            absent → OU → ET → absent. The OU/ET
+                                            prefix here is what teaches the border
+                                            encoding used on the row. */}
                                         {methodEdit && pickerStep === st.id && (
                                           <div style={stepChipRow}>
                                             {roadmapTriggers.map((t) => {
-                                              const on = stepTrigIds.includes(t.id);
+                                              const mode = stepTriggerMode(st, t.id);
                                               return (
                                                 <button
                                                   key={t.id}
                                                   type="button"
-                                                  onClick={() => toggleStepTrigger(ph.id, st, t.id)}
-                                                  style={on ? miniChip : miniChipOff}
+                                                  onClick={() =>
+                                                    cycleStepTriggerOn(ph.id, st, t.id)
+                                                  }
+                                                  title={
+                                                    mode === 'off'
+                                                      ? 'Inutilisé — cliquer pour OU'
+                                                      : mode === 'any'
+                                                        ? 'OU — cliquer pour ET'
+                                                        : 'ET — cliquer pour retirer'
+                                                  }
+                                                  // An unassigned chip is always
+                                                  // muted: its colour would
+                                                  // otherwise claim a role it
+                                                  // does not have on this step.
+                                                  style={chipStyle(
+                                                    mode !== 'off' && !!activeTriggers[t.id],
+                                                    mode,
+                                                  )}
                                                 >
-                                                  {on ? '✓ ' : ''}
+                                                  {mode === 'all'
+                                                    ? 'ET '
+                                                    : mode === 'any'
+                                                      ? 'OU '
+                                                      : ''}
                                                   {t.label}
                                                 </button>
                                               );
@@ -1234,6 +1364,13 @@ export function Methodology() {
                                           </div>
                                         )}
                                       </div>
+                                      {/* `3/12` — the checklist's state, readable
+                                          without unfolding the panel. */}
+                                      {subProg.total > 0 && (
+                                        <span style={monoCount}>
+                                          {subProg.done + '/' + subProg.total}
+                                        </span>
+                                      )}
                                       <button
                                         onClick={() => toggleOpenStep(st.id)}
                                         title={hasResult ? 'Résultat enregistré' : undefined}
@@ -1249,7 +1386,9 @@ export function Methodology() {
                                             ? '▸ ' + cmd.tool
                                             : snip
                                               ? '▸ snippet'
-                                              : '▸ résultat'}
+                                              : subs.length
+                                                ? '▸ sous-étapes'
+                                                : '▸ résultat'}
                                       </button>
                                       {methodEdit && (
                                         <ReorderControls
@@ -1267,6 +1406,68 @@ export function Methodology() {
                                     </div>
                                     {expanded && (
                                       <div style={notePanel}>
+                                        {/* The checklist comes first: it is the
+                                            step's own content, where the linked
+                                            command and the « Résultat » are
+                                            attachments to it. */}
+                                        {(subs.length > 0 || methodEdit) && (
+                                          <>
+                                            <div style={subList}>
+                                              {subs.map((sb) => {
+                                                const sbDone = !!checks[sb.id];
+                                                return (
+                                                  <div key={sb.id} style={subRow}>
+                                                    <button
+                                                      onClick={() => toggleCheck(sb.id)}
+                                                      disabled={!active}
+                                                      style={sbDone ? checkOn : checkOff}
+                                                    >
+                                                      {sbDone ? '✓' : ''}
+                                                    </button>
+                                                    <span style={sbDone ? subTextDone : subText}>
+                                                      {sb.text}
+                                                    </span>
+                                                    {methodEdit && (
+                                                      <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                          deleteSubstep(rm.id, ph.id, st.id, sb.id)
+                                                        }
+                                                        title="Supprimer la sous-étape"
+                                                        style={stepDelBtn}
+                                                      >
+                                                        ✕
+                                                      </button>
+                                                    )}
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                            {methodEdit && (
+                                              <div style={subAddRow}>
+                                                <input
+                                                  value={subDrafts[st.id] ?? ''}
+                                                  onChange={(e) => setSubDraft(st.id, e.target.value)}
+                                                  onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') submitSubstep(ph.id, st.id);
+                                                  }}
+                                                  placeholder="Nouvelle sous-étape…"
+                                                  spellCheck="false"
+                                                  autoCorrect="off"
+                                                  autoCapitalize="off"
+                                                  style={subAddInput}
+                                                />
+                                                <button
+                                                  onClick={() => submitSubstep(ph.id, st.id)}
+                                                  style={addStepBtn}
+                                                >
+                                                  + Sous-étape
+                                                </button>
+                                              </div>
+                                            )}
+                                            {(cmd || snip) && <hr style={subRule} />}
+                                          </>
+                                        )}
                                         {cmd && (
                                           <>
                                             <div style={cmdTitleLine}>{cmd.title}</div>
@@ -1444,22 +1645,46 @@ export function Methodology() {
                                       </option>
                                     ))}
                                   </select>
-                                  {/* One optional initial trigger; more can be
-                                      attached on the row afterwards. Offered only
-                                      once the roadmap declares a vocabulary. */}
+                                  {/* The draft's triggers, on the SAME three-state
+                                      cycle as a step's row (v0.13.0 — it used to be
+                                      a single-choice dropdown), so there is one
+                                      gesture to learn. Offered once the roadmap
+                                      declares a vocabulary. */}
                                   {roadmapTriggers.length > 0 && (
-                                    <select
-                                      value={d.triggerId}
-                                      onChange={(e) => setDraft(ph.id, { triggerId: e.target.value })}
-                                      style={addStepSelect}
-                                    >
-                                      <option value="">— toujours applicable —</option>
-                                      {roadmapTriggers.map((t) => (
-                                        <option key={t.id} value={t.id}>
-                                          si {t.label}
-                                        </option>
-                                      ))}
-                                    </select>
+                                    <div style={stepChipRow}>
+                                      {roadmapTriggers.map((t) => {
+                                        const mode = stepTriggerMode(
+                                          {
+                                            id: '',
+                                            text: '',
+                                            triggerIds: d.triggerIds,
+                                            allTriggerIds: d.allTriggerIds,
+                                          },
+                                          t.id,
+                                        );
+                                        return (
+                                          <button
+                                            key={t.id}
+                                            type="button"
+                                            onClick={() => cycleDraftTrigger(ph.id, t.id)}
+                                            title={
+                                              mode === 'off'
+                                                ? 'Inutilisé — cliquer pour OU'
+                                                : mode === 'any'
+                                                  ? 'OU — cliquer pour ET'
+                                                  : 'ET — cliquer pour retirer'
+                                            }
+                                            style={chipStyle(
+                                              mode !== 'off' && !!activeTriggers[t.id],
+                                              mode,
+                                            )}
+                                          >
+                                            {mode === 'all' ? 'ET ' : mode === 'any' ? 'OU ' : ''}
+                                            {t.label}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
                                   )}
                                   <button onClick={() => submitStep(ph.id)} style={addStepBtn}>
                                     + Étape
