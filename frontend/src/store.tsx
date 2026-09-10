@@ -29,6 +29,7 @@ import { STANDARD_VARS } from './lib/theme';
 import { sanitizeUrl, slug } from './lib/format';
 import { definedNames } from './lib/varsets';
 import { isGlobalName, isLocalName } from './lib/vars';
+import { normalizeStepTriggers } from './lib/triggers';
 
 // Names of the 6 built-in variables — value-editable only (never renamed/deleted).
 const STD_NAMES = new Set(STANDARD_VARS.map((v) => v.name));
@@ -142,20 +143,21 @@ function cleanRoadmaps(rms: Roadmap[]): Roadmap[] {
     }
     const phases = r.phases.map((p) => ({
       ...p,
-      steps: p.steps.map((st) => {
+      steps: p.steps.map((raw) => {
+        // Fold a v0.13.0 two-list step into the single list + mode BEFORE pruning,
+        // so a legacy AND condition survives the upgrade instead of silently
+        // becoming unconditional (lib/triggers.normalizeStepTriggers).
+        const st = normalizeStepTriggers(raw);
         const kept = (st.triggerIds ?? []).filter((id) => seen.has(id));
-        // A hand-edited file could list one trigger in BOTH lists; the OR list
-        // wins, so a trigger always has exactly one mode on a given step.
-        const keptAll = (st.allTriggerIds ?? []).filter(
-          (id) => seen.has(id) && !kept.includes(id),
-        );
         const subs = (st.substeps ?? [])
           .map((sb) => ({ id: sb.id || mint('sb'), text: (sb.text || '').trim() }))
           .filter((sb) => sb.text !== '');
         return {
           ...st,
           triggerIds: kept.length ? kept : undefined,
-          allTriggerIds: keptAll.length ? keptAll : undefined,
+          // The mode is meaningless without a list, and 'any' is the default, so
+          // neither is stored when it would be redundant.
+          triggerMode: kept.length && st.triggerMode === 'all' ? ('all' as const) : undefined,
           substeps: subs.length ? subs : undefined,
         };
       }),
@@ -317,7 +319,7 @@ export interface StoreActions {
     commandId?: string,
     snippetId?: string,
     triggerIds?: string[],
-    allTriggerIds?: string[],
+    triggerMode?: 'any' | 'all',
   ) => void;
   // v0.13.0 — a step's checklist.
   addSubstep: (roadmapId: string, phaseId: string, stepId: string, text: string) => void;
@@ -357,7 +359,7 @@ export interface StoreActions {
     phaseId: string,
     stepId: string,
     triggerIds: string[],
-    allTriggerIds: string[],
+    triggerMode: 'any' | 'all',
   ) => void;
   // --- M1: References ---
   setActiveRefTag: (tag: string | null) => void;
@@ -779,7 +781,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       commandId?: string,
       snippetId?: string,
       triggerIds?: string[],
-      allTriggerIds?: string[],
+      triggerMode?: 'any' | 'all',
     ) => {
       const t = text.trim();
       if (!t) return;
@@ -795,7 +797,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             snippetId: snippetId || undefined,
             // Absent/empty = unconditional, which is the default (v0.11.0).
             triggerIds: triggerIds && triggerIds.length ? triggerIds : undefined,
-            allTriggerIds: allTriggerIds && allTriggerIds.length ? allTriggerIds : undefined,
+            triggerMode:
+              triggerIds && triggerIds.length && triggerMode === 'all' ? 'all' : undefined,
           });
         return next;
       });
@@ -977,15 +980,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!r.triggers.length) r.triggers = undefined;
       for (const p of r.phases) {
         p.steps = p.steps.map((st) => {
-          const inAny = st.triggerIds?.includes(triggerId);
-          const inAll = st.allTriggerIds?.includes(triggerId);
-          if (!inAny && !inAll) return st;
-          const kept = (st.triggerIds ?? []).filter((id) => id !== triggerId);
-          const keptAll = (st.allTriggerIds ?? []).filter((id) => id !== triggerId);
+          if (!st.triggerIds?.includes(triggerId)) return st;
+          const kept = st.triggerIds.filter((id) => id !== triggerId);
           return {
             ...st,
             triggerIds: kept.length ? kept : undefined,
-            allTriggerIds: keptAll.length ? keptAll : undefined,
+            // An empty list has no operator to carry.
+            triggerMode: kept.length ? st.triggerMode : undefined,
           };
         });
       }
@@ -1026,7 +1027,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       phaseId: string,
       stepId: string,
       triggerIds: string[],
-      allTriggerIds: string[],
+      triggerMode: 'any' | 'all',
     ) => {
       setRoadmaps((rms) => {
         const next = cloneRoadmaps(rms);
@@ -1037,7 +1038,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ? {
                 ...st,
                 triggerIds: triggerIds.length ? triggerIds : undefined,
-                allTriggerIds: allTriggerIds.length ? allTriggerIds : undefined,
+                triggerMode: triggerIds.length && triggerMode === 'all' ? 'all' : undefined,
               }
             : st,
         );
@@ -1829,7 +1830,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               commandId: s.commandId,
               snippetId: s.snippetId,
               triggerIds: s.triggerIds,
-              allTriggerIds: s.allTriggerIds,
+              triggerMode: s.triggerMode,
               // Fresh substep ids for the same reason as the step's: they are
               // progress keys, and progress is deliberately not copied.
               substeps: s.substeps?.map((sb) => ({ id: mint('sb'), text: sb.text })),

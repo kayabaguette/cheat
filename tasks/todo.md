@@ -634,3 +634,68 @@ qu'une seule chose.
   composition, épinglé par test pour que personne ne le « corrige » par erreur.
 - Toujours aucun test de rendu : la checklist et le cycle de pastilles ne sont
   couverts que par la passe navigateur.
+
+---
+
+## v0.14.0 — Le ET/OU devient une propriété de l'étape
+
+**Demande.** « Pour le ET et le OU, je veux juste le contour, n'ajoute pas de ET
+OU sur le label. De plus, c'est ET ou OU pour tous les tags, il n'y a pas de tag
+en pointillé et de tag plein. »
+
+### Ce que ça corrige dans la 0.13.0
+
+La 0.13.0 avait modélisé l'opérateur en **deux listes** (`triggerIds` = OU,
+`allTriggerIds` = ET). C'était plus riche que nécessaire : ça autorisait
+exactement le mélange dont l'utilisateur ne veut pas, et ça imposait une
+composition `(any OU) ET (all ET)` dont le corollaire — « une seule OU à côté
+d'une ET se comporte comme deux ET » — était assez déroutant pour devoir être
+épinglé par test. **Une liste plus un mode fait disparaître le corollaire avec le
+modèle qui le produisait.** La contrainte posée par l'utilisateur est plus simple
+*et* plus juste que ce que j'avais construit : on ne perd aucune expressivité
+utile, on gagne un modèle qui dit ce que l'écran montre.
+
+### Un arbitrage renvoyé à l'utilisateur
+
+L'option qu'il avait d'abord retenue — « le 1er clic ajoute sans changer le
+mode » — **n'était pas implémentable telle que je l'avais dessinée** : un clic ne
+voit que *(assignée ?, mode de l'étape)*, donc « assignée + étape en ET » ne peut
+déclencher qu'une seule action. Si c'est « retirer », on ne revient jamais de ET à
+OU sans vider l'étape. Je l'ai signalé avec les trois issues possibles plutôt que
+de livrer un compromis bancal ; il a choisi le cycle littéral et son effet de bord.
+
+### Implémentation
+
+- [x] `types.ts` / `backend/store.go` — `triggerMode?: 'any' | 'all'` ;
+      `allTriggerIds` déprécié mais **conservé dans le DTO Go**, sinon le champ
+      serait supprimé au chargement et la migration ne le verrait jamais.
+- [x] `lib/triggers.ts` — `normalizeStepTriggers` (pure, donc **testable** : c'est
+      tout l'intérêt de ne pas l'enterrer dans un callback React), `modeOf`,
+      `cycleStepTrigger` et `stepTriggerMode` réécrits, `isStepActive` simplifié.
+- [x] `store.tsx` — `cleanRoadmaps` délègue la migration ; `setStepTriggers`,
+      `addStep`, `deleteTrigger` et `copyRoadmapToProfile` sur une liste + un mode.
+- [x] `Methodology.tsx` — préfixes `OU `/`ET ` retirés des trois emplacements de
+      pastilles ; les infobulles disent l'opérateur *et* ce que fera le prochain
+      clic, puisque le libellé ne le porte plus.
+
+### Résultats
+
+**89 assertions, à effectif constant** : les tests des deux listes (table de
+composition, corollaire) ont été **supprimés avec le modèle qu'ils décrivaient**,
+et ceux de la migration et du cycle ont pris leur place. `make test` vert.
+
+Les cinq garde-fous sont prouvés capables d'échouer, dont deux qui méritaient de
+l'être :
+
+- **l'effet de bord du cycle** (1er clic → OU même sur une étape en ET) est
+  épinglé, avec un commentaire disant *pourquoi* ne pas le « corriger » ;
+- **la clé de groupe** — celle qui était un faux garde-fou en 0.13.0 — est
+  maintenant isolée par deux étapes de **même liste** et de modes différents.
+
+### Reste ouvert
+
+- L'effet de bord subsiste : ajouter une pastille à une étape en ET la repasse en
+  OU. Assumé, documenté, testé. La seule façon de l'éviter serait un contrôle
+  d'opérateur séparé, écarté par l'utilisateur.
+- `StepDTO.AllTriggerIDs` reste dans le DTO Go le temps que les profils écrits par
+  la 0.13.0 soient relus une fois. À supprimer plus tard.

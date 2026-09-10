@@ -11,6 +11,8 @@ import {
   cycleStepTrigger,
   describeStepTriggers,
   isStepDone,
+  modeOf,
+  normalizeStepTriggers,
   stepTriggerMode,
   stepTriggers,
   substepProgress,
@@ -37,11 +39,11 @@ const TRIGGERS: Trigger[] = [
   { id: 'tg-ldap', label: 'LDAP' },
 ];
 
-const step = (id: string, triggerIds?: string[], allTriggerIds?: string[]): Step => ({
+const step = (id: string, triggerIds?: string[], triggerMode?: 'any' | 'all'): Step => ({
   id,
   text: id,
   ...(triggerIds ? { triggerIds } : {}),
-  ...(allTriggerIds ? { allTriggerIds } : {}),
+  ...(triggerMode ? { triggerMode } : {}),
 });
 // A step carrying a checklist; the items' ids are `${id}-1`, `${id}-2`, …
 const withSubs = (id: string, n: number): Step => ({
@@ -191,42 +193,64 @@ describe('isStepActive', () => {
     expect(isStepActive(s, { 'tg-http': true })).toBe(false);
   });
 
-  // v0.13.0: the AND list. Every one of them must be on.
-  it('requires ALL of the AND list', () => {
-    const s = step('s1', undefined, ['tg-ftp', 'tg-smb']);
+  // v0.14.0 — the operator belongs to the STEP, so every one of its triggers
+  // must be on in 'all' mode.
+  it("requires every trigger in 'all' mode", () => {
+    const s = step('s1', ['tg-ftp', 'tg-smb'], 'all');
     expect(isStepActive(s, {})).toBe(false);
     expect(isStepActive(s, { 'tg-ftp': true })).toBe(false);
     expect(isStepActive(s, { 'tg-ftp': true, 'tg-smb': true })).toBe(true);
   });
 
-  // The composition, spelled out: (no OR, or one on) AND (all ANDs on).
-  it('combines the two lists as (any OR) and (all AND)', () => {
-    const s = step('s1', ['tg-ftp', 'tg-smb'], ['tg-http']);
-    expect(isStepActive(s, { 'tg-ftp': true })).toBe(false); // the AND is missing
-    expect(isStepActive(s, { 'tg-http': true })).toBe(false); // no OR satisfied
-    expect(isStepActive(s, { 'tg-ftp': true, 'tg-http': true })).toBe(true);
-    expect(isStepActive(s, { 'tg-smb': true, 'tg-http': true })).toBe(true);
+  it("treats an absent mode as 'any', which is what pre-0.14 steps meant", () => {
+    const s = step('s1', ['tg-ftp', 'tg-smb']);
+    expect(modeOf(s)).toBe('any');
+    expect(isStepActive(s, { 'tg-ftp': true })).toBe(true);
   });
 
-  // Known corollary, asserted so nobody "fixes" it by accident: a lone OR next
-  // to an AND behaves like a second AND, since both halves must hold.
-  it('makes a lone OR behave like an AND when combined with one', () => {
-    const s = step('s1', ['tg-ftp'], ['tg-smb']);
-    expect(isStepActive(s, { 'tg-ftp': true })).toBe(false);
-    expect(isStepActive(s, { 'tg-smb': true })).toBe(false);
-    expect(isStepActive(s, { 'tg-ftp': true, 'tg-smb': true })).toBe(true);
+  it('is unconditional when the list is empty, whatever the mode', () => {
+    expect(isStepActive(step('s1', []), {})).toBe(true);
+    expect(isStepActive(step('s1', [], 'all'), {})).toBe(true);
+  });
+});
+
+// The v0.13.0 two-list model lived for one release. Folding it in is what keeps
+// an already-saved AND condition from silently becoming unconditional.
+describe('normalizeStepTriggers', () => {
+  it('folds a legacy AND list into the single list with mode all', () => {
+    const legacy: Step = { id: 's1', text: 's1', allTriggerIds: ['tg-ftp', 'tg-smb'] };
+    const out = normalizeStepTriggers(legacy);
+    expect(out.triggerIds).toEqual(['tg-ftp', 'tg-smb']);
+    expect(out.triggerMode).toBe('all');
+    expect(out.allTriggerIds).toBeUndefined();
+    // and the condition it expressed is preserved
+    expect(isStepActive(out, { 'tg-ftp': true })).toBe(false);
+    expect(isStepActive(out, { 'tg-ftp': true, 'tg-smb': true })).toBe(true);
   });
 
-  it('is unconditional when both lists are empty', () => {
-    expect(isStepActive(step('s1', [], []), {})).toBe(true);
+  it('merges both legacy lists without duplicating an id', () => {
+    const legacy: Step = {
+      id: 's1',
+      text: 's1',
+      triggerIds: ['tg-ftp'],
+      allTriggerIds: ['tg-ftp', 'tg-smb'],
+    };
+    expect(normalizeStepTriggers(legacy).triggerIds).toEqual(['tg-ftp', 'tg-smb']);
+  });
+
+  it('leaves a current step alone and always drops the dead field', () => {
+    const cur = step('s1', ['tg-ftp'], 'all');
+    expect(normalizeStepTriggers(cur)).toEqual(cur);
+    expect('allTriggerIds' in normalizeStepTriggers(step('s1'))).toBe(false);
   });
 });
 
 // v0.13.0 — the three-state chip: absent → OU → ET → absent.
 describe('stepTriggerMode / cycleStepTrigger', () => {
-  it('reports the mode a step uses a trigger in', () => {
-    const s = step('s1', ['tg-ftp'], ['tg-smb']);
-    expect(stepTriggerMode(s, 'tg-ftp')).toBe('any');
+  // A chip wears the STEP's mode, so every assigned chip reports the same one.
+  it('reports the step mode for an assigned chip, off for the others', () => {
+    const s = step('s1', ['tg-ftp', 'tg-smb'], 'all');
+    expect(stepTriggerMode(s, 'tg-ftp')).toBe('all');
     expect(stepTriggerMode(s, 'tg-smb')).toBe('all');
     expect(stepTriggerMode(s, 'tg-http')).toBe('off');
   });
@@ -234,29 +258,41 @@ describe('stepTriggerMode / cycleStepTrigger', () => {
   it('cycles off → any → all → off and comes back to the start', () => {
     let s: Step = step('s1');
     const click = () => {
-      const next = cycleStepTrigger(s, 'tg-ftp');
-      s = { ...s, ...next };
+      s = { ...s, ...cycleStepTrigger(s, 'tg-ftp') };
       return stepTriggerMode(s, 'tg-ftp');
     };
     expect(click()).toBe('any');
     expect(click()).toBe('all');
     expect(click()).toBe('off');
     expect(s.triggerIds).toEqual([]);
-    expect(s.allTriggerIds).toEqual([]);
   });
 
-  it('never leaves a trigger in both lists at once', () => {
-    const s = step('s1', ['tg-ftp'], []);
-    const next = cycleStepTrigger(s, 'tg-ftp');
-    expect(next.triggerIds).not.toContain('tg-ftp');
-    expect(next.allTriggerIds).toContain('tg-ftp');
+  // THE known side effect, pinned so nobody "fixes" it into an unreachable
+  // state: the first click sets 'any', so adding a chip to an 'all' step flips
+  // the WHOLE step back to 'any'. One more click puts it back.
+  it("flips the whole step back to 'any' when a chip is added to an 'all' step", () => {
+    const s = step('s1', ['tg-ftp', 'tg-smb'], 'all');
+    const added = cycleStepTrigger(s, 'tg-http');
+    expect(added.triggerIds).toEqual(['tg-ftp', 'tg-smb', 'tg-http']);
+    expect(added.triggerMode).toBe('any');
+    // and one more click on that chip restores 'all' for every one of them
+    const back = cycleStepTrigger({ ...s, ...added }, 'tg-http');
+    expect(back.triggerMode).toBe('all');
+    expect(back.triggerIds).toEqual(['tg-ftp', 'tg-smb', 'tg-http']);
   });
 
-  it('leaves the other triggers alone', () => {
-    const s = step('s1', ['tg-ftp', 'tg-smb'], ['tg-ldap']);
+  it('flipping the mode from any chip restyles the step, not just that chip', () => {
+    const s = step('s1', ['tg-ftp', 'tg-smb']);
+    const next = { ...s, ...cycleStepTrigger(s, 'tg-smb') };
+    expect(stepTriggerMode(next, 'tg-ftp')).toBe('all');
+    expect(stepTriggerMode(next, 'tg-smb')).toBe('all');
+  });
+
+  it('removes only the clicked chip and keeps the mode', () => {
+    const s = step('s1', ['tg-ftp', 'tg-smb'], 'all');
     const next = cycleStepTrigger(s, 'tg-smb');
     expect(next.triggerIds).toEqual(['tg-ftp']);
-    expect(next.allTriggerIds).toEqual(['tg-ldap', 'tg-smb']);
+    expect(next.triggerMode).toBe('all');
   });
 });
 
@@ -377,20 +413,11 @@ describe('stepGroupKey', () => {
     expect(stepGroupKey(step('a', ['tg-ftp']))).not.toBe(stepGroupKey(step('b', ['tg-smb'])));
   });
 
-  // `A or B` and `A and B` are different conditions and must not share a header.
-  // The discriminating case is two steps with the SAME OR list and different AND
-  // lists: with the AND half missing from the key they would collide. (The
-  // any-only vs all-only pair below does not isolate it — it differs on the OR
-  // half too.)
-  it('keys the AND list into the group, not just the OR one', () => {
-    expect(stepGroupKey(step('a', ['tg-ftp'], ['tg-smb']))).not.toBe(
-      stepGroupKey(step('b', ['tg-ftp'], ['tg-ldap'])),
-    );
-  });
-
-  it('keeps `A ou B` and `A et B` in separate groups', () => {
-    expect(stepGroupKey(step('a', ['tg-ftp']))).not.toBe(
-      stepGroupKey(step('b', undefined, ['tg-ftp'])),
+  // `A ou B` and `A et B` are different conditions and must not share a header.
+  // Same list, different mode, is the case that isolates the mode half of the key.
+  it('keys the mode into the group, not just the list', () => {
+    expect(stepGroupKey(step('a', ['tg-ftp', 'tg-smb']))).not.toBe(
+      stepGroupKey(step('b', ['tg-ftp', 'tg-smb'], 'all')),
     );
   });
 });
@@ -398,22 +425,15 @@ describe('stepGroupKey', () => {
 describe('stepTriggers', () => {
   it('follows the roadmap declaration order, not the click order', () => {
     const s = step('a', ['tg-http', 'tg-ftp']);
-    expect(stepTriggers(s, TRIGGERS).map((x) => x.trigger.label)).toEqual(['FTP', 'HTTP']);
-  });
-
-  it('carries each trigger\'s mode', () => {
-    const s = step('a', ['tg-ftp'], ['tg-smb']);
-    expect(stepTriggers(s, TRIGGERS)).toEqual([
-      { trigger: TRIGGERS[0], mode: 'any' },
-      { trigger: TRIGGERS[1], mode: 'all' },
-    ]);
+    expect(stepTriggers(s, TRIGGERS).map((t) => t.label)).toEqual(['FTP', 'HTTP']);
   });
 
   // A dangling id renders as nothing rather than as a raw uuid. The load-time
   // normaliser (store.cleanRoadmaps) prunes them, so this is belt and braces.
   it('skips an id no trigger declares', () => {
-    expect(stepTriggers(step('a', ['tg-ftp', 'tg-gone']), TRIGGERS).map((x) => x.trigger.label))
-      .toEqual(['FTP']);
+    expect(stepTriggers(step('a', ['tg-ftp', 'tg-gone']), TRIGGERS).map((t) => t.label)).toEqual([
+      'FTP',
+    ]);
     expect(stepTriggers(step('a'), TRIGGERS)).toEqual([]);
   });
 });
@@ -425,18 +445,10 @@ describe('describeStepTriggers', () => {
     expect(describeStepTriggers(step('a'), TRIGGERS)).toBe('');
   });
 
-  it('joins the OR list with « ou » and the AND list with « et »', () => {
+  it('joins with « ou » or « et » according to the step mode', () => {
     expect(describeStepTriggers(step('a', ['tg-ftp', 'tg-smb']), TRIGGERS)).toBe('FTP ou SMB');
-    expect(describeStepTriggers(step('a', undefined, ['tg-ftp', 'tg-smb']), TRIGGERS)).toBe(
+    expect(describeStepTriggers(step('a', ['tg-ftp', 'tg-smb'], 'all'), TRIGGERS)).toBe(
       'FTP et SMB',
     );
-  });
-
-  it('parenthesises a multi-term OR when an AND is also present', () => {
-    expect(describeStepTriggers(step('a', ['tg-ftp', 'tg-smb'], ['tg-ldap']), TRIGGERS)).toBe(
-      '(FTP ou SMB) et LDAP',
-    );
-    // A single OR term needs no parentheses.
-    expect(describeStepTriggers(step('a', ['tg-ftp'], ['tg-ldap']), TRIGGERS)).toBe('FTP et LDAP');
   });
 });

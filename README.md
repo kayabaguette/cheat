@@ -173,12 +173,16 @@ Détecté sur la cible :  [✓ FTP] [✓ SMB] [ HTTP ] [ LDAP ]
   of a named trigger rather than a per-step note: "this host has an FTP" gates
   enumeration, exploitation and post-exploitation alike, and the roadmap stays
   reusable from one target to the next.
-- **Several triggers on one step combine as OR *or* AND.** A chip cycles on
-  click: **absent → OU → ET → absent**, with a **dashed** border for OU and a
-  **solid** one for ET (the colour, separately, says whether the target has that
-  trigger). A step applies when *(no OU, or one of them is on)* **and** *(all the
-  ET are on)*. A lone OU next to an ET therefore behaves like a second ET, since
-  both halves must hold.
+- **Several triggers on one step combine as OR *or* AND — one operator for the
+  whole step.** All of a step's chips share it, so a step is never half one and
+  half the other: either they are all **dashed** (OU — any one of them is enough)
+  or all **solid** (ET — every one is required). The colour says, separately,
+  whether the target has that trigger.
+
+  A chip cycles on click: **unused → OU → ET → unused**, the middle step
+  restyling every chip of the step at once. One quirk worth knowing: since the
+  first click sets OU, adding a chip to a step already in ET flips the whole step
+  back to OU — one more click puts it back.
 - **An inactive step is dimmed, not checkable, and out of the progress maths** —
   numerator *and* denominator, which is what lets a target reach 100% without the
   services it does not run. « ☐ masquer les inactives » hides them (and any phase
