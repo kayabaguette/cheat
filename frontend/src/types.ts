@@ -76,12 +76,31 @@ export interface Snippet {
   locals: SnippetLocal[];
 }
 
+// --- v0.11.0: conditional steps -------------------------------------------
+// A TRIGGER is one named condition a roadmap can branch on — a service found on
+// the target ("FTP", "SMB", "HTTP"). Declared per roadmap, so each roadmap owns
+// its own condition vocabulary. Whether a trigger is actually ON is per-target
+// PROGRESS, not structure: it lives in AppState.activeTriggers, next to `checks`.
+export interface Trigger {
+  id: string;
+  // Free label, shown as a chip. Matched case-insensitively against nmap service
+  // names by the « détecter depuis le résultat » helper (lib/triggers.ts).
+  label: string;
+}
+
 export interface Step {
   id: string;
   text: string;
   commandId?: string;
   // A step may link a command, a snippet, or BOTH (they are cumulative).
   snippetId?: string;
+  // Ids of the triggers that make this step apply. Absent or empty = the step is
+  // UNCONDITIONAL and always applies. Several ids are OR'd: any one being on is
+  // enough (there is deliberately no AND in v1). A step whose triggers are all
+  // off is INACTIVE: dimmed, not checkable, and excluded from progress — both
+  // numerator and denominator, which is what lets a target with 3 services out
+  // of 12 still reach 100%.
+  triggerIds?: string[];
 }
 
 export interface Phase {
@@ -94,6 +113,9 @@ export interface Roadmap {
   id: string;
   label: string;
   phases: Phase[];
+  // This roadmap's condition vocabulary. Optional so every pre-0.11.0 export
+  // stays importable unchanged.
+  triggers?: Trigger[];
 }
 
 export interface VariableDef {
@@ -130,6 +152,11 @@ export interface AppState {
   openSteps?: Record<string, boolean>;
   // Per-step captured command output/result (keyed by stepId, like checks/openSteps).
   results?: Record<string, string>;
+  // Which triggers are ON, keyed by triggerId — "this target has an FTP". This is
+  // per-engagement PROGRESS, exactly like `checks`, so it is persisted and it is
+  // what « Réinitialiser la progression » clears. Optional: absent from every
+  // pre-0.11.0 export.
+  activeTriggers?: Record<string, boolean>;
   settings: {
     theme: ThemeName;
     activeRoadmap: string | null;

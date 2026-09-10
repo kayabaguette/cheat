@@ -421,3 +421,94 @@ toucher un seul de ces deux chemins.
   `$env`) est purgée au chargement par `cleanLocals`. Aucun snippet dans le seed.
 - Toujours pas de test de rendu (`CodeBlock`, le double-clic) : il faudrait jsdom +
   `@testing-library/react`. La logique est couverte, l'interaction ne l'est pas.
+
+---
+
+## v0.11.0 — Pseudo-catégorie « Favoris » + étapes conditionnelles
+
+**Demande.** (1) Une catégorie « Favoris » au-dessus de « Toutes les commandes »,
+seulement s'il existe au moins un favori. (2) Des étapes conditionnelles dans la
+Méthodologie — « dans discovery, s'il y a un FTP, alors faire l'énumération FTP » —
+avec une proposition de conception à valider.
+
+### Décisions prises avec l'utilisateur (avant tout code)
+
+- [x] **Déclencheurs nommés** déclarés au niveau de la roadmap, référencés par les
+      étapes — retenu contre la condition en texte libre (aucune réutilisation :
+      6 étapes FTP = 6 fois la même chaîne) et contre l'étape parente (un port
+      ouvert n'est pas une tâche qu'on accomplit).
+- [x] **Étapes inactives grisées, non cochables, hors progression**, avec un
+      interrupteur « masquer les inactives ».
+- [x] **Auto-détection maintenant** (et non plus tard) : bouton « détecter depuis
+      le résultat » qui lit la sortie nmap déjà collée.
+- [x] **Favoris groupés catégorie › outil**, comme n'importe quelle autre portée.
+
+### Implémentation
+
+- [x] `types.ts` — `Trigger {id,label}`, `Roadmap.triggers?`, `Step.triggerIds?`
+      (sémantique **OU**), `AppState.activeTriggers?`. Tous **optionnels** : aucun
+      export antérieur ne casse, motif de `Step.snippetId?` en 0.9.0.
+- [x] **`backend/store.go` — obligatoire, pas optionnel.** Le PUT est démarshallé
+      dans des structs typées puis re-marshallé : un champ absent du DTO est
+      supprimé au premier autosave. `StepDTO.TriggerIDs`, `TriggerDTO` sur
+      `RoadmapDTO`, `AppState.ActiveTriggers` + son init dans `emptyState()`.
+- [x] `lib/triggers.ts` — toute la logique **pure** : `isStepActive`,
+      `progressOf`, `phaseHasActiveStep`, `stepGroupKey`, `triggerLabels`,
+      `parseServices`, `matchTriggers`. Sortie de la vue précisément pour être
+      testable sans DOM, comme `lib/vars.ts`.
+- [x] `store.tsx` — `favOnly` ; `activeTriggers` + `hideInactiveSteps` ; les
+      actions `addTrigger` / `renameTrigger` / `deleteTrigger` / `toggleTrigger` /
+      `activateTriggers` / `setStepTriggers` ; les cascades ; `cleanRoadmaps` au
+      chargement ; `copyRoadmapToProfile`.
+- [x] `Sidebar.tsx` / `Library.tsx` — la ligne « ★ Favoris » et le prédicat de
+      filtre. `DataMenu.tsx` — `activeTriggers` dans la liste blanche d'import.
+- [x] `Methodology.tsx` — bande de pastilles, interrupteur, sous-titres de groupe
+      implicites, pastilles par étape + sélecteur en mode édition, case désactivée,
+      bouton de détection, troisième `<select>` du brouillon d'ajout.
+- [x] Docs : `CHANGELOG.md` `[0.11.0]`, `README.md` (nouvelle section
+      « Conditional steps » + contrat d'import/export), `SPEC.md` addendum
+      **item 13**.
+
+### Résultats
+
+**`make test` vert** (Go + `tsc --noEmit` + Vitest, en conteneurs). Nouvelle suite
+`lib/triggers.test.ts`, **31 assertions** → 67 au total.
+
+**Les cinq garde-fous sont prouvés capables d'échouer** :
+
+- filtre d'activité dans `progressOf` → **3 tests rouges** ;
+- exigence `open` dans la ligne de port → **2** ;
+- plancher de 3 caractères du fallback → **1** ;
+- normalisation `ssl/` + `?` → **2** ;
+- fallback restreint aux labels inconnus du catalogue → **1**.
+
+**Un test bidon attrapé au passage.** La première version du test `ssl/http`
+passait *aussi bien avec le découpage supprimé* : le fallback par sous-chaîne
+rattrapait le cas. Cela a révélé un vrai défaut de conception — un label de 3+
+caractères correspondait par sous-chaîne **même quand le catalogue le connaissait**,
+donc « HTTP » se déclenchait sur un hôte purement `https`. Le catalogue est
+désormais **précis** (ports et noms exacts), le fallback réservé aux labels
+inconnus, et les deux tests isolent vraiment ce qu'ils nomment.
+
+**Vérifié dans le navigateur** (dév isolé, base neuve, conteneurs tués après) :
+ligne Favoris absente puis présente au premier ★, filtre et regroupement, retour
+par « réinitialiser » ; progression **0/10 → 0/6** dès que 4 étapes deviennent
+conditionnelles, **0/6 → 0/8** en cochant SMB ; étapes HTTP grisées à 0.42 avec
+case `disabled` ; deux sous-titres `HTTP · INACTIF` pour deux étapes non
+consécutives (correct) ; interrupteur qui masque ; détection nmap → FTP + HTTP
+cochés, `3389/tcp closed` ignoré, progression 0/10 ; **rechargement** → `triggers`,
+`triggerIds` et `activeTriggers` relus depuis l'API (la preuve que le backend est
+fait) ; reset qui décoche les déclencheurs ; suppression d'un déclencheur qui le
+détache des deux étapes, lesquelles redeviennent inconditionnelles (0/6 → 0/8).
+
+### Reste ouvert
+
+- **Sémantique OU seulement.** Une étape exigeant FTP **et** SMB n'est pas
+  exprimable. Le champ étant une liste, le ET s'ajouterait sans changer le modèle.
+- **Le catalogue nmap est un jugement**, pas une preuve : ~24 services. Un service
+  exotique n'est pas détecté et reste à cocher à la main — le bouton ne décochant
+  jamais rien, le pire cas est « il n'a rien trouvé ».
+- **Poule et œuf mineur** : le bouton `＋ déclencheur` d'une étape n'apparaît que
+  si la roadmap déclare déjà un déclencheur. Documenté dans le README.
+- Toujours aucun test de rendu (jsdom + `@testing-library/react` non installés) :
+  la logique est couverte, l'interaction ne l'est que par la passe navigateur.

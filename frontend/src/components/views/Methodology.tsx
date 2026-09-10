@@ -3,12 +3,22 @@ import type { CSSProperties } from 'react';
 import { useStore } from '../../store';
 import { resolve } from '../../lib/vars';
 import { definedNames, commandContext } from '../../lib/varsets';
+import {
+  allSteps,
+  isStepActive,
+  matchTriggers,
+  phaseHasActiveStep,
+  progressOf,
+  stepGroupKey,
+  triggerLabels,
+} from '../../lib/triggers';
 import { MONO, tabBar, pillBase, pillOn, barTrackBase, codePreCompact } from '../../lib/ui';
 import { CodeBlock } from '../CodeBlock';
 import { CommandLine } from '../CommandLine';
 import { CopyToProfile } from '../CopyToProfile';
 import { EmptyState } from '../EmptyState';
 import { CopyButton } from '../CopyButton';
+import type { Step } from '../../types';
 
 // Méthodologie — faithful port of the prototype's roadmap/checklist view
 // (prototype markup ~lines 186-301, logic ~1047-1149), restructured to React.
@@ -283,6 +293,123 @@ const addStepInput: CSSProperties = {
   fontSize: '12.5px',
   padding: '7px 10px',
 };
+// --- v0.11.0: conditional steps -------------------------------------------
+// The chip strip under the roadmap header: what discovery found on this target.
+const trigStrip: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: '6px',
+  padding: '9px 11px',
+  marginBottom: '14px',
+  background: 'var(--surface2)',
+  border: '1px solid var(--border)',
+};
+const trigStripLabel: CSSProperties = {
+  fontSize: '10.5px',
+  letterSpacing: '.09em',
+  textTransform: 'uppercase',
+  color: 'var(--faint)',
+  fontWeight: 600,
+  marginRight: '4px',
+};
+const chipBase: CSSProperties = {
+  cursor: 'pointer',
+  border: '1px solid var(--border2)',
+  background: 'transparent',
+  color: 'var(--muted)',
+  padding: '3px 9px',
+  fontSize: '11.5px',
+  fontFamily: MONO,
+  display: 'inline-flex',
+  gap: '6px',
+  alignItems: 'center',
+};
+const chipOn: CSSProperties = {
+  ...chipBase,
+  background: 'var(--acc-dim)',
+  color: 'var(--acc)',
+  border: '1px solid var(--acc-line)',
+};
+const chipXBtn: CSSProperties = {
+  cursor: 'pointer',
+  border: 'none',
+  background: 'transparent',
+  color: 'inherit',
+  padding: 0,
+  fontSize: '11px',
+  lineHeight: 1,
+  fontFamily: 'inherit',
+};
+const chipLabelBtn: CSSProperties = {
+  ...chipXBtn,
+  fontFamily: MONO,
+  fontSize: '11.5px',
+};
+const trigInput: CSSProperties = {
+  ...inputBase,
+  width: '104px',
+  fontSize: '11.5px',
+  padding: '3px 7px',
+  fontFamily: MONO,
+};
+// The `── FTP ──` sub-header. Consecutive steps sharing a trigger set get one,
+// so the grouping is a pure rendering effect and the data model stays flat.
+const groupHead: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  padding: '11px 0 2px',
+  fontFamily: MONO,
+  fontSize: '10px',
+  letterSpacing: '.08em',
+  textTransform: 'uppercase',
+};
+const groupRule: CSSProperties = { flex: 1, height: '1px', background: 'var(--border)' };
+// Per-step trigger chips, under the step text (stepTextWrap is already a column).
+const stepChipRow: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: '5px',
+  alignItems: 'center',
+};
+const miniChip: CSSProperties = {
+  border: '1px solid var(--acc-line)',
+  background: 'var(--acc-dim)',
+  color: 'var(--acc)',
+  padding: '1px 6px',
+  fontSize: '10px',
+  fontFamily: MONO,
+  display: 'inline-flex',
+  gap: '4px',
+  alignItems: 'center',
+};
+const miniChipOff: CSSProperties = {
+  ...miniChip,
+  border: '1px solid var(--border2)',
+  background: 'transparent',
+  color: 'var(--faint)',
+};
+const miniBtn: CSSProperties = {
+  cursor: 'pointer',
+  border: '1px dashed var(--border2)',
+  background: 'transparent',
+  color: 'var(--faint)',
+  padding: '1px 6px',
+  fontSize: '10px',
+  fontFamily: MONO,
+};
+const detectBtn: CSSProperties = {
+  cursor: 'pointer',
+  border: '1px solid var(--border2)',
+  background: 'transparent',
+  color: 'var(--muted)',
+  padding: '2px 8px',
+  fontSize: '10.5px',
+  fontFamily: 'inherit',
+  marginLeft: '9px',
+};
+
 const addStepSelect: CSSProperties = {
   ...inputBase,
   flex: 1,
@@ -413,6 +540,9 @@ interface StepDraft {
   commandId: string;
   // A step may link a command, a snippet, or both (cumulative).
   snippetId: string;
+  // One optional initial trigger (v0.11.0). More can be attached on the row
+  // afterwards — the model holds a list, the draft form offers the common case.
+  triggerId: string;
 }
 interface DragStep {
   phaseId: string;
@@ -435,9 +565,12 @@ export function Methodology() {
     checks,
     openSteps,
     results,
+    activeTriggers,
+    hideInactiveSteps,
     newRmOpen,
     setActiveRoadmap,
     toggleMethodEdit,
+    setHideInactiveSteps,
     addRoadmap,
     renameRoadmap,
     deleteRoadmap,
@@ -453,6 +586,13 @@ export function Methodology() {
     setResult,
     setLocalValue,
     resetProgress,
+    addTrigger,
+    renameTrigger,
+    deleteTrigger,
+    toggleTrigger,
+    activateTriggers,
+    setStepTriggers,
+    flash,
   } = useStore();
 
   // Inline create/draft form state (transient, memory-only).
@@ -464,6 +604,12 @@ export function Methodology() {
   const [dragOver, setDragOver] = useState<DragOver | null>(null);
   const [dragPhaseIdx, setDragPhaseIdx] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
+  // Conditional steps (v0.11.0), all transient: which chip is being renamed, the
+  // « + déclencheur » draft, and which step has its trigger picker unfolded.
+  const [renamingTrig, setRenamingTrig] = useState<string | null>(null);
+  const [trigDraft, setTrigDraft] = useState('');
+  const [newTrigLabel, setNewTrigLabel] = useState('');
+  const [pickerStep, setPickerStep] = useState<string | null>(null);
 
   const defNames = useMemo(() => definedNames(values), [values]);
 
@@ -510,7 +656,7 @@ export function Methodology() {
   };
 
   const draftFor = (phaseId: string): StepDraft =>
-    stepDrafts[phaseId] ?? { text: '', commandId: '', snippetId: '' };
+    stepDrafts[phaseId] ?? { text: '', commandId: '', snippetId: '', triggerId: '' };
   const setDraft = (phaseId: string, patch: Partial<StepDraft>) =>
     setStepDrafts((s) => ({ ...s, [phaseId]: { ...draftFor(phaseId), ...patch } }));
 
@@ -519,13 +665,62 @@ export function Methodology() {
     const d = draftFor(phaseId);
     const text = d.text.trim();
     if (!text) return;
-    addStep(rm.id, phaseId, text, d.commandId || undefined, d.snippetId || undefined);
-    setStepDrafts((s) => ({ ...s, [phaseId]: { text: '', commandId: '', snippetId: '' } }));
+    addStep(
+      rm.id,
+      phaseId,
+      text,
+      d.commandId || undefined,
+      d.snippetId || undefined,
+      d.triggerId ? [d.triggerId] : undefined,
+    );
+    setStepDrafts((s) => ({
+      ...s,
+      [phaseId]: { text: '', commandId: '', snippetId: '', triggerId: '' },
+    }));
   };
 
   const onReset = () => {
     if (!rm) return;
-    if (window.confirm('Réinitialiser la progression de cette méthodologie ?')) resetProgress(rm.id);
+    // Say what it clears: since 0.11.0 the detected triggers go too, because they
+    // describe the TARGET and would otherwise be inherited by the next one.
+    const msg = (rm.triggers ?? []).length
+      ? 'Réinitialiser la progression de cette méthodologie ?\n\nLes cases cochées ET les déclencheurs détectés seront effacés (les résultats collés sont conservés).'
+      : 'Réinitialiser la progression de cette méthodologie ?';
+    if (window.confirm(msg)) resetProgress(rm.id);
+  };
+
+  // Attach/detach one trigger on an EXISTING step. The step keeps its id, and
+  // therefore its checks, its pasted result and its snippet-local values — which
+  // a delete-and-recreate would silently drop (there is no updateStep action).
+  const toggleStepTrigger = (phaseId: string, step: Step, triggerId: string) => {
+    if (!rm) return;
+    const cur = step.triggerIds ?? [];
+    const next = cur.includes(triggerId)
+      ? cur.filter((id) => id !== triggerId)
+      : [...cur, triggerId];
+    setStepTriggers(rm.id, phaseId, step.id, next);
+  };
+
+  // « détecter depuis le résultat » — read a pasted nmap run and tick the
+  // triggers it vouches for. The delta is computed HERE, against the store's
+  // current map, so the toast reports what actually changed; and nothing is ever
+  // unticked, so a chip set by hand always wins (lib/triggers.ts).
+  const onDetect = (stepId: string) => {
+    if (!rm) return;
+    const triggers = rm.triggers ?? [];
+    const ids = matchTriggers(results[stepId] ?? '', triggers);
+    if (!ids.length) {
+      flash('Aucun service reconnu dans le résultat');
+      return;
+    }
+    const added = ids.filter((id) => !activeTriggers[id]);
+    if (!added.length) {
+      flash('Déclencheurs déjà à jour');
+      return;
+    }
+    activateTriggers(added);
+    const labels = triggers.filter((t) => added.includes(t.id)).map((t) => t.label);
+    flash(added.length + ' déclencheur(s) activé(s) : ' + labels.join(', '));
   };
 
   const clearStepDrag = () => {
@@ -586,15 +781,17 @@ export function Methodology() {
         ) : (
           (() => {
             // Global progress over every step in the roadmap (equal weight, Q61).
-            let rmDone = 0;
-            let rmTotal = 0;
-            for (const ph of rm.phases) {
-              for (const st of ph.steps) {
-                rmTotal += 1;
-                if (checks[st.id]) rmDone += 1;
-              }
-            }
-            const rmProg = progress(rmDone, rmTotal);
+            // Since 0.11.0 an INACTIVE step is out of the numerator AND the
+            // denominator (lib/triggers.ts), which is what lets a target running
+            // 3 services out of 12 still reach 100%.
+            const rmCount = progressOf(allSteps(rm.phases), activeTriggers, checks);
+            const rmProg = progress(rmCount.done, rmCount.total);
+            const roadmapTriggers = rm.triggers ?? [];
+            // The « masquer les inactives » switch is pointless on a roadmap with
+            // no conditional step at all, so it only appears once there is one.
+            const hasConditional = rm.phases.some((ph) =>
+              ph.steps.some((st) => (st.triggerIds ?? []).length > 0),
+            );
 
             return (
               <>
@@ -610,6 +807,15 @@ export function Methodology() {
                   <button onClick={toggleMethodEdit} style={methodEdit ? editBtnOn : editBtnBase}>
                     {methodEdit ? 'Terminé' : '✎ Modifier'}
                   </button>
+                  {hasConditional && (
+                    <button
+                      onClick={() => setHideInactiveSteps(!hideInactiveSteps)}
+                      title="Les étapes dont aucun déclencheur n'est coché"
+                      style={hideInactiveSteps ? editBtnOn : editBtnBase}
+                    >
+                      {hideInactiveSteps ? '☑' : '☐'} masquer les inactives
+                    </button>
+                  )}
                   <button onClick={onReset} style={editBtnBase}>
                     Réinitialiser la progression
                   </button>
@@ -634,18 +840,146 @@ export function Methodology() {
                   </div>
                 )}
 
+                {/* « Détecté sur la cible » — this roadmap's condition vocabulary.
+                    Tick what discovery found and every step carrying that trigger
+                    becomes active, in every phase at once. Rendered as soon as the
+                    roadmap declares one, and always in edit mode so the first one
+                    can be created. */}
+                {(methodEdit || roadmapTriggers.length > 0) && (
+                  <div style={trigStrip}>
+                    <span style={trigStripLabel}>Détecté sur la cible</span>
+                    {roadmapTriggers.map((t) =>
+                      renamingTrig === t.id ? (
+                        <input
+                          key={t.id}
+                          autoFocus
+                          value={trigDraft}
+                          onChange={(e) => setTrigDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              renameTrigger(rm.id, t.id, trigDraft);
+                              setRenamingTrig(null);
+                            } else if (e.key === 'Escape') {
+                              setRenamingTrig(null);
+                            }
+                          }}
+                          onBlur={() => {
+                            renameTrigger(rm.id, t.id, trigDraft);
+                            setRenamingTrig(null);
+                          }}
+                          spellCheck="false"
+                          autoCorrect="off"
+                          autoCapitalize="off"
+                          style={trigInput}
+                        />
+                      ) : (
+                        <span key={t.id} style={activeTriggers[t.id] ? chipOn : chipBase}>
+                          {/* In edit mode the label edits the vocabulary; outside
+                              it, it ticks the target. Same split as the rest of
+                              this view: edit mode edits, read mode uses. */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (methodEdit) {
+                                setTrigDraft(t.label);
+                                setRenamingTrig(t.id);
+                              } else {
+                                toggleTrigger(t.id);
+                              }
+                            }}
+                            title={methodEdit ? 'Renommer' : 'Présent sur la cible ?'}
+                            style={chipLabelBtn}
+                          >
+                            {!methodEdit && activeTriggers[t.id] ? '✓ ' : ''}
+                            {t.label}
+                          </button>
+                          {methodEdit && (
+                            <button
+                              type="button"
+                              onClick={() => deleteTrigger(rm.id, t.id)}
+                              title="Supprimer ce déclencheur (retiré de toutes les étapes)"
+                              style={chipXBtn}
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </span>
+                      ),
+                    )}
+                    {methodEdit && (
+                      <>
+                        <input
+                          value={newTrigLabel}
+                          onChange={(e) => setNewTrigLabel(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              addTrigger(rm.id, newTrigLabel);
+                              setNewTrigLabel('');
+                            }
+                          }}
+                          placeholder="FTP, SMB…"
+                          spellCheck="false"
+                          autoCorrect="off"
+                          autoCapitalize="off"
+                          style={trigInput}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            addTrigger(rm.id, newTrigLabel);
+                            setNewTrigLabel('');
+                          }}
+                          style={miniBtn}
+                        >
+                          + déclencheur
+                        </button>
+                      </>
+                    )}
+                    {!methodEdit && roadmapTriggers.length === 0 && (
+                      <span style={{ fontSize: '11.5px', color: 'var(--faint)' }}>
+                        aucun — passe en « ✎ Modifier » pour en déclarer
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Phases */}
                 <div style={phaseList}>
                   {rm.phases.map((ph, pi) => {
-                    let pdone = 0;
-                    for (const st of ph.steps) if (checks[st.id]) pdone += 1;
-                    const phProg = progress(pdone, ph.steps.length);
+                    const phCount = progressOf(ph.steps, activeTriggers, checks);
+                    const phProg = progress(phCount.done, phCount.total);
+                    // Hide a phase whose every step is inactive, or the switch
+                    // leaves an empty card behind. NEVER in edit mode: you must be
+                    // able to edit what this target does not need. A phase with no
+                    // step at all is empty, not inactive, so it stays.
+                    const phaseHidden =
+                      !methodEdit &&
+                      hideInactiveSteps &&
+                      ph.steps.length > 0 &&
+                      !phaseHasActiveStep(ph, activeTriggers);
+                    // Which rows render, and where a `── FTP ──` sub-header goes.
+                    // Precomputed so a hidden step cannot leave a duplicate header
+                    // behind. `si` stays the REAL index in ph.steps — what
+                    // moveStep and the ↑↓ bounds need, so drag & drop is untouched.
+                    const visible = ph.steps
+                      .map((st, si) => ({ st, si, active: isStepActive(st, activeTriggers) }))
+                      .filter((x) => methodEdit || !hideInactiveSteps || x.active);
+                    let lastGroup = '';
+                    const rows = visible.map((x) => {
+                      const key = stepGroupKey(x.st);
+                      const head =
+                        key !== '' && key !== lastGroup ? triggerLabels(x.st, roadmapTriggers) : null;
+                      lastGroup = key;
+                      return { ...x, head };
+                    });
                     const isDraggingPhase = dragPhaseIdx === pi;
                     const showPlaceholderBefore =
                       dragPhaseIdx != null &&
                       dropIndex === pi &&
                       !(dropIndex === dragPhaseIdx || dropIndex === dragPhaseIdx + 1);
                     const d = draftFor(ph.id);
+
+                    if (phaseHidden) return null;
 
                     return (
                       <Fragment key={ph.id}>
@@ -733,7 +1067,7 @@ export function Methodology() {
                             ) : (
                               <>
                                 <span style={phaseLabel}>{ph.label}</span>
-                                <span style={monoCount}>{pdone + '/' + ph.steps.length}</span>
+                                <span style={monoCount}>{phCount.done + '/' + phCount.total}</span>
                                 <Bar track={phaseBarTrack} width={phProg.width} />
                               </>
                             )}
@@ -741,8 +1075,12 @@ export function Methodology() {
 
                           {/* Steps */}
                           <div style={phaseBody}>
-                            {ph.steps.map((st, si) => {
+                            {rows.map(({ st, si, active, head }) => {
                               const checked = !!checks[st.id];
+                              const stepTrigIds = st.triggerIds ?? [];
+                              const stepTrigs = roadmapTriggers.filter((t) =>
+                                stepTrigIds.includes(t.id),
+                              );
                               const cmd = st.commandId ? cmdById.get(st.commandId) : undefined;
                               const snip = st.snippetId ? snipById.get(st.snippetId) : undefined;
                               // A linked command's LOCALS live in its own
@@ -763,175 +1101,276 @@ export function Methodology() {
                                 dragOver.index === si &&
                                 dragStep.stepId !== st.id;
                               return (
-                                <div
-                                  key={st.id}
-                                  draggable={methodEdit}
-                                  onDragStart={(e) => {
-                                    try {
-                                      e.dataTransfer.effectAllowed = 'move';
-                                      e.dataTransfer.setData('text/plain', st.id);
-                                    } catch {
-                                      /* dataTransfer unavailable */
-                                    }
-                                    setDragStep({ phaseId: ph.id, stepId: st.id });
-                                    setDragOver({ phaseId: ph.id, index: si });
-                                  }}
-                                  onDragOver={(e) => {
-                                    if (!dragStep) return;
-                                    e.preventDefault();
-                                    if (dragOver?.phaseId !== ph.id || dragOver?.index !== si) {
-                                      setDragOver({ phaseId: ph.id, index: si });
-                                    }
-                                  }}
-                                  onDrop={(e) => {
-                                    e.preventDefault();
-                                    if (dragStep) {
-                                      moveStep(rm.id, dragStep.phaseId, ph.id, dragStep.stepId, si);
-                                    }
-                                    clearStepDrag();
-                                  }}
-                                  onDragEnd={clearStepDrag}
-                                  style={{
-                                    padding: '9px 0',
-                                    borderTop: isOver ? '2px solid var(--acc)' : '1px solid var(--border)',
-                                    opacity: isDragged ? 0.45 : 1,
-                                    cursor: methodEdit ? 'grab' : 'default',
-                                  }}
-                                >
-                                  <div style={stepInner}>
-                                    {methodEdit && (
-                                      <span title="Glisser pour réordonner" style={stepDragHandle}>
-                                        ⠿
+                                <Fragment key={st.id}>
+                                  {head && (
+                                    <div
+                                      style={{
+                                        ...groupHead,
+                                        color: active ? 'var(--acc)' : 'var(--faint)',
+                                      }}
+                                    >
+                                      <span>
+                                        {head.join(' · ')}
+                                        {active ? '' : ' · inactif'}
                                       </span>
-                                    )}
-                                    <button
-                                      onClick={() => toggleCheck(st.id)}
-                                      style={checked ? checkOn : checkOff}
-                                    >
-                                      {checked ? '✓' : ''}
-                                    </button>
-                                    <div style={stepTextWrap}>
-                                      <div style={checked ? stepTextDone : stepText}>{st.text}</div>
-                                    </div>
-                                    <button
-                                      onClick={() => toggleOpenStep(st.id)}
-                                      title={hasResult ? 'Résultat enregistré' : undefined}
-                                      style={
-                                        !expanded && hasResult
-                                          ? { ...noteBtn, background: 'var(--acc-dim)', borderColor: 'var(--acc-line)' }
-                                          : noteBtn
-                                      }
-                                    >
-                                      {expanded
-                                        ? 'masquer'
-                                        : cmd
-                                          ? '▸ ' + cmd.tool
-                                          : snip
-                                            ? '▸ snippet'
-                                            : '▸ résultat'}
-                                    </button>
-                                    {methodEdit && (
-                                      <ReorderControls
-                                        onUp={() => moveStep(rm.id, ph.id, ph.id, st.id, si - 1)}
-                                        onDown={() => moveStep(rm.id, ph.id, ph.id, st.id, si + 1)}
-                                        onDelete={() => deleteStep(rm.id, ph.id, st.id)}
-                                        disableUp={si === 0}
-                                        disableDown={si === ph.steps.length - 1}
-                                        upTitle="Monter l'étape"
-                                        downTitle="Descendre l'étape"
-                                        delTitle="Supprimer l'étape"
-                                        delStyle={stepDelBtn}
-                                      />
-                                    )}
-                                  </div>
-                                  {expanded && (
-                                    <div style={notePanel}>
-                                      {cmd && (
-                                        <>
-                                          <div style={cmdTitleLine}>{cmd.title}</div>
-                                          <CopyButton
-                                            variant="inline"
-                                            text={resolve(cmd.template, cmdValues)}
-                                          />
-                                          <CodeBlock
-                                            template={cmd.template}
-                                            values={cmdValues}
-                                            definedNames={defNames}
-                                            preStyle={codePreCompact}
-                                            onSetLocal={(name, val) =>
-                                              setLocalValue(cmdCtx, name, val)
-                                            }
-                                          />
-                                        </>
-                                      )}
-                                      {snip && (
-                                        <>
-                                          <div style={cmdTitleLine}>{snip.title}</div>
-                                          {snip.steps.map((ss, k) => (
-                                            <div key={ss.id}>
-                                              <div style={snipStepHead}>
-                                                <span style={snipStepNum}>
-                                                  {String(k + 1).padStart(2, '0')}
-                                                </span>
-                                                {ss.label && <span style={snipStepLabel}>{ss.label}</span>}
-                                              </div>
-                                              <CommandLine
-                                                template={ss.template}
-                                                values={{ ...values, ...(localValues[st.id] ?? {}) }}
-                                                definedNames={defNames}
-                                                preStyle={codePreCompact}
-                                                onSetLocal={(name, val) =>
-                                                  setLocalValue(st.id, name, val)
-                                                }
-                                              />
-                                              {ss.produces && (
-                                                <div style={snipCapRow}>
-                                                  <span
-                                                    style={{
-                                                      ...snipCapName,
-                                                      color: (localValues[st.id] ?? {})[ss.produces]
-                                                        ? 'var(--acc)'
-                                                        : 'var(--muted)',
-                                                    }}
-                                                  >
-                                                    ${ss.produces}
-                                                  </span>
-                                                  <input
-                                                    value={(localValues[st.id] ?? {})[ss.produces] ?? ''}
-                                                    onChange={(e) =>
-                                                      setLocalValue(st.id, ss.produces!, e.target.value)
-                                                    }
-                                                    placeholder={
-                                                      snip.locals.find((l) => l.name === ss.produces)?.hint ||
-                                                      'valeur issue de la sortie…'
-                                                    }
-                                                    spellCheck="false"
-                                                    autoComplete="off"
-                                                    autoCorrect="off"
-                                                    autoCapitalize="off"
-                                                    style={snipCapInput}
-                                                  />
-                                                </div>
-                                              )}
-                                            </div>
-                                          ))}
-                                        </>
-                                      )}
-                                      <div style={resultLabel}>Résultat</div>
-                                      <textarea
-                                        value={results[st.id] ?? ''}
-                                        onChange={(e) => setResult(st.id, e.target.value)}
-                                        placeholder="Colle la sortie de la commande…"
-                                        rows={20}
-                                        spellCheck="false"
-                                        autoCorrect="off"
-                                        autoCapitalize="off"
-                                        autoComplete="off"
-                                        style={resultArea}
-                                      />
+                                      <span style={groupRule} />
                                     </div>
                                   )}
-                                </div>
+                                  <div
+                                    draggable={methodEdit}
+                                    onDragStart={(e) => {
+                                      try {
+                                        e.dataTransfer.effectAllowed = 'move';
+                                        e.dataTransfer.setData('text/plain', st.id);
+                                      } catch {
+                                        /* dataTransfer unavailable */
+                                      }
+                                      setDragStep({ phaseId: ph.id, stepId: st.id });
+                                      setDragOver({ phaseId: ph.id, index: si });
+                                    }}
+                                    onDragOver={(e) => {
+                                      if (!dragStep) return;
+                                      e.preventDefault();
+                                      if (dragOver?.phaseId !== ph.id || dragOver?.index !== si) {
+                                        setDragOver({ phaseId: ph.id, index: si });
+                                      }
+                                    }}
+                                    onDrop={(e) => {
+                                      e.preventDefault();
+                                      if (dragStep) {
+                                        moveStep(rm.id, dragStep.phaseId, ph.id, dragStep.stepId, si);
+                                      }
+                                      clearStepDrag();
+                                    }}
+                                    onDragEnd={clearStepDrag}
+                                    style={{
+                                      padding: '9px 0',
+                                      borderTop: isOver ? '2px solid var(--acc)' : '1px solid var(--border)',
+                                      // An inactive step is dimmed rather than
+                                      // hidden by default, so you can see what this
+                                      // target does not need — and why.
+                                      opacity: isDragged ? 0.45 : active ? 1 : 0.42,
+                                      cursor: methodEdit ? 'grab' : 'default',
+                                    }}
+                                  >
+                                    <div style={stepInner}>
+                                      {methodEdit && (
+                                        <span title="Glisser pour réordonner" style={stepDragHandle}>
+                                          ⠿
+                                        </span>
+                                      )}
+                                      <button
+                                        onClick={() => toggleCheck(st.id)}
+                                        disabled={!active}
+                                        title={
+                                          active
+                                            ? undefined
+                                            : 'Étape inactive : ' +
+                                              stepTrigs.map((t) => t.label).join(' / ') +
+                                              ' non détecté sur la cible'
+                                        }
+                                        style={checked ? checkOn : checkOff}
+                                      >
+                                        {checked ? '✓' : ''}
+                                      </button>
+                                      <div style={stepTextWrap}>
+                                        <div style={checked ? stepTextDone : stepText}>{st.text}</div>
+                                        {(stepTrigs.length > 0 ||
+                                          (methodEdit && roadmapTriggers.length > 0)) && (
+                                          <div style={stepChipRow}>
+                                            {stepTrigs.map((t) => (
+                                              <span
+                                                key={t.id}
+                                                style={activeTriggers[t.id] ? miniChip : miniChipOff}
+                                              >
+                                                {t.label}
+                                                {methodEdit && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      toggleStepTrigger(ph.id, st, t.id)
+                                                    }
+                                                    title="Détacher ce déclencheur de l'étape"
+                                                    style={chipXBtn}
+                                                  >
+                                                    ✕
+                                                  </button>
+                                                )}
+                                              </span>
+                                            ))}
+                                            {methodEdit && roadmapTriggers.length > 0 && (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  setPickerStep(pickerStep === st.id ? null : st.id)
+                                                }
+                                                style={miniBtn}
+                                              >
+                                                ＋ déclencheur
+                                              </button>
+                                            )}
+                                          </div>
+                                        )}
+                                        {/* The picker, unfolded for ONE step at a
+                                            time so a roadmap with a dozen triggers
+                                            does not turn edit mode into a wall of
+                                            chips. */}
+                                        {methodEdit && pickerStep === st.id && (
+                                          <div style={stepChipRow}>
+                                            {roadmapTriggers.map((t) => {
+                                              const on = stepTrigIds.includes(t.id);
+                                              return (
+                                                <button
+                                                  key={t.id}
+                                                  type="button"
+                                                  onClick={() => toggleStepTrigger(ph.id, st, t.id)}
+                                                  style={on ? miniChip : miniChipOff}
+                                                >
+                                                  {on ? '✓ ' : ''}
+                                                  {t.label}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+                                      <button
+                                        onClick={() => toggleOpenStep(st.id)}
+                                        title={hasResult ? 'Résultat enregistré' : undefined}
+                                        style={
+                                          !expanded && hasResult
+                                            ? { ...noteBtn, background: 'var(--acc-dim)', borderColor: 'var(--acc-line)' }
+                                            : noteBtn
+                                        }
+                                      >
+                                        {expanded
+                                          ? 'masquer'
+                                          : cmd
+                                            ? '▸ ' + cmd.tool
+                                            : snip
+                                              ? '▸ snippet'
+                                              : '▸ résultat'}
+                                      </button>
+                                      {methodEdit && (
+                                        <ReorderControls
+                                          onUp={() => moveStep(rm.id, ph.id, ph.id, st.id, si - 1)}
+                                          onDown={() => moveStep(rm.id, ph.id, ph.id, st.id, si + 1)}
+                                          onDelete={() => deleteStep(rm.id, ph.id, st.id)}
+                                          disableUp={si === 0}
+                                          disableDown={si === ph.steps.length - 1}
+                                          upTitle="Monter l'étape"
+                                          downTitle="Descendre l'étape"
+                                          delTitle="Supprimer l'étape"
+                                          delStyle={stepDelBtn}
+                                        />
+                                      )}
+                                    </div>
+                                    {expanded && (
+                                      <div style={notePanel}>
+                                        {cmd && (
+                                          <>
+                                            <div style={cmdTitleLine}>{cmd.title}</div>
+                                            <CopyButton
+                                              variant="inline"
+                                              text={resolve(cmd.template, cmdValues)}
+                                            />
+                                            <CodeBlock
+                                              template={cmd.template}
+                                              values={cmdValues}
+                                              definedNames={defNames}
+                                              preStyle={codePreCompact}
+                                              onSetLocal={(name, val) =>
+                                                setLocalValue(cmdCtx, name, val)
+                                              }
+                                            />
+                                          </>
+                                        )}
+                                        {snip && (
+                                          <>
+                                            <div style={cmdTitleLine}>{snip.title}</div>
+                                            {snip.steps.map((ss, k) => (
+                                              <div key={ss.id}>
+                                                <div style={snipStepHead}>
+                                                  <span style={snipStepNum}>
+                                                    {String(k + 1).padStart(2, '0')}
+                                                  </span>
+                                                  {ss.label && <span style={snipStepLabel}>{ss.label}</span>}
+                                                </div>
+                                                <CommandLine
+                                                  template={ss.template}
+                                                  values={{ ...values, ...(localValues[st.id] ?? {}) }}
+                                                  definedNames={defNames}
+                                                  preStyle={codePreCompact}
+                                                  onSetLocal={(name, val) =>
+                                                    setLocalValue(st.id, name, val)
+                                                  }
+                                                />
+                                                {ss.produces && (
+                                                  <div style={snipCapRow}>
+                                                    <span
+                                                      style={{
+                                                        ...snipCapName,
+                                                        color: (localValues[st.id] ?? {})[ss.produces]
+                                                          ? 'var(--acc)'
+                                                          : 'var(--muted)',
+                                                      }}
+                                                    >
+                                                      ${ss.produces}
+                                                    </span>
+                                                    <input
+                                                      value={(localValues[st.id] ?? {})[ss.produces] ?? ''}
+                                                      onChange={(e) =>
+                                                        setLocalValue(st.id, ss.produces!, e.target.value)
+                                                      }
+                                                      placeholder={
+                                                        snip.locals.find((l) => l.name === ss.produces)?.hint ||
+                                                        'valeur issue de la sortie…'
+                                                      }
+                                                      spellCheck="false"
+                                                      autoComplete="off"
+                                                      autoCorrect="off"
+                                                      autoCapitalize="off"
+                                                      style={snipCapInput}
+                                                    />
+                                                  </div>
+                                                )}
+                                              </div>
+                                            ))}
+                                          </>
+                                        )}
+                                        <div style={resultLabel}>
+                                          Résultat
+                                          {/* Reads THIS step's pasted output and
+                                              ticks the triggers it vouches for. A
+                                              pre-fill you can correct, never a
+                                              source of truth: it only ever ticks. */}
+                                          {roadmapTriggers.length > 0 &&
+                                            (results[st.id] ?? '').trim() !== '' && (
+                                              <button
+                                                type="button"
+                                                onClick={() => onDetect(st.id)}
+                                                title="Lire la sortie nmap collée et cocher les déclencheurs trouvés"
+                                                style={detectBtn}
+                                              >
+                                                ⚡ détecter depuis le résultat
+                                              </button>
+                                            )}
+                                        </div>
+                                        <textarea
+                                          value={results[st.id] ?? ''}
+                                          onChange={(e) => setResult(st.id, e.target.value)}
+                                          placeholder="Colle la sortie de la commande…"
+                                          rows={20}
+                                          spellCheck="false"
+                                          autoCorrect="off"
+                                          autoCapitalize="off"
+                                          autoComplete="off"
+                                          style={resultArea}
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                </Fragment>
                               );
                             })}
 
@@ -1005,6 +1444,23 @@ export function Methodology() {
                                       </option>
                                     ))}
                                   </select>
+                                  {/* One optional initial trigger; more can be
+                                      attached on the row afterwards. Offered only
+                                      once the roadmap declares a vocabulary. */}
+                                  {roadmapTriggers.length > 0 && (
+                                    <select
+                                      value={d.triggerId}
+                                      onChange={(e) => setDraft(ph.id, { triggerId: e.target.value })}
+                                      style={addStepSelect}
+                                    >
+                                      <option value="">— toujours applicable —</option>
+                                      {roadmapTriggers.map((t) => (
+                                        <option key={t.id} value={t.id}>
+                                          si {t.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
                                   <button onClick={() => submitStep(ph.id)} style={addStepBtn}>
                                     + Étape
                                   </button>

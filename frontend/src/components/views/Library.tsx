@@ -166,6 +166,7 @@ export function Library() {
     activeCat,
     activeTool,
     activeTag,
+    favOnly,
     query,
     commands,
     categories,
@@ -210,6 +211,9 @@ export function Library() {
   const filtered = useMemo<Command[]>(() => {
     const tokens = fold(query).split(/\s+/).filter(Boolean);
     return commands.filter((c) => {
+      // « Favoris » is a scope, not a category: it composes with the tag and the
+      // search box, and the category → tool grouping below is untouched (0.11.0).
+      if (favOnly && !c.favorite) return false;
       if (activeCat && c.category !== activeCat) return false;
       if (activeTool && c.tool !== activeTool) return false;
       if (activeTag && !c.tags.includes(activeTag)) return false;
@@ -220,7 +224,7 @@ export function Library() {
       }
       return true;
     });
-  }, [commands, catByKey, activeCat, activeTool, activeTag, query]);
+  }, [commands, catByKey, favOnly, activeCat, activeTool, activeTag, query]);
 
   const groups = useMemo<CatGroup[]>(() => {
     // Favorites first within a tool group; Array.sort is stable, so the relative
@@ -264,11 +268,13 @@ export function Library() {
     return out;
   }, [filtered, categories, catToolOrder]);
 
-  const scopeLabel = activeCat
-    ? (catByKey.get(activeCat)?.label ?? activeCat) + (activeTool ? ' › ' + activeTool : '')
-    : activeTag
-      ? '#' + activeTag
-      : '';
+  const scopeLabel = favOnly
+    ? 'Favoris' + (activeTag ? ' · #' + activeTag : '')
+    : activeCat
+      ? (catByKey.get(activeCat)?.label ?? activeCat) + (activeTool ? ' › ' + activeTool : '')
+      : activeTag
+        ? '#' + activeTag
+        : '';
 
   // `text` arrives already resolved: a command's LOCALS live in its own
   // category+tool context, so the merged value map is built per card below.
