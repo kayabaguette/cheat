@@ -173,7 +173,12 @@ Détecté sur la cible :  [✓ FTP] [✓ SMB] [ HTTP ] [ LDAP ]
   of a named trigger rather than a per-step note: "this host has an FTP" gates
   enumeration, exploitation and post-exploitation alike, and the roadmap stays
   reusable from one target to the next.
-- **Several triggers on one step are OR'd** — any one being on is enough.
+- **Several triggers on one step combine as OR *or* AND.** A chip cycles on
+  click: **absent → OU → ET → absent**, with a **dashed** border for OU and a
+  **solid** one for ET (the colour, separately, says whether the target has that
+  trigger). A step applies when *(no OU, or one of them is on)* **and** *(all the
+  ET are on)*. A lone OU next to an ET therefore behaves like a second ET, since
+  both halves must hold.
 - **An inactive step is dimmed, not checkable, and out of the progress maths** —
   numerator *and* denominator, which is what lets a target reach 100% without the
   services it does not run. « ☐ masquer les inactives » hides them (and any phase
@@ -181,8 +186,40 @@ Détecté sur la cible :  [✓ FTP] [✓ SMB] [ HTTP ] [ LDAP ]
   switch, so you can always edit what this target does not need.
 - **Unticking a trigger destroys nothing.** A checked step that goes inactive
   keeps its check — it just stops being counted, and re-ticking restores it.
-- **Consecutive steps sharing a trigger read as a block** under a `── FTP ──`
-  sub-header. That is a rendering effect only; the model stays a flat list.
+- **Consecutive steps sharing a condition read as a block** under a sub-header
+  that names the operator — `── FTP OU SMB ──`, `── (FTP OU SMB) ET LDAP ──`.
+  That is a rendering effect only; the model stays a flat list.
+- **A step's triggers sit to the left of its label**, where they read as the
+  condition they are. In edit mode, `⚙ déclencheurs` under the label unfolds the
+  picker for that step.
+
+### Sub-steps — a checklist inside a step
+
+An enumeration step is a dozen one-liners too trivial to earn a Bibliothèque
+entry, but you still want to tick them off. Any step can carry a checklist.
+
+```
+▾ 03 · Post-exploitation                              4/14
+   ☑ Stabiliser le shell
+   – Énumération Linux                    3/12   [▸ sous-étapes]
+       ☑ id / groups
+       ☑ sudo -l
+       ☐ find / -perm -4000
+       + Sous-étape…
+   ☐ Chercher les identifiants en clair
+```
+
+- **The step stays the unit of progress.** It counts for **1** in the phase and
+  roadmap fractions and is done when *every* item is — so a 12-item enumeration
+  refines a 14-step roadmap instead of swamping it.
+- **The box on the row is derived**: `✓` when all items are ticked, `–` when some
+  are, and clicking it ticks or unticks the whole block at once. The `3/12`
+  counter means you read the state without unfolding anything.
+- **The list lives in the step's existing panel**, above the linked command and
+  the « Résultat », opened by the same button — no second folding mechanism.
+  `+ Sous-étape` and the per-item `✕` show up in edit mode only.
+- Deleting a step, a phase or a roadmap purges its items' state, and
+  « Réinitialiser la progression » unticks them along with everything else.
 
 ### Detecting triggers from an nmap result
 

@@ -69,10 +69,21 @@ type StepDTO struct {
 	CommandID string `json:"commandId,omitempty"`
 	// A step may link a command, a snippet, or both (cumulative).
 	SnippetID string `json:"snippetId,omitempty"`
-	// v0.11.0 — ids of the triggers that make this step apply (OR'd). Empty or
-	// absent = unconditional. Whether a trigger is ON is progress, not structure:
-	// see AppState.ActiveTriggers.
-	TriggerIDs []string `json:"triggerIds,omitempty"`
+	// v0.11.0 — ids of the triggers that make this step apply. TriggerIDs is the
+	// OR list; v0.13.0 added AllTriggerIDs, the AND list. Both empty or absent =
+	// unconditional. Whether a trigger is ON is progress, not structure: see
+	// AppState.ActiveTriggers.
+	TriggerIDs    []string `json:"triggerIds,omitempty"`
+	AllTriggerIDs []string `json:"allTriggerIds,omitempty"`
+	// v0.13.0 — the step's checklist. Its items' done state lives in Checks under
+	// their own ids, like a step's.
+	Substeps []SubstepDTO `json:"substeps,omitempty"`
+}
+
+// v0.13.0 — one checklist item under a step.
+type SubstepDTO struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
 }
 
 // v0.11.0 — one named condition a roadmap branches on ("FTP", "SMB"). Declared

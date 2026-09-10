@@ -108,9 +108,14 @@ function cloneRoadmaps(rms: Roadmap[]): Roadmap[] {
   return rms.map((r) => ({ ...r, phases: r.phases.map((p) => ({ ...p, steps: p.steps.slice() })) }));
 }
 
-// Every step id inside a roadmap — used to purge progression/open state.
+// Every step id inside a roadmap — AND every substep id (v0.13.0), since a
+// checklist item's done state lives in the same `checks` map under its own id.
+// Widening this one helper is what makes deleteRoadmap / deletePhase /
+// resetProgress purge checklist state too, with no change of their own.
 function stepIdsOf(rm: Roadmap): string[] {
-  return rm.phases.flatMap((p) => p.steps.map((s) => s.id));
+  return rm.phases.flatMap((p) =>
+    p.steps.flatMap((s) => [s.id, ...(s.substeps ?? []).map((sb) => sb.id)]),
+  );
 }
 
 // Every trigger id a roadmap declares — used to purge their ON state, which
@@ -139,7 +144,20 @@ function cleanRoadmaps(rms: Roadmap[]): Roadmap[] {
       ...p,
       steps: p.steps.map((st) => {
         const kept = (st.triggerIds ?? []).filter((id) => seen.has(id));
-        return { ...st, triggerIds: kept.length ? kept : undefined };
+        // A hand-edited file could list one trigger in BOTH lists; the OR list
+        // wins, so a trigger always has exactly one mode on a given step.
+        const keptAll = (st.allTriggerIds ?? []).filter(
+          (id) => seen.has(id) && !kept.includes(id),
+        );
+        const subs = (st.substeps ?? [])
+          .map((sb) => ({ id: sb.id || mint('sb'), text: (sb.text || '').trim() }))
+          .filter((sb) => sb.text !== '');
+        return {
+          ...st,
+          triggerIds: kept.length ? kept : undefined,
+          allTriggerIds: keptAll.length ? keptAll : undefined,
+          substeps: subs.length ? subs : undefined,
+        };
       }),
     }));
     return { ...r, triggers: triggers.length ? triggers : undefined, phases };
@@ -299,6 +317,15 @@ export interface StoreActions {
     commandId?: string,
     snippetId?: string,
     triggerIds?: string[],
+    allTriggerIds?: string[],
+  ) => void;
+  // v0.13.0 — a step's checklist.
+  addSubstep: (roadmapId: string, phaseId: string, stepId: string, text: string) => void;
+  deleteSubstep: (
+    roadmapId: string,
+    phaseId: string,
+    stepId: string,
+    substepId: string,
   ) => void;
   deleteStep: (roadmapId: string, phaseId: string, stepId: string) => void;
   moveStep: (
@@ -310,6 +337,9 @@ export interface StoreActions {
   ) => void;
   movePhase: (roadmapId: string, phaseId: string, toIndex: number) => void;
   toggleCheck: (stepId: string) => void;
+  // Tick or untick several ids at once — the derived box of a step with a
+  // checklist covers the whole block, and a burst of toggleCheck would race.
+  setChecked: (ids: readonly string[], value: boolean) => void;
   toggleOpenStep: (stepId: string) => void;
   setResult: (stepId: string, text: string) => void;
   resetProgress: (roadmapId: string) => void;
@@ -327,6 +357,7 @@ export interface StoreActions {
     phaseId: string,
     stepId: string,
     triggerIds: string[],
+    allTriggerIds: string[],
   ) => void;
   // --- M1: References ---
   setActiveRefTag: (tag: string | null) => void;
@@ -748,6 +779,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       commandId?: string,
       snippetId?: string,
       triggerIds?: string[],
+      allTriggerIds?: string[],
     ) => {
       const t = text.trim();
       if (!t) return;
@@ -763,6 +795,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             snippetId: snippetId || undefined,
             // Absent/empty = unconditional, which is the default (v0.11.0).
             triggerIds: triggerIds && triggerIds.length ? triggerIds : undefined,
+            allTriggerIds: allTriggerIds && allTriggerIds.length ? allTriggerIds : undefined,
           });
         return next;
       });
@@ -771,7 +804,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const deleteStep = useCallback((roadmapId: string, phaseId: string, stepId: string) => {
-    const ids = new Set([stepId]);
+    // The step's own id AND its checklist's (v0.13.0), which hold their done
+    // state in the same map.
+    const target = roadmapsRef.current
+      .find((r) => r.id === roadmapId)
+      ?.phases.find((ph) => ph.id === phaseId)
+      ?.steps.find((st) => st.id === stepId);
+    const ids = new Set([stepId, ...(target?.substeps ?? []).map((sb) => sb.id)]);
     purgeProgress(ids, true);
     setRoadmaps((rms) => {
       const next = cloneRoadmaps(rms);
@@ -818,6 +857,60 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const toggleCheck = useCallback((stepId: string) => {
     setChecks((c) => ({ ...c, [stepId]: !c[stepId] }));
   }, []);
+
+  // Tick or untick a whole set in ONE update. The derived box of a step with a
+  // checklist covers every item, and N toggleCheck calls would each start from
+  // the same pre-update object and overwrite one another.
+  const setChecked = useCallback((ids: readonly string[], value: boolean) => {
+    if (!ids.length) return;
+    setChecks((c) => {
+      const next = { ...c };
+      for (const id of ids) next[id] = value;
+      return next;
+    });
+  }, []);
+
+  // --- v0.13.0: a step's checklist ------------------------------------------
+  // Made for the enumeration steps whose content is a dozen one-liners too
+  // trivial for the Bibliothèque but worth ticking off. An item's done state goes
+  // in `checks` under its own id, so nothing new is persisted.
+
+  const addSubstep = useCallback(
+    (roadmapId: string, phaseId: string, stepId: string, text: string) => {
+      const t = text.trim();
+      if (!t) return;
+      setRoadmaps((rms) => {
+        const next = cloneRoadmaps(rms);
+        const p = next.find((x) => x.id === roadmapId)?.phases.find((ph) => ph.id === phaseId);
+        if (!p) return rms;
+        p.steps = p.steps.map((st) =>
+          st.id === stepId
+            ? { ...st, substeps: [...(st.substeps ?? []), { id: mint('sb'), text: t }] }
+            : st,
+        );
+        return next;
+      });
+    },
+    [],
+  );
+
+  const deleteSubstep = useCallback(
+    (roadmapId: string, phaseId: string, stepId: string, substepId: string) => {
+      purgeProgress(new Set([substepId]), true);
+      setRoadmaps((rms) => {
+        const next = cloneRoadmaps(rms);
+        const p = next.find((x) => x.id === roadmapId)?.phases.find((ph) => ph.id === phaseId);
+        if (!p) return rms;
+        p.steps = p.steps.map((st) => {
+          if (st.id !== stepId) return st;
+          const kept = (st.substeps ?? []).filter((sb) => sb.id !== substepId);
+          return { ...st, substeps: kept.length ? kept : undefined };
+        });
+        return next;
+      });
+    },
+    [purgeProgress],
+  );
 
   const toggleOpenStep = useCallback((stepId: string) => {
     setOpenSteps((o) => ({ ...o, [stepId]: !o[stepId] }));
@@ -884,9 +977,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!r.triggers.length) r.triggers = undefined;
       for (const p of r.phases) {
         p.steps = p.steps.map((st) => {
-          if (!st.triggerIds?.includes(triggerId)) return st;
-          const kept = st.triggerIds.filter((id) => id !== triggerId);
-          return { ...st, triggerIds: kept.length ? kept : undefined };
+          const inAny = st.triggerIds?.includes(triggerId);
+          const inAll = st.allTriggerIds?.includes(triggerId);
+          if (!inAny && !inAll) return st;
+          const kept = (st.triggerIds ?? []).filter((id) => id !== triggerId);
+          const keptAll = (st.allTriggerIds ?? []).filter((id) => id !== triggerId);
+          return {
+            ...st,
+            triggerIds: kept.length ? kept : undefined,
+            allTriggerIds: keptAll.length ? keptAll : undefined,
+          };
         });
       }
       return next;
@@ -921,14 +1021,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // would silently drop all three. This is the narrow action the feature needs —
   // there is still no generic updateStep.
   const setStepTriggers = useCallback(
-    (roadmapId: string, phaseId: string, stepId: string, triggerIds: string[]) => {
+    (
+      roadmapId: string,
+      phaseId: string,
+      stepId: string,
+      triggerIds: string[],
+      allTriggerIds: string[],
+    ) => {
       setRoadmaps((rms) => {
         const next = cloneRoadmaps(rms);
         const p = next.find((x) => x.id === roadmapId)?.phases.find((ph) => ph.id === phaseId);
         if (!p) return rms;
         p.steps = p.steps.map((st) =>
           st.id === stepId
-            ? { ...st, triggerIds: triggerIds.length ? triggerIds : undefined }
+            ? {
+                ...st,
+                triggerIds: triggerIds.length ? triggerIds : undefined,
+                allTriggerIds: allTriggerIds.length ? allTriggerIds : undefined,
+              }
             : st,
         );
         return next;
@@ -1719,6 +1829,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               commandId: s.commandId,
               snippetId: s.snippetId,
               triggerIds: s.triggerIds,
+              allTriggerIds: s.allTriggerIds,
+              // Fresh substep ids for the same reason as the step's: they are
+              // progress keys, and progress is deliberately not copied.
+              substeps: s.substeps?.map((sb) => ({ id: mint('sb'), text: sb.text })),
             })),
           })),
           // The vocabulary travels with the roadmap; its ON state does NOT —
@@ -1895,6 +2009,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       moveStep,
       movePhase,
       toggleCheck,
+      setChecked,
+      addSubstep,
+      deleteSubstep,
       toggleOpenStep,
       setResult,
       resetProgress,
@@ -1995,6 +2112,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       moveStep,
       movePhase,
       toggleCheck,
+      setChecked,
+      addSubstep,
+      deleteSubstep,
       toggleOpenStep,
       setResult,
       resetProgress,

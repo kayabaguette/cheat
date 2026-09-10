@@ -12,14 +12,54 @@ import type { Phase, Step, Trigger } from '../types';
 
 // --- activity ---------------------------------------------------------------
 
-// A step applies when it is UNCONDITIONAL (no trigger at all) or when AT LEAST
-// ONE of its triggers is on. The OR is deliberate and the only semantics in v1:
-// a step needing "FTP *and* SMB" is vanishingly rare, and the field being a list
-// already leaves room for an AND later without a model change.
+// A step's triggers live in TWO lists and compose as:
+//
+//     (no OR list, or one of them is on)  AND  (all of the AND list are on)
+//
+//   OR      AND     active when
+//   ∅       ∅       always — the step is unconditional
+//   A,B     ∅       A or B
+//   ∅       A,B     A and B
+//   A,B     C       (A or B) and C
+//
+// One consequence worth knowing: a SINGLE OR trigger combined with an AND one
+// behaves like two ANDs, since both halves must hold. That is inherent to the
+// composition, not a bug.
+//
+// v0.13.0 added the AND list. `triggerIds` keeps exactly the meaning it had in
+// 0.11.0, so no pre-0.13 step needs migrating.
 export function isStepActive(step: Step, activeTriggers: Record<string, boolean>): boolean {
-  const ids = step.triggerIds;
-  if (!ids || ids.length === 0) return true;
-  return ids.some((id) => activeTriggers[id] === true);
+  const anyIds = step.triggerIds ?? [];
+  const allIds = step.allTriggerIds ?? [];
+  if (!anyIds.length && !allIds.length) return true;
+  const on = (id: string) => activeTriggers[id] === true;
+  const anyOk = !anyIds.length || anyIds.some(on);
+  const allOk = allIds.every(on);
+  return anyOk && allOk;
+}
+
+// --- done state -------------------------------------------------------------
+
+// How much of a step's checklist is ticked. {done: 0, total: 0} for a step
+// without one, which is what tells the row not to render a `3/12` counter.
+export function substepProgress(
+  step: Step,
+  checks: Record<string, boolean>,
+): { done: number; total: number } {
+  const subs = step.substeps ?? [];
+  let done = 0;
+  for (const sub of subs) if (checks[sub.id]) done += 1;
+  return { done, total: subs.length };
+}
+
+// A step is DONE when its own box is ticked — or, once it has a checklist, when
+// every item of that checklist is (v0.13.0). Its own `checks` entry is then
+// ignored: the box on the row is DERIVED, so there is a single source of truth
+// and no way for the two to disagree.
+export function isStepDone(step: Step, checks: Record<string, boolean>): boolean {
+  const subs = step.substeps ?? [];
+  if (!subs.length) return !!checks[step.id];
+  return subs.every((sub) => checks[sub.id]);
 }
 
 // Does this phase have anything to do on this target? Drives hiding a phase card
@@ -49,7 +89,9 @@ export function progressOf(
   for (const st of steps) {
     if (!isStepActive(st, activeTriggers)) continue;
     total += 1;
-    if (checks[st.id]) done += 1;
+    // A step with a checklist counts for ONE and is done only when every item is
+    // (isStepDone), so a 12-item enumeration cannot swamp a 14-step roadmap.
+    if (isStepDone(st, checks)) done += 1;
   }
   return { done, total };
 }
@@ -61,22 +103,81 @@ export function allSteps(phases: readonly Phase[]): Step[] {
 
 // --- implicit grouping ------------------------------------------------------
 
-// Steps sharing a trigger set are rendered under one `── FTP ──` sub-header, and
+// Steps sharing a condition are rendered under one `── FTP ──` sub-header, and
 // this key is what the view compares against the previous step to decide whether
 // to emit one. '' for an unconditional step, which never gets a header — so the
-// grouping is a pure rendering effect and adds NO level to the data model.
+// grouping is a pure rendering effect and adds NO level to the data model. The
+// two lists are keyed apart, so `A or B` and `A and B` never share a header.
 export function stepGroupKey(step: Step): string {
-  const ids = step.triggerIds;
-  return ids && ids.length ? ids.join('|') : '';
+  const anyIds = step.triggerIds ?? [];
+  const allIds = step.allTriggerIds ?? [];
+  if (!anyIds.length && !allIds.length) return '';
+  return 'any:' + anyIds.join(',') + '|all:' + allIds.join(',');
 }
 
-// The labels of a step's triggers, in the roadmap's declaration order, skipping
-// any id that no longer resolves (a dangling reference renders as nothing rather
-// than as a raw uuid).
-export function triggerLabels(step: Step, triggers: readonly Trigger[]): string[] {
-  const ids = step.triggerIds;
-  if (!ids || !ids.length) return [];
-  return triggers.filter((t) => ids.includes(t.id)).map((t) => t.label);
+// --- per-step trigger assignment --------------------------------------------
+
+export type TriggerMode = 'off' | 'any' | 'all';
+
+export interface StepTrigger {
+  trigger: Trigger;
+  mode: 'any' | 'all';
+}
+
+// How a step uses one trigger. 'any' is the OR list, 'all' the AND list.
+export function stepTriggerMode(step: Step, triggerId: string): TriggerMode {
+  if ((step.allTriggerIds ?? []).includes(triggerId)) return 'all';
+  if ((step.triggerIds ?? []).includes(triggerId)) return 'any';
+  return 'off';
+}
+
+// The next assignment after one click on a trigger chip: off → any → all → off.
+// Returns the two lists to store; pure, so the store action stays a one-liner and
+// the cycle is testable without a DOM.
+export function cycleStepTrigger(
+  step: Step,
+  triggerId: string,
+): { triggerIds: string[]; allTriggerIds: string[] } {
+  const anyIds = (step.triggerIds ?? []).filter((id) => id !== triggerId);
+  const allIds = (step.allTriggerIds ?? []).filter((id) => id !== triggerId);
+  switch (stepTriggerMode(step, triggerId)) {
+    case 'off':
+      return { triggerIds: [...anyIds, triggerId], allTriggerIds: allIds };
+    case 'any':
+      return { triggerIds: anyIds, allTriggerIds: [...allIds, triggerId] };
+    default:
+      return { triggerIds: anyIds, allTriggerIds: allIds };
+  }
+}
+
+// A step's assigned triggers with their mode, in the ROADMAP's declaration order
+// (so the chips keep a stable order whatever the click sequence), skipping any id
+// that no longer resolves — a dangling reference renders as nothing rather than
+// as a raw uuid.
+export function stepTriggers(step: Step, triggers: readonly Trigger[]): StepTrigger[] {
+  const out: StepTrigger[] = [];
+  for (const t of triggers) {
+    const mode = stepTriggerMode(step, t.id);
+    if (mode !== 'off') out.push({ trigger: t, mode });
+  }
+  return out;
+}
+
+// The step's condition in words — « FTP ou SMB », « FTP et SMB », « (FTP ou SMB)
+// et LDAP ». Used for the group sub-header and the inactive-step tooltip, where a
+// bare list of labels would not say which operator is at work.
+export function describeStepTriggers(step: Step, triggers: readonly Trigger[]): string {
+  const anyL = stepTriggers(step, triggers)
+    .filter((x) => x.mode === 'any')
+    .map((x) => x.trigger.label);
+  const allL = stepTriggers(step, triggers)
+    .filter((x) => x.mode === 'all')
+    .map((x) => x.trigger.label);
+  if (!anyL.length && !allL.length) return '';
+  if (!allL.length) return anyL.join(' ou ');
+  if (!anyL.length) return allL.join(' et ');
+  const left = anyL.length > 1 ? '(' + anyL.join(' ou ') + ')' : anyL[0];
+  return [left, ...allL].join(' et ');
 }
 
 // --- detection from a pasted nmap result ------------------------------------

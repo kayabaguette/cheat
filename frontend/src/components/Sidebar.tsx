@@ -579,7 +579,10 @@ export function Sidebar() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {catLocals.map((name) => (
               <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {/* 60px with an ellipsis, so a long name reads « $wordlist_… ».
+                    The native tooltip is what makes it readable on hover. */}
                 <span
+                  title={'$' + name}
                   style={{
                     width: '60px',
                     flex: 'none',
@@ -611,30 +614,6 @@ export function Sidebar() {
                     padding: '5px 8px',
                   }}
                 />
-                {/* Clears the VALUE, not the variable: a local has no definition
-                    to delete, it exists because a template mentions it. Kept in
-                    the layout with `visibility` rather than unmounted, so the
-                    input does not resize the moment you type the first
-                    character. */}
-                <button
-                  type="button"
-                  onClick={() => setLocalValue(catCtx, name, '')}
-                  title="Vider la valeur"
-                  disabled={!catLocalValues[name]}
-                  style={{
-                    flex: 'none',
-                    cursor: 'pointer',
-                    border: 'none',
-                    background: 'transparent',
-                    color: 'var(--faint)',
-                    fontSize: '13px',
-                    lineHeight: 1,
-                    padding: '2px 4px',
-                    visibility: catLocalValues[name] ? 'visible' : 'hidden',
-                  }}
-                >
-                  ✕
-                </button>
               </div>
             ))}
           </div>

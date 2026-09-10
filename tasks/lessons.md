@@ -50,3 +50,32 @@ Pratique reprise de 0.9.2 : chaque nouvelle règle de bannissement a été retir
 **une par une** pour vérifier que la suite passe au rouge — règle mono-caractère
 4 tests, garde `:` 2 tests, liste réservée 2 tests. Un test qui ne peut pas échouer
 ne protège rien ; le vérifier coûte trois minutes.
+
+## Un test peut passer pour une autre raison que le mécanisme qu'il nomme (v0.12–0.13)
+
+Deux releases de suite, un test censé garder un mécanisme précis s'est révélé
+incapable d'échouer quand on supprimait ce mécanisme :
+
+- **0.12.0** — le test du découpage `ssl/http` passait avec `serviceTokens`
+  neutralisé, parce qu'un *fallback par sous-chaîne* rattrapait le cas. Il ne
+  testait donc pas le découpage. En creusant, le fallback lui-même était trop
+  large : il s'appliquait aussi aux labels que le catalogue connaissait, ce qui
+  faisait correspondre « HTTP » sur un hôte purement `https`. Un mauvais test
+  cachait un défaut de conception.
+- **0.13.0** — le test « la clé de groupe distingue les deux listes » comparait
+  une étape OU-seule à une étape ET-seule. Elles diffèrent **aussi** sur la moitié
+  OU, donc le test passait avec la moitié ET retirée de la clé. Le cas
+  discriminant est deux étapes de **même** liste OU et de listes ET différentes.
+
+**Le motif est le même** : l'assertion est vraie, mais pour une raison
+collatérale. Deux cas se ressemblent sur *plusieurs* axes, on croit tester l'axe
+qu'on nomme, on teste en fait un autre.
+
+**Ce qui l'attrape** : ne pas se contenter de « le test est vert ». Supprimer le
+mécanisme, une ligne à la fois, et vérifier **quel** test rougit. Si aucun ne
+rougit, le garde-fou n'existe pas. Si c'est un autre que celui qu'on visait, la
+couverture n'est pas là où on la croit.
+
+**Ce qui l'évite à l'écriture** : construire les deux cas d'un test de
+discrimination en ne faisant varier **qu'une** chose. Deux étapes de même liste
+OU et de listes ET différentes ; pas une étape OU contre une étape ET.
