@@ -17,6 +17,14 @@ const MONO = "'IBM Plex Mono',monospace";
 // Left sidebar (272px): the live Variables panel, the expandable Categories tree
 // (each category unfolds to its tools, which filter the Library by tool), and the
 // Tags chips. Markup/styles ported faithfully from the prototype's catTree.
+//
+// The panel is « Variables GLOBALES » (0.10.0), and it holds nothing else: a LOCAL
+// ($minuscule) is scoped to one usage context — a category+tool pair, a snippet —
+// so it has no meaningful row in an app-wide panel and is edited where it is read,
+// by double-clicking it inside the command (see <CodeBlock>). Nothing here can
+// surface one: `customVars` derives from the globals-only `values` map, and
+// `extractTokens` returns the GLOBAL class only, so the « Détectées » strip cannot
+// offer a lower-case name for adoption.
 
 // Section header: the uppercase tracking label plus the 9px bottom gap shared by
 // the Categories and Tags section headers.
@@ -319,7 +327,7 @@ export function Sidebar() {
             marginBottom: '10px',
           }}
         >
-          <span style={sectionLabel}>Variables</span>
+          <span style={sectionLabel}>Variables globales</span>
           <span style={{ fontSize: '10px', color: 'var(--faint)', fontFamily: MONO }}>
             live
           </span>

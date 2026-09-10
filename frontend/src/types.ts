@@ -137,12 +137,23 @@ export interface AppState {
   };
 }
 
-// A5 — the three variable render states, plus untouched literal text.
+// A5 — the four variable render states, plus untouched literal text.
 //   resolved : name is defined AND has a non-empty value
 //   empty    : name is defined but its value is empty
 //   undef    : the $TOKEN is not a defined variable name
 //   plain    : ordinary text (or an escaped \$ rendered as '$')
+//
+// v0.10.0: a LOCAL-class token ($minuscule) projects onto the SAME states —
+// `resolved` when it holds a value, `empty` when it does not — so SPEC §5.10
+// stays the single authority and gains no fifth state. What sets a local apart is
+// carried in separate fields: `local` marks the part as an inline EDIT TARGET
+// (double-click to set the value) and `name` says which variable to write.
+// `name` is filled on global tokens too, so any token part can be addressed.
 export interface Part {
   text: string;
   state: 'plain' | 'resolved' | 'empty' | 'undef';
+  // The bare $TOKEN name this part renders. Absent on plain text.
+  name?: string;
+  // True for a local-class ($minuscule) token: editable in place.
+  local?: boolean;
 }

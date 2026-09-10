@@ -2,7 +2,7 @@ import { Fragment, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../../store';
 import { resolve } from '../../lib/vars';
-import { definedNames, definedNamesWithLocals } from '../../lib/varsets';
+import { definedNames, commandContext } from '../../lib/varsets';
 import { MONO, tabBar, pillBase, pillOn, barTrackBase, codePreCompact } from '../../lib/ui';
 import { CodeBlock } from '../CodeBlock';
 import { CommandLine } from '../CommandLine';
@@ -745,6 +745,14 @@ export function Methodology() {
                               const checked = !!checks[st.id];
                               const cmd = st.commandId ? cmdById.get(st.commandId) : undefined;
                               const snip = st.snippetId ? snipById.get(st.snippetId) : undefined;
+                              // A linked command's LOCALS live in its own
+                              // category+tool context (0.10.0) — the same one the
+                              // Library uses — NOT in the step's context, which
+                              // belongs to the linked snippet below.
+                              const cmdCtx = cmd ? commandContext(cmd) : '';
+                              const cmdValues = cmd
+                                ? { ...values, ...(localValues[cmdCtx] ?? {}) }
+                                : values;
                               const expanded = !!openSteps[st.id];
                               const hasResult = !!results[st.id]?.trim();
                               const isDragged = dragStep?.stepId === st.id;
@@ -841,12 +849,18 @@ export function Methodology() {
                                       {cmd && (
                                         <>
                                           <div style={cmdTitleLine}>{cmd.title}</div>
-                                          <CopyButton variant="inline" text={resolve(cmd.template, values)} />
+                                          <CopyButton
+                                            variant="inline"
+                                            text={resolve(cmd.template, cmdValues)}
+                                          />
                                           <CodeBlock
                                             template={cmd.template}
-                                            values={values}
+                                            values={cmdValues}
                                             definedNames={defNames}
                                             preStyle={codePreCompact}
+                                            onSetLocal={(name, val) =>
+                                              setLocalValue(cmdCtx, name, val)
+                                            }
                                           />
                                         </>
                                       )}
@@ -864,11 +878,11 @@ export function Methodology() {
                                               <CommandLine
                                                 template={ss.template}
                                                 values={{ ...values, ...(localValues[st.id] ?? {}) }}
-                                                definedNames={definedNamesWithLocals(
-                                                  values,
-                                                  snip.locals.map((l) => l.name),
-                                                )}
+                                                definedNames={defNames}
                                                 preStyle={codePreCompact}
+                                                onSetLocal={(name, val) =>
+                                                  setLocalValue(st.id, name, val)
+                                                }
                                               />
                                               {ss.produces && (
                                                 <div style={snipCapRow}>

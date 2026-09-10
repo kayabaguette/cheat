@@ -27,6 +27,7 @@ own machine — no cloud, no accounts, no telemetry. The UI is in **French**.
 - [Configuration](#configuration)
 - [Security & OPSEC](#security--opsec)
 - [Import / export](#import--export)
+- [Tests](#tests)
 - [Tech stack](#tech-stack)
 - [Project layout](#project-layout)
 - [License](#license)
@@ -89,12 +90,13 @@ one produced. A **snippet** captures that as a reusable technique:
 ```
 
 - **Two classes of variables.** `$UPPERCASE` are the app-wide ones from the
-  sidebar. `$lowercase` are **local to the snippet**: you declare them, then paste
-  the value read from a step's output into the field that sits right under that
-  step — and every line below turns green, resolved and ready to run.
-- **Click a line to copy it.** A chain can't be run in one go, so each line is its
-  own copy button: click anywhere on it and the icon flashes at its right end.
-  Selecting part of a line with the mouse still works — that never copies.
+  sidebar. `$lowercase` are **local**: paste the value read from a step's output
+  into the field that sits right under that step — and every line below turns
+  green, resolved and ready to run. You can also just **double-click the token**
+  inside any line to set it. See [Live variables](#live-variables).
+- **Copy a line with its copy button.** A chain can't be run in one go, so every
+  line carries its own copy button at its right end — the same one the command
+  cards use.
 - **Local values are never written anywhere.** Not to the database, not to the
   export, and **not even into a resolved Markdown/PDF export** — a `$local` always
   leaves the app as a raw token. They hold precisely what shouldn't be persisted
@@ -102,10 +104,37 @@ one produced. A **snippet** captures that as a reusable technique:
   clipboard does resolve them, which is the whole point.
 - **One value set per place.** The same snippet used in two methodology steps
   keeps two independent sets of local values, so two targets never mix.
-- **Shell variables are left alone.** `$env:USERNAME`, `$PSVersionTable`, `$file`,
-  `$_` and friends are ordinary shell text, never Cheat variables — mixed-case
-  names, undeclared lowercase ones, and names without a letter (`$_`, `$__`) are
-  all plain text, so PowerShell and bash one-liners paste in safely.
+- **Shell variables are left alone.** `$env:USERNAME`, `$PSVersionTable`, `$_`,
+  `$f` and friends are ordinary shell text, never Cheat variables, so PowerShell
+  and bash one-liners paste in safely. The exact rules are in
+  [Live variables](#live-variables).
+
+### Declaring a local variable — optional
+
+A `$lowercase` token resolves **without being declared**: type `$svc_ntlm` in a
+step, double-click it, give it a value. Declaring it buys you two things and
+nothing else:
+
+- a **hint** — the placeholder text of its capture field, reminding you what to
+  paste there (« hash NTLM du compte de service ») ;
+- the **« produit » anchor** — pick the local on the step that *yields* it, and
+  its capture field moves directly under that step in the Snippets view, so you
+  paste the output where it was produced and the lines below resolve.
+
+Two ways to declare one, in the add/edit form:
+
+1. **Write it, then adopt it.** Type `$svc_ntlm` anywhere in a step's command; a
+   **`détectées : + $svc_ntlm`** chip appears next to `+ variable locale` — click
+   it. This is the quicker path in practice.
+2. **Declare it up front.** In the **« Variables locales »** block above the
+   steps, click **`+ variable locale`**, then type the name in lower case
+   (`svc_ntlm`) plus an optional hint.
+
+The per-step **« produit »** dropdown only lists locals that already exist, so on
+a fresh snippet its only option is `(rien)` until you declare one.
+
+A declared local that no step produces still gets a field, grouped in a
+**« Variables locales »** strip at the top of the snippet card.
 
 Snippets carry a category and tags (no tool), can be linked from a methodology
 step — on their own or alongside a command — and go into a cheatsheet's
@@ -113,9 +142,19 @@ step — on their own or alongside a command — and go into a cheatsheet's
 
 ## Live variables
 
-A variable is a `$TOKEN` you define once and reuse everywhere. Cheat ships 7
-built-ins — `$RHOST`, `$RPORT`, `$LHOST`, `$LPORT`, `$USER`, `$DOMAIN`, `$PASS` —
-and you can add your own.
+A variable is a `$TOKEN` you define once and reuse everywhere. There are **two
+classes**, told apart by case alone.
+
+**Values are memory-only, both classes.** A variable *value* (your target IP, a
+password, a captured hash) is **never** written to the database, to
+`localStorage`, or to the JSON export — it lives in memory and resets on reload.
+Only variable *names* and command templates are stored. That is a deliberate
+OPSEC choice (see below).
+
+### `$GLOBALES` — app-wide, edited in the sidebar
+
+Cheat ships 7 built-ins — `$RHOST`, `$RPORT`, `$LHOST`, `$LPORT`, `$USER`,
+`$DOMAIN`, `$PASS` — and you can add your own.
 
 Set `$RHOST = 10.10.10.5` in the sidebar, and a stored command template like:
 
@@ -134,10 +173,43 @@ includes it.
   can give a value.
 - **Rename cascades**: renaming a variable rewrites `$OLD → $NEW` across every
   command that uses it.
-- **Values are memory-only**: variable *values* (your target IP, password, …)
-  are **never** written to disk or the export — they live in memory and reset on
-  reload. Only the variable *names* and command templates are stored. This is a
-  deliberate OPSEC choice (see below).
+
+### `$locales` — scoped to one tool, or one snippet
+
+A `$lowercase` token is a **local**. It gets no sidebar row, because it isn't
+app-wide: it belongs to one place. `$share` means something to `nxc`, nothing to
+`sqlmap`.
+
+- **Double-click it in the command to set its value.** No form, no sidebar — the
+  token turns into an input right where you read it. Enter, Escape or clicking
+  away closes it. Hover a local and its dashed outline shows you it's editable.
+- **It propagates over its scope.** For a **command**, the scope is the
+  **category + tool** pair: fill `$share` on one `nxc` command of *Active
+  Directory* and every other `nxc` command of that category shows it — while no
+  `impacket` command does. For a **snippet**, the scope is that snippet, with one
+  independent value set per place it appears (the same snippet linked from two
+  methodology steps keeps two, so two targets never mix).
+- **Empty the field and the token comes back.** A local with no value renders as
+  its own `$name` again, everywhere in its scope.
+- **Never resolved into a file** — not the JSON export, and **not even a
+  Markdown/PDF export with « résoudre les variables » ON**, which resolves globals
+  only. A local holds exactly what shouldn't reach the disk (a hash, a ticket, a
+  SID). The clipboard *does* resolve it, which is the whole point.
+
+**What is deliberately *not* a variable**, so PowerShell and bash one-liners paste
+in safely:
+
+| Left as plain text | Why |
+|---|---|
+| `$PSVersionTable`, `$ErrorActionPreference`, `$RHOSTx` | mixed case — belongs to neither class |
+| `$_`, `$__`, `$_1` | no letter at all |
+| `$env:USERNAME`, `$global:x`, `$using:v` | followed by `:` — a PowerShell scope or drive prefix |
+| `$f`, `$i`, `$x` | a single character — a shell loop variable |
+| `$env`, `$global`, `$script`, `$local`, `$private`, `$using`, `$workflow`, `$args`, `$input`, `$true`, `$false`, `$null` | reserved names |
+| `$1`, `$(whoami)`, `${HOME}`, `\$RHOST` | not the `$NAME` shape, or escaped |
+
+Everything else in lower case is fair game: `$share`, `$path`, `$file`, `$hash`,
+`$wordlist`, `$spn`, `$svc_ntlm`…
 
 ## Quick start
 
@@ -275,6 +347,35 @@ valid; import rejects a file whose `commands` is not an array.
   the `locals[]` declarations are stored.
 - A file produced by an older version (no `snippets` key) imports unchanged.
 
+## Tests
+
+```bash
+make test          # both suites, containerized — no Go or Node needed on the host
+```
+
+Or directly, if you have the toolchains:
+
+```bash
+cd backend  && go test ./...
+cd frontend && npm test          # npm run test:watch while developing
+```
+
+`make test` also runs `tsc --noEmit`, so a type error fails the run.
+
+What is covered:
+
+- `backend/store_migration_test.go` — the one-shot migration of a pre-profiles
+  database into the first profile.
+- `frontend/src/lib/vars.test.ts` — the **variable tokenizer**, which every view
+  renders through and which decides what counts as a variable inside arbitrary
+  shell text. It asserts the two name classes, the four render states, both
+  extractors, and two invariants worth pinning down: that a snippet **local is
+  never substituted by the globals map** (the rule that keeps a captured hash out
+  of a Markdown/PDF export), and that no shipped seed command references anything
+  but the built-in variables. The two bugs it was born from are pinned as named
+  cases — `echo $RHOSTx` substituting mid-word, and `$_` being offered as a
+  variable.
+
 ## Tech stack
 
 One self-contained **Go** binary (Gin) embeds the compiled **Vite + React +
@@ -288,7 +389,8 @@ a JSON blob in a `profiles` row.
 
 ## Project layout
 
-- `frontend/` — Vite + React + TypeScript SPA.
+- `frontend/` — Vite + React + TypeScript SPA. Tests with **Vitest**
+  (`*.test.ts` next to the module under test).
 - `backend/` — Go server (Gin, GORM/SQLite, `go:embed` of the built SPA).
 - `Makefile`, `Dockerfile`, `.dockerignore` — build & delivery.
 - `SPEC.md` — the authoritative specification (with an implementation-status

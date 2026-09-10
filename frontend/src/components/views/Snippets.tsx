@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../../store';
 import { fold } from '../../lib/format';
-import { definedNamesWithLocals } from '../../lib/varsets';
+import { definedNames as buildDefinedNames } from '../../lib/varsets';
 import { MONO, cardBase, cardHead, cardIconBtn, codePreCompact, tagBtn } from '../../lib/ui';
 import { CommandLine } from '../CommandLine';
 import { EmptyState } from '../EmptyState';
@@ -19,9 +19,16 @@ import type { Snippet } from '../../types';
 //
 // Two variable classes are live here (lib/vars.ts):
 //   $GLOBALES   app-wide, edited in the sidebar
-//   $locales    declared by this snippet, captured from a step's output; their
-//               VALUES are memory-only, keyed per USAGE CONTEXT (here: the
-//               snippet id), and never persisted or exported (D7).
+//   $locales    captured from a step's output; their VALUES are memory-only, keyed
+//               per USAGE CONTEXT (here: the snippet id), and never persisted or
+//               exported (D7).
+//
+// v0.10.0 — a local no longer has to be DECLARED in locals[] to be recognised, so
+// there are now three ways into the same value: the « Variables locales » strip
+// (for a local no step produces), the capture field under the step that produces
+// it, and a double-click on the token inside any line. All three write the same
+// context, so they stay in lockstep. locals[] still earns its keep: it carries the
+// `hint` and the « produit » anchor that place a capture field under a given step.
 
 const page: CSSProperties = { padding: '22px 26px 70px', display: 'flex', justifyContent: 'center' };
 const column: CSSProperties = { width: '100%', maxWidth: '840px' };
@@ -156,6 +163,11 @@ export function Snippets() {
 
   const catByKey = useMemo(() => new Map(categories.map((c) => [c.key, c])), [categories]);
 
+  // GLOBAL names only, and identical for every snippet: since 0.10.0 a local no
+  // longer has to be declared to be recognised, so the set no longer depends on
+  // which snippet is being rendered.
+  const definedNames = useMemo(() => buildDefinedNames(values), [values]);
+
   // Membership of the ACTIVE sheet's « Snippets » chapter — drives the toggle.
   const sheetIds = useMemo(() => {
     const s = cheatsheets.find((x) => x.id === activeSheet);
@@ -262,8 +274,6 @@ export function Snippets() {
                     // so the same snippet used there holds independent values.
                     const ctx = sn.id;
                     const locals = localValues[ctx] ?? {};
-                    const names = sn.locals.map((l) => l.name);
-                    const defined = definedNamesWithLocals(values, names);
                     // Locals win over a same-named global: they are the narrower
                     // scope. Cannot actually collide (one is lower case, the other
                     // upper), but merging in this order keeps the intent explicit.
@@ -343,8 +353,9 @@ export function Snippets() {
                                 <CommandLine
                                   template={st.template}
                                   values={merged}
-                                  definedNames={defined}
+                                  definedNames={definedNames}
                                   preStyle={codePreCompact}
+                                  onSetLocal={(name, val) => setLocalValue(ctx, name, val)}
                                 />
                                 {/* The capture sits right under the step that yields
                                     it, so the output is pasted where it is produced

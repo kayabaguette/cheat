@@ -4,6 +4,142 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.10.0] — 2026-09-10
+
+### Added
+- **Local variables in commands, scoped to a tool.** `$MAJUSCULES` are app-wide;
+  `$minuscules` are now the app's second variable class in their own right,
+  available in the **Bibliothèque** and not only inside a snippet. A local's value
+  is shared by every command of the same **category + tool** pair (context key
+  `category||tool`): fill `$share` on one `nxc` command of *Active Directory* and
+  every other `nxc` command of that category shows it, while no `impacket` command
+  does. That is the unit that matches how the data is actually organised — `$share`
+  means something to `nxc` and nothing to `sqlmap` — and it is deliberately
+  narrower than the global set, which §5.1 keeps unscoped.
+
+  A value set in the Bibliothèque is therefore *already* set on the same command in
+  a Cheatsheet or a Méthodologie step. That is intended: it is the same context.
+
+- **Double-click a `$minuscule` to set its value, in the command itself.** No form
+  and no sidebar row: the token becomes an inline input exactly where you read it,
+  controlled straight from the store — every keystroke lands in the context's value
+  map, like the sidebar's global inputs — with Enter / Escape / blur only closing
+  the editor. **Emptying the field drops the value and the token reads `$name`
+  again**, everywhere in its scope. Hovering a local reveals a dashed outline; at
+  rest it shows nothing at all, which is the point (see *Changed*).
+
+### Changed
+- **A local no longer has to be declared** (supersedes SPEC addendum item 11 b1).
+  Until now a `$minuscule` counted only inside a snippet that listed it in
+  `locals[]`, and that declaration was the guard keeping ordinary shell text out of
+  the grammar. A `Command` has no such list, so the guard is now a **name ban**,
+  enforced in `isLocalName` — declarations included, so no form can mint a name the
+  renderer would refuse:
+
+  - a **single-character** name is never a local (`$f`, `$i`, `$x` — shell loop
+    variables, `for f in …; do cat "$f"; done`);
+  - the **reserved names** `env, global, script, local, private, using, workflow,
+    args, input, true, false, null` are never locals;
+  - and one **positional** rule, which therefore lives in the tokenizer rather than
+    in the name class: a lower-case token immediately followed by **`:`** is a
+    PowerShell scope or drive prefix — `$env:USERNAME`, `$global:x`, `$using:v` —
+    and never a variable. The colon is the tell, so the single rule covers all of
+    them, present and future.
+
+  Everything else in lower case is fair game, which is the whole point: `$share`,
+  `$path`, `$file`, `$hash`, `$wordlist`, `$spn`. The trade is explicit — a `$file`
+  in a bash one-liner *is* a variable now. It renders as its own literal `$file`,
+  pixel for pixel the plain text it was, and only a value typed into it on purpose
+  would change the line.
+
+  Measured: all **380 dataset templates and all 27 seed templates render
+  byte-identically**, since neither holds a single lower-case or mixed-case token.
+
+- **`Snippet.locals[]` becomes an optional declaration.** It no longer gates
+  recognition, and keeps two jobs worth having: it carries the `hint` (a capture
+  field's placeholder) and the per-step **« produit »** anchor that puts a capture
+  field under the step that yields the value. The « Variables locales » strip and
+  the per-step capture fields are **unchanged** and write the same context as the
+  double-click, so all three paths stay in lockstep. `definedNamesWithLocals` is
+  gone with the requirement it served.
+
+- **A snippet line is copied by its copy button again; clicking the line does
+  nothing** (supersedes SPEC addendum item 11 b3). 0.9.0 had made the whole line a
+  copy target; that spent the line's click gesture, and a double-click is two
+  clicks — entering the value editor would have copied the line twice on the way
+  in. Snippet lines now carry the same `.copy-btn` as a command card and a
+  cheatsheet entry, so the three surfaces copy identically. The two guards 0.9.0
+  needed for a whole-line target (a click ending a text **selection** copies
+  nothing; a missing `navigator.clipboard` reports the failure rather than faking
+  it) collapse into `<CopyButton>`'s single clipboard path, which already enforces
+  the second and no longer needs the first.
+
+- **The sidebar panel is « Variables globales », and holds nothing else.** A local
+  belongs to one place, so it has no meaningful row in an app-wide panel; the label
+  now says so. Nothing there could have surfaced one anyway — the value rows derive
+  from the globals map and `extractTokens` returns the global class only, so the
+  « Détectées » strip cannot offer a lower-case name for adoption.
+
+- **No fifth render state; SPEC §5.10 stands untouched.** A local projects onto the
+  existing states: `resolved` when valued, `empty` (its own literal `$name`,
+  neutral) when not. It is never `undef` — there is no declaration list for it to be
+  missing from — so the dotted underline stays reserved for a global pointing at no
+  definition. The edit affordance is orthogonal to the state and revealed on
+  **hover only**, which is what keeps an unvalued local visually inert.
+
+### Notes
+- **OPSEC unchanged, and the guarantee now covers one more surface for free.**
+  Command-local values join the same memory-only `localValues` map (never in
+  `AppState`, never sent to the API, reset on reload). Both file-export paths —
+  `exportMd` and `PrintRoot` — resolve against the **globals map alone**, so
+  addendum item 11 b2's rule (a `$local` is never substituted into a file, *even*
+  with « résoudre les variables » ON) extends to command locals with **no change to
+  either path**. The clipboard still resolves both classes (Q99). Locked by test:
+  `resolve('nxc smb $RHOST … --share $share', globals)` must keep `$share` raw.
+- **The tokenizer suite grows 28 → 36 assertions**, and the three new bans are each
+  proven capable of failing: dropping the single-character rule reddens 4 tests,
+  the colon guard 2, the reserved list 2. `make test` green end to end (Go +
+  `tsc --noEmit` + Vitest, in containers).
+
+## [0.9.2] — 2026-08-24
+
+### Added
+- **Vitest, and a replayable test suite for the variable tokenizer.** The
+  non-regression checks that guarded the 0.9.0 grammar change and the 0.9.1 `$_`
+  fix were throwaway scripts living outside the repository — they proved the
+  change once and then vanished. `frontend/src/lib/vars.test.ts` turns them into
+  28 permanent assertions, and `make test` runs both suites in containers (Go +
+  Vitest + `tsc --noEmit`), so no host toolchain is required.
+
+  The suite is written as a **specification**, not as a diff against the previous
+  implementation: it asserts the two name classes, the four render states, both
+  token extractors, and `definedNamesWithLocals`. Two invariants are pinned
+  because nothing else enforces them:
+  - a snippet **local is never substituted by the globals map** — the structural
+    reason a captured hash cannot reach a Markdown/PDF export (SPEC addendum
+    item 11 / D7), so a refactor cannot quietly pass the merged map instead;
+  - **no shipped seed command references anything but the built-in variables**,
+    which would otherwise render as an "undefined variable" hint for every new
+    user.
+
+  The two bugs it was born from are pinned as named cases: `echo $RHOSTx`
+  substituting mid-word, and `$_` being offered as a variable. Both were verified
+  to actually fail the suite when reintroduced (5 and 8 failing tests
+  respectively) — a guard that cannot fail is not a guard.
+
+### Documentation
+- **How to declare a snippet-local variable.** The per-step « produit » dropdown
+  only lists locals that already exist, so on a fresh snippet its only option is
+  `(rien)` — which reads as a broken field rather than as an unmet precondition.
+  The README now spells out the two ways to declare one (type `$svc_ntlm` in a
+  step and click the `détectées` chip, or use `+ variable locale`) and what
+  picking it in « produit » actually does. Behaviour is unchanged.
+
+### Notes
+- Vitest brings its own newer nested Vite/esbuild; it introduces **no** new
+  `npm audit` finding. The two pre-existing dev-only advisories are against the
+  project's top-level `vite@5.4.21` / `esbuild@0.21.5` and are unchanged.
+
 ## [0.9.1] — 2026-08-24
 
 ### Fixed

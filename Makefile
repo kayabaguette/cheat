@@ -28,7 +28,7 @@ GO_IMAGE    ?= golang:1.25-alpine
 NODE_IMAGE  ?= node:22-alpine
 
 .DEFAULT_GOAL := help
-.PHONY: help require-engine build up run down rebuild logs dev clean purge
+.PHONY: help require-engine build up run down rebuild logs dev test clean purge
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -83,6 +83,17 @@ dev: require-engine ## Containerized dev: Vite HMR (:5173) + Go (:$(CHEAT_PORT))
 	   -e VITE_API_TARGET=http://$(NAME)-api:$(CHEAT_PORT) \
 	   $(NODE_IMAGE) sh -c "npm install --no-audit --no-fund --silent && npm run dev" & \
 	 wait
+
+test: require-engine ## Run the Go and frontend test suites (containerized, no host toolchain)
+	@echo ">> backend tests (go test)"
+	@$(ENGINE) run --rm \
+	  -v $(BACKEND):/src:z -v cheat-go-cache:/go -w /src \
+	  -e GOFLAGS=-buildvcs=false \
+	  $(GO_IMAGE) go test ./...
+	@echo ">> frontend tests (vitest) + typecheck"
+	@$(ENGINE) run --rm \
+	  -v $(FRONTEND):/app:z -v cheat-web-modules:/app/node_modules -w /app \
+	  $(NODE_IMAGE) sh -c "npm install --no-audit --no-fund --silent && npm run typecheck && npm test"
 
 clean: require-engine ## Remove the container, image, dev volumes and dev network (KEEPS your data)
 	-$(ENGINE) rm -f $(NAME) $(NAME)-api $(NAME)-web 2>/dev/null

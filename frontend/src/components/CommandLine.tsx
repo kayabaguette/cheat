@@ -1,38 +1,27 @@
-import { useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { useStore } from '../store';
 import { resolve } from '../lib/vars';
 import { codeWrap } from '../lib/ui';
 import { CodeBlock } from './CodeBlock';
-import { CheckIcon } from './CopyButton';
+import { CopyButton } from './CopyButton';
 
-// One line of a snippet, copied by clicking ANYWHERE on it (0.9.0). A snippet is
-// a chain that cannot be run in one go, so the whole line is the click target
-// and the copy icon only flashes at its right end on success — the affordance
-// used by the OSCP docs.
+// One line of a snippet chain.
 //
-// Renders through <CodeBlock>, so the variable render states (§5.10) and the
-// markup are exactly those of the other views; only the wrapper is clickable.
+// v0.10.0 — THE COPY BUTTON IS BACK and clicking the line does nothing. 0.9.0 had
+// made the whole line a copy target; that spent the line's click gesture, and a
+// local variable is now edited by DOUBLE-CLICKING it right there in the command —
+// a double-click being two clicks, entering the editor would have copied the line
+// twice on the way in. The button is the shared `.copy-btn` of the Library and the
+// Cheatsheet, so a snippet line and a command card now copy the same way, and the
+// two guards 0.9.0 needed for a whole-line target (don't hijack a text selection,
+// don't fake success without navigator.clipboard) collapse into <CopyButton>'s own
+// single, already-tested clipboard path.
+//
+// Renders through <CodeBlock>, so the variable render states (§5.10), the markup
+// and the double-click editor are exactly those of the other views.
 //
 // The clipboard receives the RESOLVED line — globals AND the context's locals
 // (Q99: the clipboard resolves, file exports do not). That is the entire point:
 // paste it and run it.
-
-// The transient icon, in the slot the .copy-btn occupies elsewhere (codePre
-// reserves paddingRight: 44px, so it never overlaps the text).
-const iconSlot: CSSProperties = {
-  position: 'absolute',
-  top: '9px',
-  right: '9px',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: '3px 4px',
-  border: '1px solid var(--acc-line)',
-  background: 'var(--acc-dim)',
-  color: 'var(--acc)',
-  pointerEvents: 'none',
-};
 
 export interface CommandLineProps {
   template: string;
@@ -40,58 +29,27 @@ export interface CommandLineProps {
   values: Record<string, string>;
   definedNames: Set<string>;
   preStyle?: CSSProperties;
+  /** Writes one local's value into the enclosing usage context. */
+  onSetLocal?: (name: string, value: string) => void;
 }
 
-export function CommandLine({ template, values, definedNames, preStyle }: CommandLineProps) {
-  const { flash } = useStore();
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const onClick = () => {
-    // Never hijack a text selection: dragging across the line to grab a fragment
-    // must stay possible, so a click that ends a selection copies nothing.
-    try {
-      if ((window.getSelection()?.toString() ?? '') !== '') return;
-    } catch {
-      /* no Selection API — fall through and copy */
-    }
-    const onSuccess = () => {
-      setCopied(true);
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(false), 900);
-      flash('Copié dans le presse-papier');
-    };
-    const onFailure = () => flash('Échec de la copie');
-    try {
-      const p = navigator.clipboard?.writeText(resolve(template, values));
-      // navigator.clipboard is ABSENT in a non-secure context — which is the norm
-      // here, since the app is served over plain HTTP on the LAN. Nothing was
-      // written, so report the failure and do NOT flash the icon: a false success
-      // would have the user paste an empty clipboard (same rule as <CopyButton>).
-      if (p && typeof p.then === 'function') p.then(onSuccess, onFailure);
-      else onFailure();
-    } catch {
-      onFailure();
-    }
-  };
-
+export function CommandLine({
+  template,
+  values,
+  definedNames,
+  preStyle,
+  onSetLocal,
+}: CommandLineProps) {
   return (
-    <div
-      style={{ ...codeWrap, cursor: 'pointer' }}
-      onClick={onClick}
-      title="Cliquer pour copier la ligne"
-    >
+    <div style={codeWrap}>
+      <CopyButton text={resolve(template, values)} swapIcon title="Copier la ligne" />
       <CodeBlock
         template={template}
         values={values}
         definedNames={definedNames}
         preStyle={preStyle}
+        onSetLocal={onSetLocal}
       />
-      {copied && (
-        <span style={iconSlot}>
-          <CheckIcon />
-        </span>
-      )}
     </div>
   );
 }

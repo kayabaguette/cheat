@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import { useStore } from '../../store';
 import { resolve } from '../../lib/vars';
 import { fold } from '../../lib/format';
-import { definedNames as buildDefinedNames } from '../../lib/varsets';
+import { definedNames as buildDefinedNames, commandContext } from '../../lib/varsets';
 import { cardBase, cardHead, cardIconBtn, codeWrap, tagBtn } from '../../lib/ui';
 import { CodeBlock } from '../CodeBlock';
 import { CommandMenu } from '../CommandMenu';
@@ -172,6 +172,7 @@ export function Library() {
     cheatsheets,
     activeSheet,
     notes,
+    localValues,
     setActiveTag,
     clearFilters,
     toggleInSheet,
@@ -179,6 +180,7 @@ export function Library() {
     deleteCommand,
     toggleFavorite,
     setNote,
+    setLocalValue,
     flash,
   } = useStore();
 
@@ -268,7 +270,9 @@ export function Library() {
       ? '#' + activeTag
       : '';
 
-  const copy = (id: string, template: string) => {
+  // `text` arrives already resolved: a command's LOCALS live in its own
+  // category+tool context, so the merged value map is built per card below.
+  const copy = (id: string, text: string) => {
     const done = () => {
       setCopiedId(id);
       // Revert the check icon after a short beat.
@@ -276,7 +280,7 @@ export function Library() {
       flash('Copié dans le presse-papier');
     };
     try {
-      const p = navigator.clipboard?.writeText(resolve(template, values));
+      const p = navigator.clipboard?.writeText(text);
       // Success is flashed ONLY when writeText resolves; a missing clipboard API,
       // a rejected promise, or a synchronous throw all surface the failure toast
       // (no false success — matches the shared CopyButton fix). Toast reflects the
@@ -361,6 +365,12 @@ export function Library() {
                     <div style={grid}>
                       {tl.commands.map((c) => {
                         const inSheet = sheetIds.has(c.id);
+                        // A command's LOCAL ($minuscule) values are keyed by its
+                        // category+tool pair (0.10.0): a value filled in on one nxc
+                        // command shows on every other nxc command of the same
+                        // category, and on none of impacket's.
+                        const ctx = commandContext(c);
+                        const merged = { ...values, ...(localValues[ctx] ?? {}) };
                         return (
                           <div key={c.id} style={card}>
                             <div style={cardHead}>
@@ -388,13 +398,18 @@ export function Library() {
                                   so :hover / :active feedback apply (inline styles would override
                                   the class rules). */}
                               <button
-                                onClick={() => copy(c.id, c.template)}
+                                onClick={() => copy(c.id, resolve(c.template, merged))}
                                 title="Copier"
                                 className={copiedId === c.id ? 'copy-btn copied' : 'copy-btn'}
                               >
                                 {copiedId === c.id ? <CheckIcon /> : <CopyIcon />}
                               </button>
-                              <CodeBlock template={c.template} values={values} definedNames={definedNames} />
+                              <CodeBlock
+                                template={c.template}
+                                values={merged}
+                                definedNames={definedNames}
+                                onSetLocal={(name, val) => setLocalValue(ctx, name, val)}
+                              />
                             </div>
                             <div style={tagsRow}>
                               {c.tags.map((t) => (

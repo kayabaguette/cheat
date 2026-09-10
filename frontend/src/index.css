@@ -26,6 +26,16 @@ a:hover{color:var(--acc)}
 .copy-btn:active{transform:scale(.86)}
 .copy-btn.copied{color:var(--acc);border-color:var(--acc-line);background:var(--acc-dim)}
 
+/* --- Local variables ($minuscule) ----------------------------------------
+   A local is edited in place: double-click it inside the command (0.10.0).
+   The affordance is revealed on HOVER ONLY, so an unvalued local at rest is
+   pixel for pixel the plain text it used to be before it became a variable —
+   which is what keeps `$env:USERNAME`-shaped lines looking untouched. SPEC
+   §5.10 reserves the dotted underline for the `undef` state, so this uses a
+   dashed OUTLINE and adds no fifth render state. */
+.var-local{cursor:pointer}
+.var-local:hover{outline:1px dashed var(--acc-line);outline-offset:1px}
+
 /* --- Top bar compaction --------------------------------------------------
    The bar keeps its fixed 53px height at every width; what gives way, in
    order, is the search width, the "Cheat" wordmark, the tab labels (long ->
