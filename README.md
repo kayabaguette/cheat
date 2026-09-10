@@ -245,6 +245,13 @@ and `open|filtered`, which is nmap declining to say). A trigger whose name the
 built-in catalogue does not know still matches by appearing in the service name,
 provided it is at least 3 characters long.
 
+**HTTP and HTTPS are deliberately asymmetric.** `HTTP` means *there is a web app*
+and fires on https too, because the enumeration steps behind it apply either way.
+`HTTPS` means *there is TLS in front of it* and stays narrower — TLS ports,
+`https*` service names, and any `ssl/`&#8288;/&#8288;`tls/` tunnel whatever the
+port — so its certificate and cipher steps never light up on a plain `http` host.
+A bare `ssl` service fires neither: nmap could not say what is behind it.
+
 **It only ever ticks, never unticks.** A chip you set by hand always wins, so the
 worst a bad parse can do is find nothing. Treat it as a pre-fill you correct, not
 as a source of truth.

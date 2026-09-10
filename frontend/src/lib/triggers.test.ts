@@ -136,12 +136,12 @@ describe('matchTriggers', () => {
     expect(matchTriggers('4445/tcp open microsoft-ds?', TRIGGERS)).toEqual(['tg-smb']);
   });
 
-  // A catalogued label is matched PRECISELY — by port or by exact service name —
-  // never by loose substring, or « HTTP » would tick on an `https`-only host and
-  // the catalogue would be decoration. The substring fallback below exists for
-  // the labels the catalogue does not know, and only for those.
+  // A catalogued label is matched PRECISELY — by port, by exact service name, or
+  // by its own predicate — never by loose substring, or the catalogue would be
+  // decoration. The substring fallback below exists for the labels the catalogue
+  // does not know, and only for those.
   it('does not match a catalogued label by substring', () => {
-    expect(matchTriggers('9999/tcp open https-only-thing', TRIGGERS)).toEqual([]);
+    expect(matchTriggers('9999/tcp open some-httpd-thing', TRIGGERS)).toEqual([]);
   });
 
   it('falls back to the label appearing in the service name for an unknown label', () => {
@@ -171,6 +171,52 @@ describe('matchTriggers', () => {
     expect(matchTriggers('', TRIGGERS)).toEqual([]);
     expect(matchTriggers(NMAP, [])).toEqual([]);
     expect(matchTriggers(NMAP, [{ id: 'blank', label: '   ' }])).toEqual([]);
+  });
+});
+
+// v0.14.1 — the web pair, which had two holes: « HTTP » ignored an `https`
+// service outright, and « HTTPS » only recognised a TLS tunnel through the port
+// number, so `ssl/http` on 9443 was missed. The asymmetry is deliberate and is
+// what these cases pin: HTTP is "there is a web app" (TLS or not), HTTPS is
+// "there is TLS in front of it", because their steps differ.
+describe('matchTriggers — the HTTP / HTTPS pair', () => {
+  const WEB: Trigger[] = [
+    { id: 'http', label: 'HTTP' },
+    { id: 'https', label: 'HTTPS' },
+  ];
+  const hit = (line: string) => matchTriggers(line, WEB).sort();
+
+  it('fires HTTP alone on a plain web service', () => {
+    expect(hit('80/tcp open http Apache httpd 2.4.41')).toEqual(['http']);
+    expect(hit('3000/tcp open http Node.js Express')).toEqual(['http']);
+    expect(hit('8080/tcp open http-proxy')).toEqual(['http']);
+  });
+
+  // THE bug: a target serving only https left an HTTP-tagged step inactive.
+  it('fires HTTP as well as HTTPS on an https service', () => {
+    expect(hit('443/tcp open https')).toEqual(['http', 'https']);
+    expect(hit('443/tcp open https?')).toEqual(['http', 'https']);
+    expect(hit('8443/tcp open ssl/https-alt')).toEqual(['http', 'https']);
+  });
+
+  // THE other bug: the tunnel, not the port, is what says TLS.
+  it('fires HTTPS on a ssl/ or tls/ tunnel at any port', () => {
+    expect(hit('443/tcp open ssl/http')).toEqual(['http', 'https']);
+    expect(hit('9443/tcp open ssl/http')).toEqual(['http', 'https']);
+    expect(hit('9443/tcp open tls/http')).toEqual(['http', 'https']);
+  });
+
+  // HTTPS must stay narrower than HTTP, or its TLS-specific steps would light up
+  // on a plain http host.
+  it('never fires HTTPS on a plain http service', () => {
+    expect(hit('80/tcp open http')).not.toContain('https');
+    expect(hit('3000/tcp open http')).not.toContain('https');
+  });
+
+  // A bare `ssl` service is TLS in front of something nmap could not name — it
+  // may be smtps or ldaps, so guessing "web" would be wrong.
+  it('fires neither on a bare ssl service', () => {
+    expect(hit('10443/tcp open ssl OpenSSL')).toEqual([]);
   });
 });
 

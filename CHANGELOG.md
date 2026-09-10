@@ -4,6 +4,39 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.14.1] — 2026-09-10
+
+### Fixed
+- **The HTTP / HTTPS pair was half-blind in « détecter depuis le résultat ».** Two
+  holes, both of which left a web-tagged step inactive on a real target:
+  - a trigger named **HTTP did not fire on an `https` service**. `443/tcp open
+    https` ticked HTTPS only, so a host serving nothing but TLS left every
+    HTTP-tagged step dark. A web service is a web service: the enumeration steps
+    behind an HTTP trigger apply whether or not there is TLS in front, so HTTP now
+    covers the https ports and service names too;
+  - **HTTPS only recognised a TLS tunnel through the port number.** nmap describes
+    one as `ssl/http` or `tls/http`, on whatever port it happens to be, so
+    `9443/tcp open ssl/http` was missed entirely. The tunnel, not the port, is what
+    says TLS, and the catalogue entry now says so with its own predicate.
+
+  The asymmetry is deliberate and pinned by test: **HTTP means "there is a web
+  app"** (TLS or not), **HTTPS means "there is TLS in front of it"** — their steps
+  differ, so HTTPS must stay the narrower of the two and never fire on a plain
+  `http` service. A bare `ssl` service fires neither: it is TLS in front of
+  something nmap could not name, and guessing "web" would be wrong.
+
+### Changed
+- **The window title reads « Cheatsheet ».** A proctor glancing at a screen during
+  an exam should not read the word « Cheat » on its own. The same rename is
+  applied to the two other places it stood alone — the wordmark in the top bar and
+  the abbreviated « Cheatsheet » tab label on narrow viewports, which read
+  « Cheat » — plus the dev-build fallback page. The tab labels, the module names
+  and the data are untouched.
+
+### Notes
+- 89 → 94 assertions. The three guards behind the detection fix were each verified
+  to redden the suite when reverted.
+
 ## [0.14.0] — 2026-09-10
 
 Two corrections to the AND/OR shipped in 0.13.0, one of which simplifies the
