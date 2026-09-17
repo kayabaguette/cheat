@@ -27,6 +27,28 @@ const headRow: CSSProperties = {
   gap: '12px',
   marginBottom: '22px',
 };
+// The filter reset: a quiet link, not a button — it undoes a view state, and
+// nothing it touches is content.
+const resetLink: CSSProperties = {
+  cursor: 'pointer',
+  border: 'none',
+  background: 'transparent',
+  color: 'var(--faint)',
+  fontSize: '11.5px',
+  fontFamily: 'inherit',
+};
+// The destructive one, at the other end of the row and shaped like a control
+// rather than a link, so the two can never be taken for one another.
+const clearBtn: CSSProperties = {
+  marginLeft: 'auto',
+  cursor: 'pointer',
+  border: '1px solid var(--border2)',
+  background: 'transparent',
+  color: 'var(--muted)',
+  fontSize: '11.5px',
+  fontFamily: 'inherit',
+  padding: '4px 10px',
+};
 const groupsWrap: CSSProperties = { display: 'flex', flexDirection: 'column', gap: '30px' };
 const groupHead: CSSProperties = {
   display: 'flex',
@@ -176,6 +198,7 @@ export function Library() {
     localValues,
     setActiveTag,
     clearFilters,
+    clearCommands,
     toggleInSheet,
     openEditCommand,
     deleteCommand,
@@ -308,6 +331,30 @@ export function Library() {
     if (window.confirm('Supprimer la commande « ' + c.title + ' » ?')) deleteCommand(c.id);
   };
 
+  // Is anything actually filtering the list? The button that clears them is
+  // hidden otherwise: a reset with nothing to reset does nothing on screen, which
+  // reads exactly like a broken button. The expanded tree is deliberately NOT
+  // part of this — it is not a filter, and it has its own toggles.
+  const filtering = !!(activeCat || activeTool || activeTag || favOnly || query.trim());
+
+  // Emptying the Library is destructive and irreversible, so the confirm spells
+  // out the cascade. It says the TOTAL, never `filtered.length`: the count in the
+  // header next to it is the filtered one, and letting the two numbers sit side
+  // by side meaning different things is the next trap.
+  const askClear = () => {
+    if (!commands.length) return;
+    const n = commands.length;
+    const msg =
+      'Supprimer les ' +
+      n +
+      ' commandes de la bibliothèque ?\n\n' +
+      'Elles quitteront aussi les cheatsheets et les étapes de méthodologie qui ' +
+      'les utilisent, et leurs notes personnelles seront effacées. Les catégories, ' +
+      'les techniques, les références et les méthodologies restent.\n\n' +
+      'Cette action est irréversible — exporte d’abord si tu veux une sauvegarde.';
+    if (window.confirm(msg)) clearCommands();
+  };
+
   return (
     <div style={page}>
       <div style={headRow}>
@@ -315,19 +362,19 @@ export function Library() {
           <span style={{ color: 'var(--text)', fontWeight: 600 }}>{filtered.length}</span> commande(s)
         </div>
         {scopeLabel && <div style={{ fontSize: '12.5px', color: 'var(--faint)' }}>{scopeLabel}</div>}
-        <button
-          onClick={clearFilters}
-          style={{
-            cursor: 'pointer',
-            border: 'none',
-            background: 'transparent',
-            color: 'var(--faint)',
-            fontSize: '11.5px',
-            fontFamily: 'inherit',
-          }}
-        >
-          réinitialiser
-        </button>
+        {filtering && (
+          <button onClick={clearFilters} style={resetLink}>
+            réinitialiser les filtres
+          </button>
+        )}
+        {/* Pushed to the far end, and worded in full. Sitting next to the filter
+            reset is what made « réinitialiser » read as « vider la
+            bibliothèque » in the first place. */}
+        {commands.length > 0 && (
+          <button onClick={askClear} style={clearBtn} title="Supprimer toutes les commandes">
+            Vider la bibliothèque
+          </button>
+        )}
       </div>
 
       {groups.length > 0 ? (

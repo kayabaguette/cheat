@@ -1128,3 +1128,100 @@ retour, sans autre usage.
   - rendu hors édition identique à avant
 - La base de dév de l'utilisateur n'a pas été touchée.
 
+
+---
+
+# 0.18.0 — « réinitialiser » dit ce qu'il fait, et la bibliothèque peut être vidée
+
+## Constat
+
+`réinitialiser` (`Library.tsx:318`) appelle `clearFilters` : catégorie, outil, tag,
+favoris, recherche, arbre replié. Il n'a jamais touché aux commandes. Ce n'est pas
+une panne, c'est le libellé qui ment par omission — l'état vide de la même vue dit
+déjà « Modifie ta recherche ou réinitialise **les filtres** » (`Library.tsx:461`).
+
+Aggravant : le bouton est affiché en permanence. Sans filtre actif, le clic ne
+produit rien à l'écran, ce qui ressemble à un bouton cassé.
+
+Décision utilisateur : **les deux** — clarifier le libellé ET ajouter un vrai
+vidage, pour que les deux ne puissent plus être confondus.
+
+## Étapes
+
+### 1. Le libellé
+- [x] `Library.tsx` et `Techniques.tsx` : « réinitialiser » → « réinitialiser les
+      filtres ».
+- [x] Masqué tant qu'aucun filtre n'est actif. Prédicat sur les filtres
+      seulement (catégorie, outil, tag, favoris, recherche) — pas sur l'arbre
+      déplié, qui n'est pas un filtre et a ses propres bascules.
+
+### 2. Vider la bibliothèque
+- [x] `store.tsx` : action `clearCommands()`, même cascade que `deleteCommand`
+      mais en gros :
+      - `commands` → `[]`
+      - chaque cheatsheet : `commandIds` → `[]`
+      - chaque étape de méthodologie : `commandId` → `undefined`
+      - `notes` purgées (elles ne sont clavetées que par id de commande)
+- [x] **Les catégories sont conservées.** Supprimer aujourd'hui la dernière
+      commande d'une catégorie ne supprime pas la catégorie ; le vidage en gros
+      suit la même règle plutôt que d'en inventer une autre.
+- [x] `Library.tsx` : bouton « Vider la bibliothèque » poussé à droite de la
+      ligne d'en-tête (`marginLeft: auto`), séparé du reset de filtres — les
+      coller serait recréer la confusion qu'on corrige.
+- [x] Confirmation énonçant le **total** et la cascade. Elle porte toujours sur
+      toute la bibliothèque, jamais sur le sous-ensemble filtré : le compte
+      affiché dans l'en-tête est celui des commandes filtrées, et faire porter
+      l'action dessus serait le piège suivant.
+
+### 3. Reliquats du renommage 0.16.0
+- [x] `activeSnipCat`/`activeSnipTag`/`setActiveSnip*` (store), `selectSnipAll`/
+      `selectSnipCat`/`toggleSnipTag` (Sidebar) et leurs 14 usages dans
+      `Techniques.tsx` → préfixe `tq`, celui déjà retenu en 0.16.0 (`tqById`,
+      `tqItems`, `tqTagList`). Mon regex d'alors exigeait une frontière de mot
+      avant `snip` et a manqué le `Snip` capitalisé en milieu d'identifiant.
+      État interne uniquement : rien d'affiché, rien de persisté.
+
+### 4. Docs
+- [x] `README.md` : la section Bibliothèque décrit-elle le bouton ? à vérifier,
+      et documenter le vidage.
+- [x] `CHANGELOG.md` : entrée 0.18.0.
+- [x] `SPEC.md` : item 21.
+
+### 5. Vérification
+- [x] `make down` d'abord
+- [x] `make test`
+- [x] Passe navigateur sur **instance jetable**, avec des cheatsheets et une
+      méthodologie qui référencent des commandes :
+      - le bouton de filtres n'apparaît qu'avec un filtre actif, et son libellé
+        dit « les filtres »
+      - vidage : confirmation, puis bibliothèque vide, cheatsheets délestées de
+        leurs commandes, étapes déliées, notes parties, catégories conservées,
+        techniques / références / méthodologies intactes
+      - annuler la confirmation ne touche à rien
+- [x] `make down` après
+
+## Pas de test unitaire
+
+La cascade vit dans le store, et le projet ne teste unitairement que la logique
+pure de `lib/` — les actions du store sont couvertes par la passe navigateur.
+Je suis la convention plutôt que d'extraire une fonction pour la seule occasion.
+
+## Résultat
+
+- `make test` : 98 assertions, typecheck, `go test ./...` — tout vert.
+- Passe navigateur sur instance jetable (port 8791, volume dédié, détruits après),
+  avec un jeu où deux cheatsheets, deux étapes de méthodologie et deux notes
+  pointent vers les commandes :
+  - sans filtre : pas de lien de reset, « Vider la bibliothèque » seul à droite
+  - avec le filtre Recon : « réinitialiser les filtres » apparaît, les deux
+    contrôles aux deux bouts de la ligne
+  - confirmation annulée → 3 commandes, 2 notes, liens intacts : rien touché
+  - confirmation acceptée → 0 commande, notes `{}`, `commandIds` des deux
+    cheatsheets vidés, `commandId` des trois étapes délié
+  - **préservés** : les 2 catégories (et toujours proposées par le formulaire
+    d'ajout), la technique, la référence, la méthodologie, et les
+    `techniqueIds` / `techniqueId` qui cohabitaient avec les commandes
+  - Cheatsheet et Méthodologie se rendent sans casse après le vidage
+  - vue Techniques : même libellé, même règle d'apparition
+- La base de dév de l'utilisateur n'a pas été touchée.
+

@@ -4,6 +4,55 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.18.0] — 2026-09-17
+
+### Fixed
+- **« réinitialiser » never said what it reset.** Sitting next to `N commande(s)`
+  it read as "empty the Library", and it clears the **filters** — category, tool,
+  tag, favourites, search. It now says « réinitialiser les filtres », the wording
+  the view's own empty state already used ("Modifie ta recherche ou réinitialise
+  les filtres"), in the Bibliothèque and in the Techniques view alike.
+
+  It is also **hidden when nothing is filtering**. It used to be drawn
+  unconditionally, so with no filter active a click produced nothing at all on
+  screen — which reads exactly like a broken button and was half of why the label
+  got misread. The expanded category tree is deliberately not part of the test:
+  it is not a filter, and it has its own toggles.
+
+### Added
+- **« Vider la bibliothèque »**, at the far end of the same row. Deletes every
+  command with `deleteCommand`'s cascade applied wholesale — out of every
+  cheatsheet, unlinked from every methodology step, notes purged — behind a
+  confirmation that spells all of it out.
+
+  It is pushed to the opposite end and shaped like a control rather than a link,
+  because putting a destructive action next to the filter reset is exactly the
+  adjacency that caused the confusion being fixed here.
+
+### Changed
+- The `Snip`-prefixed identifiers that survived 0.16.0's rename — `activeSnipCat`,
+  `activeSnipTag`, their setters, `selectSnipAll`, `selectSnipCat`, `toggleSnipTag`
+  — are now `Tq`, the abbreviation 0.16.0 settled on (`tqById`, `tqItems`,
+  `tqTagList`). The rename's regex required a word boundary before `snip` and
+  missed the capitalised `Snip` in the middle of an identifier. Internal state
+  names only: nothing displayed, nothing persisted.
+
+### Notes
+- **Categories survive the wipe.** Deleting the last command of a category has
+  never deleted the category, so emptying in bulk follows that rule rather than
+  inventing a second one — the built-ins are structure, not content. Verified in
+  the browser: after a wipe both categories are still offered by the add-command
+  form.
+- **The confirm states the TOTAL, never the filtered count.** The number beside it
+  in the header is the filtered one, and letting two numbers sit side by side
+  meaning different things is the next trap. Emptying always takes the whole
+  library; deleting just what a filter shows would be a different action.
+- The cascade lives in the store, and this project unit-tests only `lib/`'s pure
+  logic — so it is covered by the browser pass, like every other store action.
+  Checked there: commands and notes emptied, cheatsheet `commandIds` cleared,
+  step `commandId` unlinked, while `techniqueIds` / `techniqueId`, references and
+  roadmaps came through untouched, and cancelling the confirm changed nothing.
+
 ## [0.17.0] — 2026-09-17
 
 ### Fixed

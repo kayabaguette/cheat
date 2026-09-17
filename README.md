@@ -51,7 +51,12 @@ across notes.
   category, tool or tag; full create/edit/delete with on-the-fly
   categories/tools/tags; per-command notes; one-click copy of the *resolved*
   command; **star a command** to pin it to the top of its tool group and reach it
-  from the **★ Favoris** scope in the sidebar.
+  from the **★ Favoris** scope in the sidebar. « réinitialiser les filtres »
+  clears the facets and the search — it shows up only when something is actually
+  filtering. « Vider la bibliothèque », at the other end of that row, is the
+  destructive one: it deletes **every** command (confirmation first), drops them
+  from every cheatsheet and methodology step, and erases their notes. Categories,
+  techniques, references and methodologies are left alone.
 - **Méthodologie** — reusable **roadmaps** of phases and checkable steps with
   per-phase and global progress. A step can link a command, shown expanded and
   resolved inline. Edit mode edits a step in place — label, linked command,
