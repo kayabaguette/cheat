@@ -5,11 +5,11 @@ import { Modal } from './Modal';
 import { MONO, inputBase, monoInput, optBase, optOn, cardIconBtn } from '../lib/ui';
 import { TagPicker, mergeTags } from './TagPicker';
 import { extractLocalTokens, isLocalName } from '../lib/vars';
-import type { SnippetLocal, SnippetStep } from '../types';
+import type { TechniqueLocal, TechniqueStep } from '../types';
 
-// « + Snippet » add/edit modal (v0.9.0). Same shape and chrome as <AddCommand>
+// « + Technique » add/edit modal (v0.9.0). Same shape and chrome as <AddCommand>
 // (category chips + '+' new category, shared inputs, <TagPicker>, <Modal sticky>),
-// plus the two editors a chain needs: an ORDERED step list and the snippet's
+// plus the two editors a chain needs: an ORDERED step list and the technique's
 // LOCAL variable declarations.
 //
 // Declaration is what makes a lowercase $token a variable at all (lib/vars.ts), so
@@ -91,17 +91,17 @@ const detectedChip: CSSProperties = {
 
 const noAutofix = { spellCheck: false, autoCorrect: 'off', autoCapitalize: 'off' } as const;
 const uniqueSorted = <T,>(xs: T[]): T[] => [...new Set(xs)].sort();
-const blankStep = (): SnippetStep => ({ id: 'ss' + crypto.randomUUID(), template: '' });
+const blankStep = (): TechniqueStep => ({ id: 'ss' + crypto.randomUUID(), template: '' });
 
-export function AddSnippet() {
+export function AddTechnique() {
   const {
-    addingSnippet,
-    editingSnippetId,
-    setAddingSnippet,
-    addSnippet,
-    updateSnippet,
+    addingTechnique,
+    editingTechniqueId,
+    setAddingTechnique,
+    addTechnique,
+    updateTechnique,
     categories,
-    snippets,
+    techniques,
   } = useStore();
 
   const firstCat = categories[0]?.key ?? '';
@@ -111,13 +111,13 @@ export function AddSnippet() {
   const [newCategory, setNewCategory] = useState('');
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
-  const [steps, setSteps] = useState<SnippetStep[]>([blankStep()]);
-  const [locals, setLocals] = useState<SnippetLocal[]>([]);
+  const [steps, setSteps] = useState<TechniqueStep[]>([blankStep()]);
+  const [locals, setLocals] = useState<TechniqueLocal[]>([]);
   const [tagsSel, setTagsSel] = useState<string[]>([]);
   const [tagsText, setTagsText] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const existingTags = useMemo(() => uniqueSorted(snippets.flatMap((sn) => sn.tags)), [snippets]);
+  const existingTags = useMemo(() => uniqueSorted(techniques.flatMap((tq) => tq.tags)), [techniques]);
 
   // Lowercase tokens used in the step templates but not declared yet.
   const detected = useMemo(() => {
@@ -133,15 +133,15 @@ export function AddSnippet() {
 
   // Prefill on the open transition only (mirrors AddCommand).
   useEffect(() => {
-    if (!addingSnippet) return;
-    const sn = editingSnippetId ? snippets.find((x) => x.id === editingSnippetId) : null;
-    if (sn) {
-      setCategory(sn.category);
-      setTitle(sn.title);
-      setDesc(sn.desc);
-      setSteps(sn.steps.length ? sn.steps.map((st) => ({ ...st })) : [blankStep()]);
-      setLocals(sn.locals.map((l) => ({ ...l })));
-      setTagsSel(sn.tags.slice());
+    if (!addingTechnique) return;
+    const tq = editingTechniqueId ? techniques.find((x) => x.id === editingTechniqueId) : null;
+    if (tq) {
+      setCategory(tq.category);
+      setTitle(tq.title);
+      setDesc(tq.desc);
+      setSteps(tq.steps.length ? tq.steps.map((st) => ({ ...st })) : [blankStep()]);
+      setLocals(tq.locals.map((l) => ({ ...l })));
+      setTagsSel(tq.tags.slice());
     } else {
       setCategory(firstCat);
       setTitle('');
@@ -155,15 +155,15 @@ export function AddSnippet() {
     setTagsText('');
     setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addingSnippet, editingSnippetId]);
+  }, [addingTechnique, editingTechniqueId]);
 
-  if (!addingSnippet) return null;
+  if (!addingTechnique) return null;
 
-  const close = () => setAddingSnippet(false);
+  const close = () => setAddingTechnique(false);
   const toggleTag = (t: string) =>
     setTagsSel((sel) => (sel.includes(t) ? sel.filter((x) => x !== t) : [...sel, t]));
 
-  const patchStep = (i: number, patch: Partial<SnippetStep>) =>
+  const patchStep = (i: number, patch: Partial<TechniqueStep>) =>
     setSteps((ss) => ss.map((st, j) => (j === i ? { ...st, ...patch } : st)));
   const moveStep = (i: number, dir: -1 | 1) =>
     setSteps((ss) => {
@@ -178,7 +178,7 @@ export function AddSnippet() {
 
   const declare = (name: string) =>
     setLocals((ls) => (ls.some((l) => l.name === name) ? ls : [...ls, { name }]));
-  const patchLocal = (i: number, patch: Partial<SnippetLocal>) =>
+  const patchLocal = (i: number, patch: Partial<TechniqueLocal>) =>
     setLocals((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const removeLocal = (i: number) => {
     const gone = locals[i]?.name;
@@ -203,15 +203,15 @@ export function AddSnippet() {
     }
     const tags = mergeTags(tagsSel, tagsText);
     const payload = { category, newCategory, title, desc, tags, steps, locals };
-    const ok = editingSnippetId
-      ? updateSnippet(editingSnippetId, payload)
-      : addSnippet(payload);
+    const ok = editingTechniqueId
+      ? updateTechnique(editingTechniqueId, payload)
+      : addTechnique(payload);
     if (ok) close();
   };
 
   return (
     <Modal
-      title={editingSnippetId ? 'Modifier le snippet' : 'Nouveau snippet'}
+      title={editingTechniqueId ? 'Modifier la technique' : 'Nouvelle technique'}
       onClose={close}
       sticky
       footer={
@@ -221,7 +221,7 @@ export function AddSnippet() {
             Annuler
           </button>
           <button onClick={submit} style={submitBtn}>
-            {editingSnippetId ? 'Enregistrer' : 'Ajouter'}
+            {editingTechniqueId ? 'Enregistrer' : 'Ajouter'}
           </button>
         </>
       }
@@ -260,7 +260,7 @@ export function AddSnippet() {
       </div>
 
       <div>
-        <div style={fieldLabel}>Titre du snippet</div>
+        <div style={fieldLabel}>Titre de la technique</div>
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}

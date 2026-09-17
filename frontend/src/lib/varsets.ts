@@ -29,7 +29,7 @@ export function definedNames(values: Record<string, string>): Set<string> {
 //
 // The `cat:` prefix does the job the old `||` separator did for free — it
 // guarantees STRUCTURALLY that a command context can never collide with a
-// snippet's (snippetId / stepId / sheetId:snippetId), whatever a category key
+// technique's (techniqueId / stepId / sheetId:techniqueId), whatever a category key
 // happens to be.
 export function commandContext(cmd: { category: string }): string {
   return 'cat:' + cmd.category;

@@ -100,6 +100,9 @@ export function DataMenu() {
       'references',
       'roadmaps',
       'cheatsheets',
+      'techniques',
+      // Pre-0.16.0 spelling of `techniques`. Still listed so a legacy export
+      // passes this check and reaches the backend, which reads the old key.
       'snippets',
     ];
     const mapKeys = ['notes', 'checks', 'openSteps', 'results', 'activeTriggers', 'settings'];

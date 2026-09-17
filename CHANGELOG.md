@@ -4,6 +4,52 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.16.0] — 2026-09-17
+
+### Changed
+- **« Snippets » are now « Techniques », everywhere.** The name was wrong from the
+  start: 0.9.0's own note called the entity "a *reusable technique*", while
+  "snippet" means a short fragment — the opposite of an ordered chain of commands
+  where each step consumes what the last one produced. The rename goes all the way
+  down rather than staying a label: the tab and every French string (feminine —
+  « Nouvelle technique », « Technique ajoutée », « Toutes les techniques »), the
+  TS types `Technique` / `TechniqueStep` / `TechniqueLocal`, the Go DTOs, and the
+  **persisted keys** `techniques`, `techniqueIds`, `techniqueId`.
+
+  Nothing about the entity itself moves — same shape, same scope rules, same
+  cascade on delete. `AddSnippet.tsx` and `views/Snippets.tsx` are renamed with it.
+
+### Added
+- **The pre-0.16 keys are still read.** This is the first rename to reach the wire
+  contract, so every profile blob already in the DB and every export sitting on a
+  disk spells it the old way. `AppState`, `CheatsheetDTO` and `StepDTO` each got an
+  `UnmarshalJSON` falling back to `snippets` / `snippetIds` / `snippetId` **only
+  when the current key is absent** — a fallback, never a merge, so a current
+  document is untouched. `GET`/`PUT` state and `POST /import` all decode through
+  that one choke point, which is what lets it cover stored blobs and imported
+  files at once. The client's import shape whitelist keeps `snippets` beside
+  `techniques` so a legacy file is not rejected before it ever reaches the server.
+
+  Four Go tests pin the behaviour: the legacy read (including the nested steps and
+  locals, and the sibling fields of each aliased one), new-wins-over-legacy, the
+  rewrite-to-new-keys on save, and the absent-key normalisation to `[]`.
+
+### Notes
+- **No migration pass over the `profiles` table**, unlike the 0.7.0 one-shot. The
+  read alias plus the existing save path do it for free: a blob is read with the
+  old keys and rewritten with the new ones at the first autosave. A profile that
+  is never touched again keeps the old spelling and keeps loading, which is the
+  point of a fallback that stays.
+- **Ids keep their `sn` prefix.** They are opaque and every technique already
+  stored carries one, so re-prefixing would only split the id space in two for
+  nothing.
+- Local-value context keys follow the rename (`techniqueId`, `sheetId:techniqueId`)
+  at no cost: those values are memory-only (D7) and do not survive the reload that
+  introduces the change.
+- The CHANGELOG entries and SPEC items below/above this one are **not** rewritten —
+  they record what those versions shipped, when "snippet" was the name. SPEC gains
+  item 19 instead.
+
 ## [0.15.0] — 2026-09-10
 
 ### Added

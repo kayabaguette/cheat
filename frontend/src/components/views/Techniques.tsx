@@ -6,9 +6,9 @@ import { definedNames as buildDefinedNames } from '../../lib/varsets';
 import { MONO, cardBase, cardHead, cardIconBtn, codePreCompact, tagBtn } from '../../lib/ui';
 import { CommandLine } from '../CommandLine';
 import { EmptyState } from '../EmptyState';
-import type { Snippet } from '../../types';
+import type { Technique } from '../../types';
 
-// Snippets — reusable ordered command chains (v0.9.0). A snippet is a technique
+// Techniques — reusable ordered command chains (v0.9.0). A technique is a technique
 // (silver ticket, kerberoast → crack → reuse…) whose steps are run one after the
 // other, each commonly consuming what the previous one produced.
 //
@@ -20,7 +20,7 @@ import type { Snippet } from '../../types';
 // Two variable classes are live here (lib/vars.ts):
 //   $GLOBALES   app-wide, edited in the sidebar
 //   $locales    captured from a step's output; their VALUES are memory-only, keyed
-//               per USAGE CONTEXT (here: the snippet id), and never persisted or
+//               per USAGE CONTEXT (here: the technique id), and never persisted or
 //               exported (D7).
 //
 // v0.10.0 — a local no longer has to be DECLARED in locals[] to be recognised, so
@@ -130,7 +130,7 @@ const addOn: CSSProperties = {
   color: 'var(--acc)',
 };
 
-// Mirrors Library's synthetic group for a snippet whose category is unknown
+// Mirrors Library's synthetic group for a technique whose category is unknown
 // (dangling category in an imported dataset) so it never renders nowhere.
 const ORPHAN_KEY = '__orphan__';
 
@@ -138,14 +138,14 @@ interface CatGroup {
   key: string;
   label: string;
   color: string;
-  snippets: Snippet[];
+  techniques: Technique[];
 }
 
-export function Snippets() {
+export function Techniques() {
   const {
     values,
     query,
-    snippets,
+    techniques,
     categories,
     cheatsheets,
     activeSheet,
@@ -156,60 +156,60 @@ export function Snippets() {
     setActiveSnipCat,
     setQuery,
     setLocalValue,
-    openEditSnippet,
-    deleteSnippet,
-    toggleSnippetInSheet,
+    openEditTechnique,
+    deleteTechnique,
+    toggleTechniqueInSheet,
   } = useStore();
 
   const catByKey = useMemo(() => new Map(categories.map((c) => [c.key, c])), [categories]);
 
-  // GLOBAL names only, and identical for every snippet: since 0.10.0 a local no
+  // GLOBAL names only, and identical for every technique: since 0.10.0 a local no
   // longer has to be declared to be recognised, so the set no longer depends on
-  // which snippet is being rendered.
+  // which technique is being rendered.
   const definedNames = useMemo(() => buildDefinedNames(values), [values]);
 
-  // Membership of the ACTIVE sheet's « Snippets » chapter — drives the toggle.
+  // Membership of the ACTIVE sheet's « Techniques » chapter — drives the toggle.
   const sheetIds = useMemo(() => {
     const s = cheatsheets.find((x) => x.id === activeSheet);
-    return new Set(s?.snippetIds ?? []);
+    return new Set(s?.techniqueIds ?? []);
   }, [cheatsheets, activeSheet]);
 
-  const filtered = useMemo<Snippet[]>(() => {
+  const filtered = useMemo<Technique[]>(() => {
     const tokens = fold(query).split(/\s+/).filter(Boolean);
-    return snippets.filter((sn) => {
-      if (activeSnipCat && sn.category !== activeSnipCat) return false;
-      if (activeSnipTag && !sn.tags.includes(activeSnipTag)) return false;
+    return techniques.filter((tq) => {
+      if (activeSnipCat && tq.category !== activeSnipCat) return false;
+      if (activeSnipTag && !tq.tags.includes(activeSnipTag)) return false;
       if (tokens.length) {
-        const catLabel = catByKey.get(sn.category)?.label ?? sn.category;
+        const catLabel = catByKey.get(tq.category)?.label ?? tq.category;
         const hay = fold(
           [
-            sn.title,
-            sn.desc,
-            sn.tags.join(' '),
+            tq.title,
+            tq.desc,
+            tq.tags.join(' '),
             catLabel,
-            sn.steps.map((st) => st.template + ' ' + (st.label ?? '')).join(' '),
+            tq.steps.map((st) => st.template + ' ' + (st.label ?? '')).join(' '),
           ].join(' '),
         );
         if (!tokens.every((t) => hay.includes(t))) return false;
       }
       return true;
     });
-  }, [snippets, catByKey, activeSnipCat, activeSnipTag, query]);
+  }, [techniques, catByKey, activeSnipCat, activeSnipTag, query]);
 
   const groups = useMemo<CatGroup[]>(() => {
     const out: CatGroup[] = [];
     for (const cat of categories) {
-      const inCat = filtered.filter((sn) => sn.category === cat.key);
-      if (inCat.length) out.push({ key: cat.key, label: cat.label, color: cat.color, snippets: inCat });
+      const inCat = filtered.filter((tq) => tq.category === cat.key);
+      if (inCat.length) out.push({ key: cat.key, label: cat.label, color: cat.color, techniques: inCat });
     }
     const known = new Set(categories.map((c) => c.key));
-    const orphans = filtered.filter((sn) => !known.has(sn.category));
+    const orphans = filtered.filter((tq) => !known.has(tq.category));
     if (orphans.length) {
       out.push({
         key: ORPHAN_KEY,
         label: 'Sans catégorie',
         color: 'var(--faint)',
-        snippets: orphans,
+        techniques: orphans,
       });
     }
     return out;
@@ -227,8 +227,8 @@ export function Snippets() {
     setQuery('');
   };
 
-  const askDelete = (sn: Snippet) => {
-    if (window.confirm('Supprimer le snippet « ' + sn.title + ' » ?')) deleteSnippet(sn.id);
+  const askDelete = (tq: Technique) => {
+    if (window.confirm('Supprimer la technique « ' + tq.title + ' » ?')) deleteTechnique(tq.id);
   };
 
   return (
@@ -236,7 +236,7 @@ export function Snippets() {
       <div style={column}>
         <div style={headRow}>
           <div style={{ fontSize: '12.5px', color: 'var(--muted)' }}>
-            <span style={{ color: 'var(--text)', fontWeight: 600 }}>{filtered.length}</span> snippet(s)
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>{filtered.length}</span> technique(s)
           </div>
           {scopeLabel && <div style={{ fontSize: '12.5px', color: 'var(--faint)' }}>{scopeLabel}</div>}
           <button
@@ -264,25 +264,25 @@ export function Snippets() {
                     {g.label}
                   </span>
                   <span style={{ fontSize: '11px', color: 'var(--faint)', fontFamily: MONO }}>
-                    {g.snippets.length}
+                    {g.techniques.length}
                   </span>
                 </div>
                 <div style={cardsWrap}>
-                  {g.snippets.map((sn) => {
-                    // The usage context: in this view a snippet's local values are
+                  {g.techniques.map((tq) => {
+                    // The usage context: in this view a technique's local values are
                     // keyed by its own id. A Methodology step keys them by stepId,
-                    // so the same snippet used there holds independent values.
-                    const ctx = sn.id;
+                    // so the same technique used there holds independent values.
+                    const ctx = tq.id;
                     const locals = localValues[ctx] ?? {};
                     // Locals win over a same-named global: they are the narrower
                     // scope. Cannot actually collide (one is lower case, the other
                     // upper), but merging in this order keeps the intent explicit.
                     const merged = { ...values, ...locals };
                     const produced = new Set(
-                      sn.steps.map((st) => st.produces).filter((n): n is string => !!n),
+                      tq.steps.map((st) => st.produces).filter((n): n is string => !!n),
                     );
-                    const unbound = sn.locals.filter((l) => !produced.has(l.name));
-                    const inSheet = sheetIds.has(sn.id);
+                    const unbound = tq.locals.filter((l) => !produced.has(l.name));
+                    const inSheet = sheetIds.has(tq.id);
 
                     const capture = (name: string, hint?: string) => (
                       <div style={capRow} key={name}>
@@ -308,26 +308,26 @@ export function Snippets() {
                     );
 
                     return (
-                      <div key={sn.id} style={card}>
+                      <div key={tq.id} style={card}>
                         <div style={cardHead}>
-                          <div style={cardTitle}>{sn.title}</div>
+                          <div style={cardTitle}>{tq.title}</div>
                           <span
                             style={{ fontSize: '11px', color: 'var(--faint)', fontFamily: MONO, flex: 'none' }}
                           >
-                            {sn.steps.length} étape(s)
+                            {tq.steps.length} étape(s)
                           </span>
                           <button
-                            onClick={() => openEditSnippet(sn.id)}
+                            onClick={() => openEditTechnique(tq.id)}
                             title="Modifier"
                             style={cardIconBtn}
                           >
                             ✎
                           </button>
-                          <button onClick={() => askDelete(sn)} title="Supprimer" style={cardIconBtn}>
+                          <button onClick={() => askDelete(tq)} title="Supprimer" style={cardIconBtn}>
                             ✕
                           </button>
                         </div>
-                        {sn.desc && <div style={cardDesc}>{sn.desc}</div>}
+                        {tq.desc && <div style={cardDesc}>{tq.desc}</div>}
 
                         {/* Locals no step produces: captured up front rather than inline. */}
                         {unbound.length > 0 && (
@@ -340,9 +340,9 @@ export function Snippets() {
                         )}
 
                         <div style={stepsWrap}>
-                          {sn.steps.map((st, i) => {
+                          {tq.steps.map((st, i) => {
                             const prodHint = st.produces
-                              ? sn.locals.find((l) => l.name === st.produces)?.hint
+                              ? tq.locals.find((l) => l.name === st.produces)?.hint
                               : undefined;
                             return (
                               <div key={st.id}>
@@ -367,7 +367,7 @@ export function Snippets() {
                         </div>
 
                         <div style={tagsRow}>
-                          {sn.tags.map((t) => (
+                          {tq.tags.map((t) => (
                             <button
                               key={t}
                               onClick={() => setActiveSnipTag(activeSnipTag === t ? null : t)}
@@ -378,7 +378,7 @@ export function Snippets() {
                           ))}
                           <div style={{ flex: 1 }} />
                           <button
-                            onClick={() => toggleSnippetInSheet(sn.id)}
+                            onClick={() => toggleTechniqueInSheet(tq.id)}
                             style={inSheet ? addOn : addOff}
                           >
                             {inSheet ? 'Ajouté ✓' : '+ Cheatsheet'}
@@ -393,8 +393,8 @@ export function Snippets() {
           </div>
         ) : (
           <EmptyState
-            mono="// aucun snippet"
-            sub="Crée un enchaînement avec « + Snippet », ou réinitialise les filtres."
+            mono="// aucune technique"
+            sub="Crée un enchaînement avec « + Technique », ou réinitialise les filtres."
           />
         )}
       </div>

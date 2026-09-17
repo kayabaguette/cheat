@@ -13,13 +13,13 @@ import { codePre, prompt, partStyle } from '../lib/ui';
 //
 // v0.10.0 — LOCAL variables are edited HERE, in the command itself: a $minuscule
 // part is DOUBLE-CLICKED to reveal an inline input. The value is written to the
-// enclosing usage context (a category+tool pair for a command, the snippet/step id
-// for a snippet), so it propagates to every command that shares that context.
+// enclosing usage context (a category+tool pair for a command, the technique/step id
+// for a technique), so it propagates to every command that shares that context.
 // Emptying the field drops the value and the token reads `$name` again.
 //
 // The input is CONTROLLED BY THE STORE, not by a draft: every keystroke lands in
 // the context's value map straight away, exactly like the sidebar's global inputs
-// and the snippet capture fields, so all three stay in sync with no commit step.
+// and the technique capture fields, so all three stay in sync with no commit step.
 // Escape / Enter / blur only close the editor.
 
 // The inline editor. `font: inherit` keeps it in the <pre>'s mono at the same

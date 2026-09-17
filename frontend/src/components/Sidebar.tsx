@@ -181,7 +181,7 @@ export function Sidebar() {
     categories,
     references,
     activeRefTag,
-    snippets,
+    techniques,
     activeSnipCat,
     activeSnipTag,
     setView,
@@ -202,7 +202,7 @@ export function Sidebar() {
 
   const isLibrary = view === 'library';
   const isRefs = view === 'refs';
-  const isSnippets = view === 'snippets';
+  const isTechniques = view === 'techniques';
 
   // Adopted custom variables (a value key that is not one of the 6 built-ins).
   const customVars = useMemo(() => Object.keys(values).filter((k) => !STD.has(k)), [values]);
@@ -220,12 +220,12 @@ export function Sidebar() {
       }
     };
     for (const c of commands) scan(c.template);
-    // Also scan snippet steps, so a global used ONLY inside a snippet is still
-    // detected. extractTokens returns the GLOBAL class only, so a snippet-local
+    // Also scan technique steps, so a global used ONLY inside a technique is still
+    // detected. extractTokens returns the GLOBAL class only, so a technique-local
     // ($svc_ntlm) can never surface here and pollute the app-wide panel.
-    for (const sn of snippets) for (const st of sn.steps) scan(st.template);
+    for (const tq of techniques) for (const st of tq.steps) scan(st.template);
     return out;
-  }, [commands, snippets, values]);
+  }, [commands, techniques, values]);
 
   // The $minuscules the ACTIVE category's commands reference — i.e. exactly the
   // contents of the « Variables locales » form. DERIVED from the templates and
@@ -282,15 +282,15 @@ export function Sidebar() {
   // at least one, so the scope can never be an empty dead end.
   const favCount = useMemo(() => commands.filter((c) => c.favorite).length, [commands]);
 
-  // Snippets view facets: per-category counts (FLAT — a snippet has no tool, so
+  // Techniques view facets: per-category counts (FLAT — a technique has no tool, so
   // there is no expandable tool tree) and its own tag list.
-  const snipCatCount = useMemo(() => {
+  const tqCatCount = useMemo(() => {
     const m: Record<string, number> = {};
-    for (const sn of snippets) m[sn.category] = (m[sn.category] || 0) + 1;
+    for (const tq of techniques) m[tq.category] = (m[tq.category] || 0) + 1;
     return m;
-  }, [snippets]);
-  const snipTagList = useMemo(() => countBy(snippets, (sn) => sn.tags), [snippets]);
-  const snipCats = categories.filter((c) => snipCatCount[c.key]);
+  }, [techniques]);
+  const tqTagList = useMemo(() => countBy(techniques, (tq) => tq.tags), [techniques]);
+  const tqCats = categories.filter((c) => tqCatCount[c.key]);
 
   // Distinct tags across references, with per-tag counts — the References view's
   // own Tags facet (replaces the library Categories/Tags sections).
@@ -334,15 +334,15 @@ export function Sidebar() {
     setActiveTag(activeTag === name ? null : name);
   };
   const selectSnipAll = () => {
-    setView('snippets');
+    setView('techniques');
     setActiveSnipCat(null);
   };
   const selectSnipCat = (key: string) => {
-    setView('snippets');
+    setView('techniques');
     setActiveSnipCat(activeSnipCat === key ? null : key);
   };
   const toggleSnipTag = (name: string) => {
-    setView('snippets');
+    setView('techniques');
     setActiveSnipTag(activeSnipTag === name ? null : name);
   };
   const toggleRefTag = (name: string) => {
@@ -624,9 +624,9 @@ export function Sidebar() {
           library Categories/Tags sections. */}
       {isRefs && <TagFacet tags={refTagList} active={activeRefTag} onToggle={toggleRefTag} />}
 
-      {/* Snippets view: FLAT categories (no tool tree) + its own tag facet, in
+      {/* Techniques view: FLAT categories (no tool tree) + its own tag facet, in
           place of the library Categories/Tags sections. */}
-      {isSnippets && (
+      {isTechniques && (
         <div>
           <div style={sectionHead}>Catégories</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -635,10 +635,10 @@ export function Sidebar() {
               style={{ ...(!activeSnipCat ? rowOn : rowBase), marginLeft: '18px' }}
             >
               <span style={{ width: '8px', height: '8px', flex: 'none', background: 'var(--muted)' }} />
-              <span style={{ flex: 1, minWidth: 0 }}>Tous les snippets</span>
-              <span style={countStyle}>{snippets.length}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>Toutes les techniques</span>
+              <span style={countStyle}>{techniques.length}</span>
             </button>
-            {snipCats.map((c) => (
+            {tqCats.map((c) => (
               <button
                 key={c.key}
                 onClick={() => selectSnipCat(c.key)}
@@ -649,18 +649,18 @@ export function Sidebar() {
               >
                 <span style={{ width: '8px', height: '8px', flex: 'none', background: c.color }} />
                 <span style={ellipsis}>{c.label}</span>
-                <span style={countStyle}>{snipCatCount[c.key]}</span>
+                <span style={countStyle}>{tqCatCount[c.key]}</span>
               </button>
             ))}
           </div>
         </div>
       )}
-      {isSnippets && (
-        <TagFacet tags={snipTagList} active={activeSnipTag} onToggle={toggleSnipTag} />
+      {isTechniques && (
+        <TagFacet tags={tqTagList} active={activeSnipTag} onToggle={toggleSnipTag} />
       )}
 
       {/* Categories (expandable → tools) — library view only */}
-      {!isRefs && !isSnippets && (
+      {!isRefs && !isTechniques && (
       <div>
         <div style={sectionHead}>Catégories</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -744,7 +744,7 @@ export function Sidebar() {
       )}
 
       {/* Tags — library view only */}
-      {!isRefs && !isSnippets && (
+      {!isRefs && !isTechniques && (
         <TagFacet tags={tagList} active={activeTag} onToggle={toggleTag} />
       )}
     </div>

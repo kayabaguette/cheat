@@ -67,8 +67,8 @@ type StepDTO struct {
 	ID        string `json:"id"`
 	Text      string `json:"text"`
 	CommandID string `json:"commandId,omitempty"`
-	// A step may link a command, a snippet, or both (cumulative).
-	SnippetID string `json:"snippetId,omitempty"`
+	// A step may link a command, a technique, or both (cumulative).
+	TechniqueID string `json:"techniqueId,omitempty"`
 	// v0.11.0 — ids of the triggers that make this step apply; empty or absent =
 	// unconditional. Whether a trigger is ON is progress, not structure: see
 	// AppState.ActiveTriggers.
@@ -121,15 +121,18 @@ type CheatsheetDTO struct {
 	Target     string   `json:"target"`
 	CommandIDs []string `json:"commandIds"`
 	// Second, independently ordered chapter. Absent from every pre-0.9.0 export.
-	SnippetIDs []string `json:"snippetIds"`
+	TechniqueIDs []string `json:"techniqueIds"`
 }
 
-// --- Snippets (v0.9.0) ------------------------------------------------------
-// A snippet is a reusable ordered chain of commands. Its steps carry INLINE
+// --- Techniques (v0.9.0) ----------------------------------------------------
+// A technique is a reusable ordered chain of commands. Its steps carry INLINE
 // templates (never a command reference) and its locals are DEFINITIONS only —
 // the local VALUES are memory-only on the client and never reach the server (D7).
+//
+// Named "snippets" until v0.16.0; the JSON keys were renamed with it, and the
+// legacy ones are still READ (see the UnmarshalJSON methods below).
 
-type SnippetStepDTO struct {
+type TechniqueStepDTO struct {
 	ID       string `json:"id"`
 	Label    string `json:"label,omitempty"`
 	Template string `json:"template"`
@@ -137,19 +140,19 @@ type SnippetStepDTO struct {
 	Produces string `json:"produces,omitempty"`
 }
 
-type SnippetLocalDTO struct {
+type TechniqueLocalDTO struct {
 	Name string `json:"name"`
 	Hint string `json:"hint,omitempty"`
 }
 
-type SnippetDTO struct {
-	ID       string            `json:"id"`
-	Category string            `json:"category"`
-	Title    string            `json:"title"`
-	Desc     string            `json:"desc"`
-	Tags     []string          `json:"tags"`
-	Steps    []SnippetStepDTO  `json:"steps"`
-	Locals   []SnippetLocalDTO `json:"locals"`
+type TechniqueDTO struct {
+	ID       string              `json:"id"`
+	Category string              `json:"category"`
+	Title    string              `json:"title"`
+	Desc     string              `json:"desc"`
+	Tags     []string            `json:"tags"`
+	Steps    []TechniqueStepDTO  `json:"steps"`
+	Locals   []TechniqueLocalDTO `json:"locals"`
 }
 
 type SettingsDTO struct {
@@ -165,7 +168,7 @@ type AppState struct {
 	References  []ReferenceDTO    `json:"references"`
 	Roadmaps    []RoadmapDTO      `json:"roadmaps"`
 	Cheatsheets []CheatsheetDTO   `json:"cheatsheets"`
-	Snippets    []SnippetDTO      `json:"snippets"`
+	Techniques  []TechniqueDTO    `json:"techniques"`
 	Notes       map[string]string `json:"notes"`
 	Checks      map[string]bool   `json:"checks"`
 	OpenSteps   map[string]bool   `json:"openSteps"`
@@ -174,6 +177,62 @@ type AppState struct {
 	// progress, exactly like Checks.
 	ActiveTriggers map[string]bool `json:"activeTriggers"`
 	Settings       SettingsDTO     `json:"settings"`
+}
+
+// --- Legacy key aliases (pre-0.16.0 "snippets") -----------------------------
+// v0.16.0 renamed snippets to techniques, JSON keys included. Every blob already
+// stored and every export written before it still carries the old keys, so the
+// three structs that hold one decode BOTH spellings: the legacy key is read ONLY
+// when the new one is absent, never merged, so a current document is untouched.
+//
+// This is the whole compatibility story. GET/PUT state and POST import all
+// unmarshal through here, and the first save after a read rewrites the blob with
+// the new keys — so the profiles table needs no migration pass of its own.
+
+func (s *AppState) UnmarshalJSON(b []byte) error {
+	// The alias type drops this method, so the nested Unmarshal cannot recurse.
+	type alias AppState
+	aux := struct {
+		*alias
+		LegacySnippets []TechniqueDTO `json:"snippets"`
+	}{alias: (*alias)(s)}
+	if err := json.Unmarshal(b, &aux); err != nil {
+		return err
+	}
+	if s.Techniques == nil {
+		s.Techniques = aux.LegacySnippets
+	}
+	return nil
+}
+
+func (c *CheatsheetDTO) UnmarshalJSON(b []byte) error {
+	type alias CheatsheetDTO
+	aux := struct {
+		*alias
+		LegacySnippetIDs []string `json:"snippetIds"`
+	}{alias: (*alias)(c)}
+	if err := json.Unmarshal(b, &aux); err != nil {
+		return err
+	}
+	if c.TechniqueIDs == nil {
+		c.TechniqueIDs = aux.LegacySnippetIDs
+	}
+	return nil
+}
+
+func (st *StepDTO) UnmarshalJSON(b []byte) error {
+	type alias StepDTO
+	aux := struct {
+		*alias
+		LegacySnippetID string `json:"snippetId"`
+	}{alias: (*alias)(st)}
+	if err := json.Unmarshal(b, &aux); err != nil {
+		return err
+	}
+	if st.TechniqueID == "" {
+		st.TechniqueID = aux.LegacySnippetID
+	}
+	return nil
 }
 
 // emptyState returns a zeroed-but-non-null AppState (maps/slices initialized so
@@ -185,7 +244,7 @@ func emptyState() AppState {
 		References:     []ReferenceDTO{},
 		Roadmaps:       []RoadmapDTO{},
 		Cheatsheets:    []CheatsheetDTO{},
-		Snippets:       []SnippetDTO{},
+		Techniques:     []TechniqueDTO{},
 		Notes:          map[string]string{},
 		Checks:         map[string]bool{},
 		OpenSteps:      map[string]bool{},
@@ -445,7 +504,7 @@ func legacyLoadState(db *gorm.DB) (AppState, error) {
 	for _, s := range sheets {
 		state.Cheatsheets = append(state.Cheatsheets, CheatsheetDTO{
 			ID: s.ID, Title: s.Title, Target: s.Target, CommandIDs: nonNil(s.CommandIDs),
-			SnippetIDs: []string{}, // no snippets existed pre-0.9.0
+			TechniqueIDs: []string{}, // no techniques existed pre-0.9.0
 		})
 	}
 
@@ -688,9 +747,9 @@ func kvUnmarshal(db *gorm.DB, key string, dst any) error {
 // nonNilState fills every nil slice/map of an AppState received over the wire.
 //
 // The write handlers bind into a zero-value AppState, so a key ABSENT from the
-// body stays nil and would be stored as JSON `null`. That matters for `snippets`,
+// body stays nil and would be stored as JSON `null`. That matters for `techniques`,
 // which every pre-0.9.0 export legitimately omits: the blob would keep
-// `"snippets":null`, the next export would emit `null`, and the client's import
+// `"techniques":null`, the next export would emit `null`, and the client's import
 // shape check (which demands an array) would then REJECT its own export. Every
 // array is normalised, not just the new one, so no field can reintroduce the bug.
 func nonNilState(s AppState) AppState {
@@ -711,18 +770,18 @@ func nonNilState(s AppState) AppState {
 	}
 	for i := range s.Cheatsheets {
 		s.Cheatsheets[i].CommandIDs = nonNil(s.Cheatsheets[i].CommandIDs)
-		s.Cheatsheets[i].SnippetIDs = nonNil(s.Cheatsheets[i].SnippetIDs)
+		s.Cheatsheets[i].TechniqueIDs = nonNil(s.Cheatsheets[i].TechniqueIDs)
 	}
-	if s.Snippets == nil {
-		s.Snippets = []SnippetDTO{}
+	if s.Techniques == nil {
+		s.Techniques = []TechniqueDTO{}
 	}
-	for i := range s.Snippets {
-		s.Snippets[i].Tags = nonNil(s.Snippets[i].Tags)
-		if s.Snippets[i].Steps == nil {
-			s.Snippets[i].Steps = []SnippetStepDTO{}
+	for i := range s.Techniques {
+		s.Techniques[i].Tags = nonNil(s.Techniques[i].Tags)
+		if s.Techniques[i].Steps == nil {
+			s.Techniques[i].Steps = []TechniqueStepDTO{}
 		}
-		if s.Snippets[i].Locals == nil {
-			s.Snippets[i].Locals = []SnippetLocalDTO{}
+		if s.Techniques[i].Locals == nil {
+			s.Techniques[i].Locals = []TechniqueLocalDTO{}
 		}
 	}
 	s.Notes = nonNilMap(s.Notes)
