@@ -8,12 +8,11 @@ import {
   phaseHasActiveStep,
   progressOf,
   stepGroupKey,
-  cycleStepTrigger,
+  toggleStepTrigger,
   describeStepTriggers,
   isStepDone,
   modeOf,
   normalizeStepTriggers,
-  stepTriggerMode,
   stepTriggers,
   substepProgress,
 } from './triggers';
@@ -291,54 +290,75 @@ describe('normalizeStepTriggers', () => {
   });
 });
 
-// v0.13.0 — the three-state chip: absent → OU → ET → absent.
-describe('stepTriggerMode / cycleStepTrigger', () => {
-  // A chip wears the STEP's mode, so every assigned chip reports the same one.
-  it('reports the step mode for an assigned chip, off for the others', () => {
-    const s = step('s1', ['tg-ftp', 'tg-smb'], 'all');
-    expect(stepTriggerMode(s, 'tg-ftp')).toBe('all');
-    expect(stepTriggerMode(s, 'tg-smb')).toBe('all');
-    expect(stepTriggerMode(s, 'tg-http')).toBe('off');
+// v0.17.0 — the chip is a plain in/out toggle, and the step's operator is set by
+// its own OU|ET switch. Until v0.16 the chip cycled absent → OU → ET → absent,
+// which is what forced the mode flip pinned by the deleted test below.
+describe('toggleStepTrigger', () => {
+  it('adds a trigger that is absent, at the end of the list', () => {
+    const s = step('s1', ['tg-ftp']);
+    const next = toggleStepTrigger(s, 'tg-smb');
+    expect(next.triggerIds).toEqual(['tg-ftp', 'tg-smb']);
   });
 
-  it('cycles off → any → all → off and comes back to the start', () => {
-    let s: Step = step('s1');
-    const click = () => {
-      s = { ...s, ...cycleStepTrigger(s, 'tg-ftp') };
-      return stepTriggerMode(s, 'tg-ftp');
-    };
-    expect(click()).toBe('any');
-    expect(click()).toBe('all');
-    expect(click()).toBe('off');
-    expect(s.triggerIds).toEqual([]);
+  it('removes only the clicked trigger and leaves the others alone', () => {
+    const s = step('s1', ['tg-ftp', 'tg-smb', 'tg-http'], 'all');
+    const next = toggleStepTrigger(s, 'tg-smb');
+    expect(next.triggerIds).toEqual(['tg-ftp', 'tg-http']);
   });
 
-  // THE known side effect, pinned so nobody "fixes" it into an unreachable
-  // state: the first click sets 'any', so adding a chip to an 'all' step flips
-  // the WHOLE step back to 'any'. One more click puts it back.
-  it("flips the whole step back to 'any' when a chip is added to an 'all' step", () => {
-    const s = step('s1', ['tg-ftp', 'tg-smb'], 'all');
-    const added = cycleStepTrigger(s, 'tg-http');
-    expect(added.triggerIds).toEqual(['tg-ftp', 'tg-smb', 'tg-http']);
-    expect(added.triggerMode).toBe('any');
-    // and one more click on that chip restores 'all' for every one of them
-    const back = cycleStepTrigger({ ...s, ...added }, 'tg-http');
-    expect(back.triggerMode).toBe('all');
-    expect(back.triggerIds).toEqual(['tg-ftp', 'tg-smb', 'tg-http']);
-  });
-
-  it('flipping the mode from any chip restyles the step, not just that chip', () => {
+  it('two clicks on the same trigger return to the start', () => {
     const s = step('s1', ['tg-ftp', 'tg-smb']);
-    const next = { ...s, ...cycleStepTrigger(s, 'tg-smb') };
-    expect(stepTriggerMode(next, 'tg-ftp')).toBe('all');
-    expect(stepTriggerMode(next, 'tg-smb')).toBe('all');
+    const once = toggleStepTrigger(s, 'tg-http');
+    const twice = toggleStepTrigger({ ...s, ...once }, 'tg-http');
+    expect(twice.triggerIds).toEqual(['tg-ftp', 'tg-smb']);
   });
 
-  it('removes only the clicked chip and keeps the mode', () => {
+  // THE v0.13-v0.16 quirk, now gone: the chip used to set 'any' on the way in, so
+  // adding one to an 'all' step silently loosened the whole condition. The
+  // operator has its own control now, and a chip no longer touches it.
+  it("keeps 'all' when a trigger is added to a step already in ET", () => {
     const s = step('s1', ['tg-ftp', 'tg-smb'], 'all');
-    const next = cycleStepTrigger(s, 'tg-smb');
-    expect(next.triggerIds).toEqual(['tg-ftp']);
+    const next = toggleStepTrigger(s, 'tg-http');
+    expect(next.triggerIds).toEqual(['tg-ftp', 'tg-smb', 'tg-http']);
     expect(next.triggerMode).toBe('all');
+  });
+
+  it("keeps 'all' when a trigger is removed and two remain", () => {
+    const s = step('s1', ['tg-ftp', 'tg-smb', 'tg-http'], 'all');
+    expect(toggleStepTrigger(s, 'tg-http').triggerMode).toBe('all');
+  });
+
+  // Below two triggers 'any' and 'all' are the SAME condition and the switch is
+  // hidden, so an 'all' left behind would be invisible state that comes back on
+  // its own the moment a second trigger is added.
+  it("normalises the mode to 'any' when only one trigger is left", () => {
+    const s = step('s1', ['tg-ftp', 'tg-smb'], 'all');
+    const next = toggleStepTrigger(s, 'tg-smb');
+    expect(next.triggerIds).toEqual(['tg-ftp']);
+    expect(next.triggerMode).toBe('any');
+  });
+
+  it("normalises the mode to 'any' when the last trigger is removed", () => {
+    const s = step('s1', ['tg-ftp'], 'all');
+    const next = toggleStepTrigger(s, 'tg-ftp');
+    expect(next.triggerIds).toEqual([]);
+    expect(next.triggerMode).toBe('any');
+  });
+
+  // Adding the SECOND trigger is the click that makes the switch appear; it must
+  // arrive on the default operator rather than on a stale one.
+  it("adds the second trigger with 'any', whatever the step carried before", () => {
+    const s = step('s1', ['tg-ftp'], 'all');
+    const next = toggleStepTrigger(s, 'tg-smb');
+    expect(next.triggerIds).toEqual(['tg-ftp', 'tg-smb']);
+    expect(next.triggerMode).toBe('any');
+  });
+
+  it('never mutates the step it is given', () => {
+    const s = step('s1', ['tg-ftp', 'tg-smb'], 'all');
+    toggleStepTrigger(s, 'tg-http');
+    expect(s.triggerIds).toEqual(['tg-ftp', 'tg-smb']);
+    expect(s.triggerMode).toBe('all');
   });
 });
 

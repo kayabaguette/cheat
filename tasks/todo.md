@@ -1001,3 +1001,130 @@ premier autosave — **la migration one-shot devient redondante, je la retire**.
   étapes / locals / liens intacts, aucune clé legacy réécrite en base.
 - La base de dév de l'utilisateur (`cheat-data`) n'a pas été touchée.
 
+
+---
+
+# 0.17.0 — Déclencheurs : bascule OU/ET, et la couleur dit le bon état
+
+Deux choses, liées par le même malentendu : en mode édition, l'affichage parle de
+**progression** là où il devrait parler de **structure**.
+
+## Le bug
+
+`Methodology.tsx` lignes 1450 et 1781, les deux pickers :
+
+```js
+chipStyle(mode !== 'off' && !!activeTriggers[t.id], mode)
+```
+
+La couleur vient de `activeTriggers` — « ce service tourne sur la cible » — et non
+de « ce déclencheur est choisi pour cette étape ». Conséquence : une puce choisie
+mais non détectée reste grise. Sur une étape dont aucun déclencheur n'est détecté,
+les cinq puces du picker sont **indiscernables** et la sélection est invisible.
+Quand ça semble marcher, c'est une coïncidence : la puce est verte parce qu'elle
+est détectée, pas parce qu'elle est choisie.
+
+Précédent qui tranche : la 0.15.0 a retiré le grisé en mode édition au motif que
+l'état de progression n'a rien à dire sur l'édition de la structure. Même règle
+ici.
+
+## L'opérateur
+
+Aujourd'hui il ne s'écrit nulle part dans l'éditeur : il tient dans le style de
+bordure d'une puce de 10px (pointillés = inutilisé, tirets = OU, plein = ET), et
+le clic cycle sur trois états en changeant le mode de **toute l'étape**. Décision
+utilisateur : une **bascule segmentée `OU | ET`**, contrôle séparé, à partir de
+2 déclencheurs choisis (avec 0 ou 1, ET et OU disent la même condition).
+
+## Étapes
+
+### 1. `frontend/src/lib/triggers.ts`
+- [x] `cycleStepTrigger` → `toggleStepTrigger(step, triggerId)` : ajoute ou
+      retire, le mode est préservé. La puce redevient un oui/non.
+- [x] Normalisation : si le résultat a moins de 2 déclencheurs, le mode retombe à
+      `'any'`. Sans ça un `'all'` resterait stocké pendant que la bascule est
+      masquée, et ressortirait tout seul à l'ajout d'un deuxième déclencheur.
+- [x] `stepTriggerMode` devient **mort** (ses deux seuls appelants sont les
+      pickers) → supprimé avec ses tests. Le picker n'a plus besoin que de
+      « choisi ou non », et la ligne lit son mode via `modeOf`.
+- [x] Pas de nouvel helper pour le mode : la vue appelle directement
+      `setStepTriggers(rm.id, ph.id, st.id, st.triggerIds ?? [], mode)`.
+
+### 2. `frontend/src/components/views/Methodology.tsx`
+- [x] Séparer les deux sens de la couleur au lieu d'un `chipStyle` à double
+      usage :
+      - `chipStyle(detected, mode)` — hors édition, inchangé (couleur = détecté,
+        bordure = opérateur)
+      - `pickChipStyle(selected)` — dans l'éditeur (couleur = choisi, bordure
+        neutre : c'est la bascule qui porte l'opérateur)
+- [x] Picker d'étape existante : puces en bascule simple + contrôle `OU | ET`
+      rendu à partir de 2 déclencheurs choisis.
+- [x] Picker du brouillon « nouvelle étape » : idem, sur `d.triggerIds` /
+      `d.triggerMode`.
+- [x] Puces à gauche du libellé : en mode édition elles rendent « choisi »
+      (accent), plus de couleur de détection. Hors édition, inchangé.
+- [x] Infobulles : plus de « Cliquer : passer toute l'étape en ET ». La puce dit
+      « ajouter à l'étape » / « retirer de l'étape », la bascule porte la sienne.
+      L'info « détecté sur la cible » reste dans l'infobulle en mode édition,
+      donc rien n'est perdu.
+- [x] Style : reprendre l'idiome `segBase` / `segOn` de `TopBar.tsx` à l'échelle
+      de la puce (10px, MONO) plutôt que d'inventer un contrôle.
+
+### 3. `frontend/src/lib/triggers.test.ts`
+- [x] Réécrire le bloc `stepTriggerMode / cycleStepTrigger` pour
+      `toggleStepTrigger` : ajout, retrait, mode préservé, mode normalisé
+      sous 2 déclencheurs.
+- [x] Épingler la disparition du quirk : ajouter un déclencheur à une étape en ET
+      la **laisse** en ET (l'ancien test épinglait le contraire).
+
+### 4. Docs
+- [x] `README.md` : la section « Several triggers on one step combine as OR *or*
+      AND » décrit le cycle à trois états et son quirk — réécrite.
+- [x] `CHANGELOG.md` : entrée 0.17.0.
+- [x] `SPEC.md` : item 20 (les items 1–19 ne sont pas réécrits).
+
+### 5. Vérification
+- [x] `make down` d'abord
+- [x] `make test` (Go + typecheck + vitest)
+- [x] Passe navigateur sur une **instance jetable** avec un jeu de déclencheurs :
+      sélection visible quel que soit l'état de détection, bascule OU/ET,
+      apparition/disparition de la bascule au 2e déclencheur, brouillon de
+      nouvelle étape, rendu hors édition inchangé
+- [x] `make down` après
+
+## Hors périmètre
+
+Le rendu **hors** mode édition ne bouge pas : la bordure y porte toujours
+l'opérateur, et le sous-en-tête de groupe l'écrit déjà en toutes lettres
+(`── SMB OU FTP ──`). C'est la *gestion* du ET/OU qui était demandée, pas sa
+lecture.
+
+## Écart par rapport au plan validé
+
+**La normalisation du mode se fait dans les deux sens, pas seulement à la
+descente.** Le plan disait « si le résultat a moins de 2 déclencheurs, le mode
+retombe à `'any'` ». Un test l'a pris en défaut : une étape d'avant la 0.17
+portant un seul déclencheur et un `'all'` stocké — l'ancien cycle pouvait la
+produire en retirant une puce — ressuscitait en ET à l'ajout d'un deuxième, soit
+exactement l'état invisible que la normalisation devait empêcher. La règle
+devient : le mode ne survit que tant que l'étape **reste** à 2 déclencheurs ou
+plus, c'est-à-dire tant que la bascule est à l'écran.
+
+`TriggerMode` a été supprimé en plus de `stepTriggerMode` : c'était son type de
+retour, sans autre usage.
+
+## Résultat
+
+- `make test` : 98 assertions (94 + 4), typecheck, `go test ./...` — tout vert.
+- Passe navigateur sur instance jetable (port 8790, volume dédié, détruits après) :
+  - picker : `SMB` / `FTP` en accent, les trois autres en gris, bascule `OU|ET`
+    en fin de ligne
+  - clic sur `ET` → le sous-en-tête passe de `SMB OU FTP` à `SMB ET FTP`
+  - retrait de `FTP` → la bascule disparaît, le sous-en-tête tombe à `SMB`
+  - `FTP` remis → la bascule revient sur **OU**, l'ancien ET n'est pas ressuscité
+  - brouillon de nouvelle étape : `SMB` et `MySQL` choisis apparaissent en accent
+    alors qu'aucun n'est détecté, `HTTP/HTTPS` et `SSH` détectés restent gris —
+    l'inversion demandée
+  - rendu hors édition identique à avant
+- La base de dév de l'utilisateur n'a pas été touchée.
+

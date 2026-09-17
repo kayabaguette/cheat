@@ -10,11 +10,10 @@ import {
   phaseHasActiveStep,
   progressOf,
   stepGroupKey,
-  cycleStepTrigger,
+  toggleStepTrigger,
   describeStepTriggers,
   isStepDone,
   modeOf,
-  stepTriggerMode,
   stepTriggers,
   substepProgress,
 } from '../../lib/triggers';
@@ -24,7 +23,6 @@ import { CommandLine } from '../CommandLine';
 import { CopyToProfile } from '../CopyToProfile';
 import { EmptyState } from '../EmptyState';
 import { CopyButton } from '../CopyButton';
-import type { TriggerMode } from '../../lib/triggers';
 import type { Step } from '../../types';
 
 // Méthodologie — faithful port of the prototype's roadmap/checklist view
@@ -392,15 +390,16 @@ const miniChipBase: CSSProperties = {
   alignItems: 'center',
 };
 
-// A trigger chip carries TWO independent things, and both are resolved into ONE
-// `border` shorthand on purpose: mixing the shorthand with a `borderStyle`
-// longhand makes React leave a stale value behind when the mode toggles — the
-// very trap Sidebar.tsx's `tagOn` documents, and it showed up as a console
-// warning the first time this was written with a longhand override.
-//   the border STYLE says the mode — dotted = inutilisé, dashed = OU, solid = ET
+// READ view (outside edit mode). A chip carries TWO independent things, and both
+// are resolved into ONE `border` shorthand on purpose: mixing the shorthand with
+// a `borderStyle` longhand makes React leave a stale value behind when the mode
+// toggles — the very trap Sidebar.tsx's `tagOn` documents, and it showed up as a
+// console warning the first time this was written with a longhand override.
+//   the border STYLE says the mode — dashed = OU, solid = ET
 //   the COLOUR says the target     — accent when that trigger is detected on it
-const chipStyle = (detected: boolean, mode: TriggerMode): CSSProperties => {
-  const line = mode === 'all' ? 'solid' : mode === 'any' ? 'dashed' : 'dotted';
+// Only ever called on an ASSIGNED chip, so there is no third border style.
+const chipStyle = (detected: boolean, mode: 'any' | 'all'): CSSProperties => {
+  const line = mode === 'all' ? 'solid' : 'dashed';
   return detected
     ? {
         ...miniChipBase,
@@ -414,6 +413,46 @@ const chipStyle = (detected: boolean, mode: TriggerMode): CSSProperties => {
         background: 'transparent',
         color: 'var(--faint)',
       };
+};
+
+// EDIT view (v0.17.0). In the picker the colour says ONE thing — is this trigger
+// part of the step — and nothing else. It used to say "detected on the target",
+// which is PROGRESS state and has no business in a structural editor: a chip you
+// had just picked stayed grey whenever the current target did not run that
+// service, so on a step whose triggers are all undetected the picker rendered
+// every chip identically and the selection was invisible. Same reasoning as
+// v0.15.0 dropping the dimming in edit mode. The detection is not lost, it moves
+// to the tooltip, where it cannot be mistaken for the selection.
+//
+// No border style here either: the operator has its own OU|ET switch below, so a
+// chip no longer has to carry it.
+const pickChipStyle = (selected: boolean): CSSProperties => ({
+  ...miniChipBase,
+  border: selected ? '1px solid var(--acc-line)' : '1px solid var(--border2)',
+  background: selected ? 'var(--acc-dim)' : 'transparent',
+  color: selected ? 'var(--acc)' : 'var(--faint)',
+});
+
+// The step's operator, as its own two-segment switch rather than a border style
+// on a 10px chip. Same idiom as the top bar's tab strip, at chip scale.
+const modeSegWrap: CSSProperties = {
+  display: 'inline-flex',
+  border: '1px solid var(--border2)',
+  marginLeft: '4px',
+};
+const modeSegBase: CSSProperties = {
+  cursor: 'pointer',
+  border: 'none',
+  padding: '1px 8px',
+  fontSize: '10px',
+  fontFamily: MONO,
+  background: 'transparent',
+  color: 'var(--muted)',
+};
+const modeSegOn: CSSProperties = {
+  ...modeSegBase,
+  background: 'var(--border2)',
+  color: 'var(--text)',
 };
 const miniBtn: CSSProperties = {
   cursor: 'pointer',
@@ -799,25 +838,36 @@ export function Methodology() {
   // Attach/detach one trigger on an EXISTING step. The step keeps its id, and
   // therefore its checks, its pasted result and its technique-local values — which
   // a delete-and-recreate would silently drop (there is no updateStep action).
-  // One click on a chip advances it: unused → OU → ET → unused. The operator is a
-  // property of the STEP, so the middle step of that cycle restyles every chip of
-  // the step at once. The step keeps its id, and therefore its checks, its result
-  // and its technique-local values — which a delete-and-recreate would drop.
-  const cycleStepTriggerOn = (phaseId: string, step: Step, triggerId: string) => {
+  // One click on a chip puts the trigger in or out of the step, and nothing else
+  // (v0.17.0 — the operator moved to its own switch below). The step keeps its
+  // id, and therefore its checks, its result and its technique-local values —
+  // which a delete-and-recreate would drop.
+  const toggleStepTriggerOn = (phaseId: string, step: Step, triggerId: string) => {
     if (!rm) return;
-    const next = cycleStepTrigger(step, triggerId);
+    const next = toggleStepTrigger(step, triggerId);
     setStepTriggers(rm.id, phaseId, step.id, next.triggerIds, next.triggerMode);
   };
 
-  // The same cycle on the add-step draft, which carries a step's trigger shape
-  // without being one.
-  const cycleDraftTrigger = (phaseId: string, triggerId: string) => {
+  // The OU|ET switch. It writes the step's operator and leaves the trigger list
+  // alone — the whole point of giving it a control of its own.
+  const setStepMode = (phaseId: string, step: Step, mode: 'any' | 'all') => {
+    if (!rm) return;
+    setStepTriggers(rm.id, phaseId, step.id, step.triggerIds ?? [], mode);
+  };
+
+  // The same two gestures on the add-step draft, which carries a step's trigger
+  // shape without being one.
+  const toggleDraftTrigger = (phaseId: string, triggerId: string) => {
     const d = draftFor(phaseId);
-    const next = cycleStepTrigger(
+    const next = toggleStepTrigger(
       { id: '', text: '', triggerIds: d.triggerIds, triggerMode: d.triggerMode },
       triggerId,
     );
     setDraft(phaseId, { triggerIds: next.triggerIds, triggerMode: next.triggerMode });
+  };
+
+  const setDraftMode = (phaseId: string, mode: 'any' | 'all') => {
+    setDraft(phaseId, { triggerMode: mode });
   };
 
   // « détecter depuis le résultat » — read a pasted nmap run and tick the
@@ -1313,12 +1363,23 @@ export function Methodology() {
                                       {/* Assigned triggers, to the LEFT of the
                                           label. Display only — all editing happens
                                           in the picker below, so the row stays
-                                          readable. The BORDER carries the step's
-                                          operator (dashed OU / solid ET, the same
-                                          for every chip of a step) and the COLOUR
-                                          carries whether the target has it. Since
-                                          the chip shows no text for the operator,
-                                          the tooltip spells it out. */}
+                                          readable.
+
+                                          Outside edit mode the BORDER carries the
+                                          step's operator (dashed OU / solid ET, the
+                                          same for every chip of a step) and the
+                                          COLOUR carries whether the target has it;
+                                          since the chip shows no text for the
+                                          operator, the tooltip spells it out.
+
+                                          In edit mode the colour would sit two rows
+                                          above the picker's chips, identical in
+                                          shape and meaning something else entirely
+                                          — so it uses the picker's language there
+                                          and reads simply as "part of this step".
+                                          The detection stays in the tooltip, and
+                                          the group sub-header still says `· inactif`
+                                          (v0.15.0), so nothing is lost. */}
                                       {stepTrigs.length > 0 && (
                                         <div style={stepTrigLeft}>
                                           {stepTrigs.map((trigger) => (
@@ -1332,10 +1393,14 @@ export function Methodology() {
                                                 ' · condition : ' +
                                                 cond
                                               }
-                                              style={chipStyle(
-                                                !!activeTriggers[trigger.id],
-                                                stepMode,
-                                              )}
+                                              style={
+                                                methodEdit
+                                                  ? pickChipStyle(true)
+                                                  : chipStyle(
+                                                      !!activeTriggers[trigger.id],
+                                                      stepMode,
+                                                    )
+                                              }
                                             >
                                               {trigger.label}
                                             </span>
@@ -1418,44 +1483,67 @@ export function Methodology() {
                                         {/* The picker, unfolded for ONE step at a
                                             time so a roadmap with a dozen triggers
                                             does not turn edit mode into a wall of
-                                            chips. One click advances the chip:
-                                            absent → OU → ET → absent. The OU/ET
-                                            prefix here is what teaches the border
-                                            encoding used on the row. */}
+                                            chips. A chip is a plain in/out toggle
+                                            and its colour says only that; the
+                                            operator is the OU|ET switch at the end
+                                            of the row, which appears once there
+                                            are two triggers to combine. */}
                                         {methodEdit && pickerStep === st.id && (
                                           <div style={stepChipRow}>
                                             {roadmapTriggers.map((t) => {
-                                              const mode = stepTriggerMode(st, t.id);
+                                              const on = stepTrigs.some((x) => x.id === t.id);
                                               return (
                                                 <button
                                                   key={t.id}
                                                   type="button"
                                                   onClick={() =>
-                                                    cycleStepTriggerOn(ph.id, st, t.id)
+                                                    toggleStepTriggerOn(ph.id, st, t.id)
                                                   }
                                                   title={
-                                                    mode === 'off'
-                                                      ? t.label +
-                                                        ' — inutilisé. Cliquer : ajouter (OU)'
-                                                      : mode === 'any'
-                                                        ? t.label +
-                                                          ' — OU. Cliquer : passer toute l’étape en ET'
-                                                        : t.label +
-                                                          ' — ET. Cliquer : retirer de l’étape'
+                                                    t.label +
+                                                    (on
+                                                      ? ' — dans l’étape. Cliquer : retirer'
+                                                      : ' — hors de l’étape. Cliquer : ajouter') +
+                                                    (activeTriggers[t.id]
+                                                      ? ' · détecté sur la cible'
+                                                      : ' · non détecté')
                                                   }
-                                                  // An unassigned chip is always
-                                                  // muted: its colour would
-                                                  // otherwise claim a role it
-                                                  // does not have on this step.
-                                                  style={chipStyle(
-                                                    mode !== 'off' && !!activeTriggers[t.id],
-                                                    mode,
-                                                  )}
+                                                  style={{ ...pickChipStyle(on), cursor: 'pointer' }}
                                                 >
                                                   {t.label}
                                                 </button>
                                               );
                                             })}
+                                            {/* Below two triggers the operator has
+                                                nothing to combine — 'any' and 'all'
+                                                are then the same condition — so the
+                                                switch stays out of the way rather
+                                                than offering a choice that changes
+                                                nothing. */}
+                                            {stepTrigs.length > 1 && (
+                                              <span style={modeSegWrap}>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setStepMode(ph.id, st, 'any')}
+                                                  title="Au moins un des déclencheurs suffit"
+                                                  style={
+                                                    stepMode === 'any' ? modeSegOn : modeSegBase
+                                                  }
+                                                >
+                                                  OU
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setStepMode(ph.id, st, 'all')}
+                                                  title="Tous les déclencheurs sont requis"
+                                                  style={
+                                                    stepMode === 'all' ? modeSegOn : modeSegBase
+                                                  }
+                                                >
+                                                  ET
+                                                </button>
+                                              </span>
+                                            )}
                                           </div>
                                         )}
                                       </div>
@@ -1749,44 +1837,60 @@ export function Methodology() {
                                       </option>
                                     ))}
                                   </select>
-                                  {/* The draft's triggers, on the SAME three-state
-                                      cycle as a step's row (v0.13.0 — it used to be
-                                      a single-choice dropdown), so there is one
-                                      gesture to learn. Offered once the roadmap
-                                      declares a vocabulary. */}
+                                  {/* The draft's triggers, with the SAME two
+                                      gestures as a step's picker (v0.13.0 — it used
+                                      to be a single-choice dropdown), so there is
+                                      nothing extra to learn when creating a step.
+                                      Offered once the roadmap declares a
+                                      vocabulary. */}
                                   {roadmapTriggers.length > 0 && (
                                     <div style={stepChipRow}>
                                       {roadmapTriggers.map((t) => {
-                                        const mode = stepTriggerMode(
-                                          {
-                                            id: '',
-                                            text: '',
-                                            triggerIds: d.triggerIds,
-                                            triggerMode: d.triggerMode,
-                                          },
-                                          t.id,
-                                        );
+                                        const on = d.triggerIds.includes(t.id);
                                         return (
                                           <button
                                             key={t.id}
                                             type="button"
-                                            onClick={() => cycleDraftTrigger(ph.id, t.id)}
+                                            onClick={() => toggleDraftTrigger(ph.id, t.id)}
                                             title={
-                                              mode === 'off'
-                                                ? t.label + ' — inutilisé. Cliquer : ajouter (OU)'
-                                                : mode === 'any'
-                                                  ? t.label + ' — OU. Cliquer : tout passer en ET'
-                                                  : t.label + ' — ET. Cliquer : retirer'
+                                              t.label +
+                                              (on
+                                                ? ' — dans l’étape. Cliquer : retirer'
+                                                : ' — hors de l’étape. Cliquer : ajouter') +
+                                              (activeTriggers[t.id]
+                                                ? ' · détecté sur la cible'
+                                                : ' · non détecté')
                                             }
-                                            style={chipStyle(
-                                              mode !== 'off' && !!activeTriggers[t.id],
-                                              mode,
-                                            )}
+                                            style={{ ...pickChipStyle(on), cursor: 'pointer' }}
                                           >
                                             {t.label}
                                           </button>
                                         );
                                       })}
+                                      {d.triggerIds.length > 1 && (
+                                        <span style={modeSegWrap}>
+                                          <button
+                                            type="button"
+                                            onClick={() => setDraftMode(ph.id, 'any')}
+                                            title="Au moins un des déclencheurs suffit"
+                                            style={
+                                              d.triggerMode === 'all' ? modeSegBase : modeSegOn
+                                            }
+                                          >
+                                            OU
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setDraftMode(ph.id, 'all')}
+                                            title="Tous les déclencheurs sont requis"
+                                            style={
+                                              d.triggerMode === 'all' ? modeSegOn : modeSegBase
+                                            }
+                                          >
+                                            ET
+                                          </button>
+                                        </span>
+                                      )}
                                     </div>
                                   )}
                                   <button onClick={() => submitStep(ph.id)} style={addStepBtn}>

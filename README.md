@@ -180,10 +180,16 @@ Détecté sur la cible :  [✓ FTP] [✓ SMB] [ HTTP ] [ LDAP ]
   or all **solid** (ET — every one is required). The colour says, separately,
   whether the target has that trigger.
 
-  A chip cycles on click: **unused → OU → ET → unused**, the middle step
-  restyling every chip of the step at once. One quirk worth knowing: since the
-  first click sets OU, adding a chip to a step already in ET flips the whole step
-  back to OU — one more click puts it back.
+  **In the picker, two separate gestures.** A chip is a plain in/out toggle, and
+  the operator is a `OU | ET` switch at the end of the row that appears once two
+  triggers are selected — below that the two say the same thing, so there is no
+  choice to offer. Dropping to one trigger resets the operator to OU rather than
+  leaving an ET nothing on screen accounts for.
+
+  **In the picker the colour means "part of this step", nothing else.** Outside
+  edit mode it means "the target has this" — two different questions, and mixing
+  them is what made a freshly picked trigger look unselected whenever the current
+  target did not run that service. Detection is still one hover away.
 - **An inactive step is dimmed, not checkable, and out of the progress maths** —
   numerator *and* denominator, which is what lets a target reach 100% without the
   services it does not run. « ☐ masquer les inactives » hides them (and any phase

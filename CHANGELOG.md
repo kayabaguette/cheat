@@ -4,6 +4,57 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.17.0] — 2026-09-17
+
+### Fixed
+- **In the trigger picker, the colour said the wrong thing.** It came from
+  `activeTriggers` — whether the current target runs that service — and not from
+  whether the trigger is part of the step you are editing. So a trigger you had
+  just picked stayed grey whenever the target did not run it, and on a step whose
+  triggers are all undetected the picker rendered its chips **identically**: the
+  selection was invisible. When it appeared to work it was a coincidence — the
+  chip was accent because it was detected, not because it was chosen.
+
+  In edit mode the colour now means one thing, "part of this step", in the picker
+  and on the chips left of the label alike. Detection moves to the tooltip, where
+  it cannot be mistaken for the selection, and the group sub-header still says
+  `· inactif`. Same reasoning as 0.15.0 dropping the dimming in edit mode:
+  progress state has no business steering a structural editor.
+
+### Changed
+- **The step's operator gets its own `OU | ET` switch.** It used to live in the
+  border style of a 10px chip — dotted unused, dashed OU, solid ET — with a chip
+  click cycling through three states and the middle one silently restyling every
+  other chip of the step. The switch sits at the end of the picker row and appears
+  once **two** triggers are selected; below that OU and ET are the same condition,
+  so there is no choice to offer.
+
+  A chip is now a plain in/out toggle. That kills the quirk 0.13.0 documented and
+  pinned by test: because the first click set OU, adding a trigger to a step
+  already in ET flipped the whole step back to OU. The old comment argued the
+  quirk was the price of driving a step-level operator from a per-chip control —
+  correct, and the price is no longer owed now that the operator has a control of
+  its own.
+
+  `cycleStepTrigger` becomes `toggleStepTrigger`. `stepTriggerMode` and the
+  `TriggerMode` type existed only to serve the three-state chip and are **gone**.
+
+### Notes
+- The operator survives only while the step **stays** at two triggers or more —
+  exactly when the switch is on screen. Below that it normalises to `'any'`. Both
+  directions matter: normalising only on the way down would still let a pre-0.17
+  step carrying one trigger and a stored `'all'` — the old cycle could produce
+  that — come back as ET the moment a second trigger is added, which is the
+  invisible state this rules out.
+- **The read view is untouched.** Outside edit mode the border still carries the
+  operator and the colour still carries detection, and the group sub-header still
+  spells the condition out (`── SMB OU FTP ──`). It was the *handling* of ET/OU
+  that needed the work, not its reading.
+- No contract, DTO or import/export change: the model was already one list plus
+  one mode per step (0.14.0), and only the gestures that write it moved.
+- 98 assertions, up from 94: the `cycleStepTrigger` block is rewritten for the
+  toggle, and the deleted quirk gets a test asserting its opposite.
+
 ## [0.16.0] — 2026-09-17
 
 ### Changed
