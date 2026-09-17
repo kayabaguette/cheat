@@ -182,8 +182,8 @@ export function Sidebar() {
     references,
     activeRefTag,
     techniques,
-    activeSnipCat,
-    activeSnipTag,
+    activeTqCat,
+    activeTqTag,
     setView,
     setValue,
     setLocalValue,
@@ -192,8 +192,8 @@ export function Sidebar() {
     setActiveTool,
     setActiveTag,
     setActiveRefTag,
-    setActiveSnipCat,
-    setActiveSnipTag,
+    setActiveTqCat,
+    setActiveTqTag,
     toggleExpand,
     adoptVar,
     deleteVar,
@@ -333,17 +333,17 @@ export function Sidebar() {
     setView('library');
     setActiveTag(activeTag === name ? null : name);
   };
-  const selectSnipAll = () => {
+  const selectTqAll = () => {
     setView('techniques');
-    setActiveSnipCat(null);
+    setActiveTqCat(null);
   };
-  const selectSnipCat = (key: string) => {
+  const selectTqCat = (key: string) => {
     setView('techniques');
-    setActiveSnipCat(activeSnipCat === key ? null : key);
+    setActiveTqCat(activeTqCat === key ? null : key);
   };
-  const toggleSnipTag = (name: string) => {
+  const toggleTqTag = (name: string) => {
     setView('techniques');
-    setActiveSnipTag(activeSnipTag === name ? null : name);
+    setActiveTqTag(activeTqTag === name ? null : name);
   };
   const toggleRefTag = (name: string) => {
     setActiveRefTag(activeRefTag === name ? null : name);
@@ -631,8 +631,8 @@ export function Sidebar() {
           <div style={sectionHead}>Catégories</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
             <button
-              onClick={selectSnipAll}
-              style={{ ...(!activeSnipCat ? rowOn : rowBase), marginLeft: '18px' }}
+              onClick={selectTqAll}
+              style={{ ...(!activeTqCat ? rowOn : rowBase), marginLeft: '18px' }}
             >
               <span style={{ width: '8px', height: '8px', flex: 'none', background: 'var(--muted)' }} />
               <span style={{ flex: 1, minWidth: 0 }}>Toutes les techniques</span>
@@ -641,9 +641,9 @@ export function Sidebar() {
             {tqCats.map((c) => (
               <button
                 key={c.key}
-                onClick={() => selectSnipCat(c.key)}
+                onClick={() => selectTqCat(c.key)}
                 style={{
-                  ...(activeSnipCat === c.key ? rowOn : rowBase),
+                  ...(activeTqCat === c.key ? rowOn : rowBase),
                   marginLeft: '18px',
                 }}
               >
@@ -656,7 +656,7 @@ export function Sidebar() {
         </div>
       )}
       {isTechniques && (
-        <TagFacet tags={tqTagList} active={activeSnipTag} onToggle={toggleSnipTag} />
+        <TagFacet tags={tqTagList} active={activeTqTag} onToggle={toggleTqTag} />
       )}
 
       {/* Categories (expandable → tools) — library view only */}

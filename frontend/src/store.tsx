@@ -256,8 +256,8 @@ export interface StoreState {
   techniques: Technique[];
   // Own facet state, like activeRefTag: the Techniques view filters independently
   // of the Library so switching tabs never cross-contaminates the filters.
-  activeSnipCat: string | null;
-  activeSnipTag: string | null;
+  activeTqCat: string | null;
+  activeTqTag: string | null;
   addingTechnique: boolean;
   // null = add technique, an id = editing that technique.
   editingTechniqueId: string | null;
@@ -404,6 +404,8 @@ export interface StoreActions {
     },
   ) => boolean;
   deleteCommand: (id: string) => void;
+  // Destructive: empties the Library and unlinks every reference to a command.
+  clearCommands: () => void;
   toggleFavorite: (id: string) => void;
   // --- M2: Cheatsheets ---
   setActiveSheet: (id: string) => void;
@@ -415,8 +417,8 @@ export interface StoreActions {
   removeFromSheet: (sheetId: string, commandId: string) => void;
   moveInSheet: (sheetId: string, commandId: string, dir: -1 | 1) => void;
   // --- v0.9.0: Techniques ---
-  setActiveSnipCat: (k: string | null) => void;
-  setActiveSnipTag: (t: string | null) => void;
+  setActiveTqCat: (k: string | null) => void;
+  setActiveTqTag: (t: string | null) => void;
   setAddingTechnique: (b: boolean) => void;
   openEditTechnique: (id: string) => void;
   addTechnique: (input: {
@@ -531,8 +533,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [activeRefTag, setActiveRefTag] = useState<string | null>(null);
   // --- v0.9.0 technique state (localValues is memory-only, see StoreState) ---
   const [techniques, setTechniques] = useState<Technique[]>([]);
-  const [activeSnipCat, setActiveSnipCat] = useState<string | null>(null);
-  const [activeSnipTag, setActiveSnipTag] = useState<string | null>(null);
+  const [activeTqCat, setActiveTqCat] = useState<string | null>(null);
+  const [activeTqTag, setActiveTqTag] = useState<string | null>(null);
   const [addingTechnique, setAddingTechniqueState] = useState<boolean>(false);
   const [editingTechniqueId, setEditingTechniqueId] = useState<string | null>(null);
   const [localValues, setLocalValues] = useState<Record<string, Record<string, string>>>({});
@@ -1333,6 +1335,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [flash],
   );
 
+  // Empty the Library of every command, with deleteCommand's cascade applied
+  // wholesale: no cheatsheet keeps a dangling commandId, no roadmap step keeps a
+  // dead link, no note outlives the command it annotates (notes are keyed by
+  // command id and by nothing else).
+  //
+  // CATEGORIES SURVIVE. Deleting the last command of a category has never
+  // deleted the category, so emptying in bulk follows the same rule rather than
+  // inventing a second one; the built-ins are structure, not content.
+  //
+  // Techniques, references, roadmaps and the cheatsheets THEMSELVES are content
+  // of their own and are untouched — only their references to commands go.
+  const clearCommands = useCallback(() => {
+    const n = commandsRef.current.length;
+    setCommands([]);
+    setCheatsheets((shs) =>
+      shs.map((sh) => (sh.commandIds.length ? { ...sh, commandIds: [] } : sh)),
+    );
+    setRoadmaps((rms) => {
+      const next = cloneRoadmaps(rms);
+      for (const r of next)
+        for (const p of r.phases)
+          p.steps = p.steps.map((st) => (st.commandId ? { ...st, commandId: undefined } : st));
+      return next;
+    });
+    setNotes({});
+    flash(n > 1 ? n + ' commandes supprimées' : 'Commande supprimée');
+  }, [flash]);
+
   // Toggle a command's favorite flag — pins it to the top of its tool group in
   // the Library. Persisted via persistableState like any other command field.
   const toggleFavorite = useCallback((id: string) => {
@@ -1991,8 +2021,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addingRef,
       editingRefId,
       techniques,
-      activeSnipCat,
-      activeSnipTag,
+      activeTqCat,
+      activeTqTag,
       addingTechnique,
       editingTechniqueId,
       localValues,
@@ -2024,6 +2054,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addCommand,
       updateCommand,
       deleteCommand,
+      clearCommands,
       toggleFavorite,
       setActiveSheet: setActiveSheetState,
       addCheatsheet,
@@ -2033,8 +2064,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleInSheet,
       removeFromSheet,
       moveInSheet,
-      setActiveSnipCat,
-      setActiveSnipTag,
+      setActiveTqCat,
+      setActiveTqTag,
       setAddingTechnique,
       openEditTechnique,
       addTechnique,
@@ -2116,8 +2147,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addingRef,
       editingRefId,
       techniques,
-      activeSnipCat,
-      activeSnipTag,
+      activeTqCat,
+      activeTqTag,
       addingTechnique,
       editingTechniqueId,
       localValues,
@@ -2143,6 +2174,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addCommand,
       updateCommand,
       deleteCommand,
+      clearCommands,
       toggleFavorite,
       addCheatsheet,
       renameCheatsheet,

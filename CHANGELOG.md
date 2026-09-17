@@ -4,6 +4,106 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.18.0] — 2026-09-17
+
+### Fixed
+- **« réinitialiser » never said what it reset.** Sitting next to `N commande(s)`
+  it read as "empty the Library", and it clears the **filters** — category, tool,
+  tag, favourites, search. It now says « réinitialiser les filtres », the wording
+  the view's own empty state already used ("Modifie ta recherche ou réinitialise
+  les filtres"), in the Bibliothèque and in the Techniques view alike.
+
+  It is also **hidden when nothing is filtering**. It used to be drawn
+  unconditionally, so with no filter active a click produced nothing at all on
+  screen — which reads exactly like a broken button and was half of why the label
+  got misread. The expanded category tree is deliberately not part of the test:
+  it is not a filter, and it has its own toggles.
+
+### Added
+- **« Vider la bibliothèque »**, at the far end of the same row. Deletes every
+  command with `deleteCommand`'s cascade applied wholesale — out of every
+  cheatsheet, unlinked from every methodology step, notes purged — behind a
+  confirmation that spells all of it out.
+
+  It is pushed to the opposite end and shaped like a control rather than a link,
+  because putting a destructive action next to the filter reset is exactly the
+  adjacency that caused the confusion being fixed here.
+
+### Changed
+- The `Snip`-prefixed identifiers that survived 0.16.0's rename — `activeSnipCat`,
+  `activeSnipTag`, their setters, `selectSnipAll`, `selectSnipCat`, `toggleSnipTag`
+  — are now `Tq`, the abbreviation 0.16.0 settled on (`tqById`, `tqItems`,
+  `tqTagList`). The rename's regex required a word boundary before `snip` and
+  missed the capitalised `Snip` in the middle of an identifier. Internal state
+  names only: nothing displayed, nothing persisted.
+
+### Notes
+- **Categories survive the wipe.** Deleting the last command of a category has
+  never deleted the category, so emptying in bulk follows that rule rather than
+  inventing a second one — the built-ins are structure, not content. Verified in
+  the browser: after a wipe both categories are still offered by the add-command
+  form.
+- **The confirm states the TOTAL, never the filtered count.** The number beside it
+  in the header is the filtered one, and letting two numbers sit side by side
+  meaning different things is the next trap. Emptying always takes the whole
+  library; deleting just what a filter shows would be a different action.
+- The cascade lives in the store, and this project unit-tests only `lib/`'s pure
+  logic — so it is covered by the browser pass, like every other store action.
+  Checked there: commands and notes emptied, cheatsheet `commandIds` cleared,
+  step `commandId` unlinked, while `techniqueIds` / `techniqueId`, references and
+  roadmaps came through untouched, and cancelling the confirm changed nothing.
+
+## [0.17.0] — 2026-09-17
+
+### Fixed
+- **In the trigger picker, the colour said the wrong thing.** It came from
+  `activeTriggers` — whether the current target runs that service — and not from
+  whether the trigger is part of the step you are editing. So a trigger you had
+  just picked stayed grey whenever the target did not run it, and on a step whose
+  triggers are all undetected the picker rendered its chips **identically**: the
+  selection was invisible. When it appeared to work it was a coincidence — the
+  chip was accent because it was detected, not because it was chosen.
+
+  In edit mode the colour now means one thing, "part of this step", in the picker
+  and on the chips left of the label alike. Detection moves to the tooltip, where
+  it cannot be mistaken for the selection, and the group sub-header still says
+  `· inactif`. Same reasoning as 0.15.0 dropping the dimming in edit mode:
+  progress state has no business steering a structural editor.
+
+### Changed
+- **The step's operator gets its own `OU | ET` switch.** It used to live in the
+  border style of a 10px chip — dotted unused, dashed OU, solid ET — with a chip
+  click cycling through three states and the middle one silently restyling every
+  other chip of the step. The switch sits at the end of the picker row and appears
+  once **two** triggers are selected; below that OU and ET are the same condition,
+  so there is no choice to offer.
+
+  A chip is now a plain in/out toggle. That kills the quirk 0.13.0 documented and
+  pinned by test: because the first click set OU, adding a trigger to a step
+  already in ET flipped the whole step back to OU. The old comment argued the
+  quirk was the price of driving a step-level operator from a per-chip control —
+  correct, and the price is no longer owed now that the operator has a control of
+  its own.
+
+  `cycleStepTrigger` becomes `toggleStepTrigger`. `stepTriggerMode` and the
+  `TriggerMode` type existed only to serve the three-state chip and are **gone**.
+
+### Notes
+- The operator survives only while the step **stays** at two triggers or more —
+  exactly when the switch is on screen. Below that it normalises to `'any'`. Both
+  directions matter: normalising only on the way down would still let a pre-0.17
+  step carrying one trigger and a stored `'all'` — the old cycle could produce
+  that — come back as ET the moment a second trigger is added, which is the
+  invisible state this rules out.
+- **The read view is untouched.** Outside edit mode the border still carries the
+  operator and the colour still carries detection, and the group sub-header still
+  spells the condition out (`── SMB OU FTP ──`). It was the *handling* of ET/OU
+  that needed the work, not its reading.
+- No contract, DTO or import/export change: the model was already one list plus
+  one mode per step (0.14.0), and only the gestures that write it moved.
+- 98 assertions, up from 94: the `cycleStepTrigger` block is rewritten for the
+  toggle, and the deleted quirk gets a test asserting its opposite.
+
 ## [0.16.0] — 2026-09-17
 
 ### Changed

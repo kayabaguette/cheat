@@ -127,44 +127,39 @@ export function stepGroupKey(step: Step): string {
 
 // --- per-step trigger assignment --------------------------------------------
 
-// A chip's visual state: unused, or assigned — in which case it wears the STEP's
-// mode, since every chip of a step shares it.
-export type TriggerMode = 'off' | 'any' | 'all';
-
 // The mode of the step itself, defaulting to 'any' when unset.
 export function modeOf(step: Step): 'any' | 'all' {
   return step.triggerMode === 'all' ? 'all' : 'any';
 }
 
-// How a given chip should render on a given step.
-export function stepTriggerMode(step: Step, triggerId: string): TriggerMode {
-  return (step.triggerIds ?? []).includes(triggerId) ? modeOf(step) : 'off';
-}
-
-// The next state after one click on a chip — the three-state cycle:
+// The next state after one click on a chip in the picker — a plain toggle.
 //
-//   unused                → assigned, and the STEP's mode becomes 'any'
-//   assigned, step 'any'  → the STEP's mode becomes 'all' (every chip turns solid)
-//   assigned, step 'all'  → removed (mode untouched)
+// v0.17.0. This used to be a three-state cycle (unused → OU → ET → unused)
+// because the step-level operator had no control of its own and had to be driven
+// from a per-chip click. It cost a quirk documented here and pinned by a test:
+// since the first click set 'any', adding a chip to a step already in 'all'
+// flipped the WHOLE step back to 'any'. The operator now has its own OU|ET
+// switch, so a chip means one thing only — in or out — and the quirk is gone
+// along with the reason it existed.
 //
-// Stateless: a click only ever sees (assigned?, step mode), which is exactly the
-// three cases above, and three clicks return to the start.
-//
-// KNOWN SIDE EFFECT, deliberate and pinned by test: because the first click sets
-// 'any', adding a chip to a step already in 'all' flips the WHOLE step back to
-// 'any'. That is the price of driving a step-level operator from a per-chip
-// control; one more click puts it back. Do not "fix" it by making the first click
-// preserve the mode — that would make the second click ambiguous (flip, or
-// remove?) and lock a step in 'all' with no way back.
-export function cycleStepTrigger(
+// The operator only survives while the step STAYS in the range where it means
+// something — two triggers or more, which is also exactly when the switch is on
+// screen. Below that, 'any' and 'all' are the same condition, so the mode is
+// normalised to 'any' rather than left sitting in the state where nothing shows
+// it. Both directions matter: normalising only on the way down would still let a
+// pre-0.17.0 step carrying one trigger and a stored 'all' — the old cycle could
+// produce that by removing a chip — come back as ET the moment a second trigger
+// is added, which is the invisible state this rules out.
+export function toggleStepTrigger(
   step: Step,
   triggerId: string,
 ): { triggerIds: string[]; triggerMode: 'any' | 'all' } {
   const ids = step.triggerIds ?? [];
-  const without = ids.filter((id) => id !== triggerId);
-  if (!ids.includes(triggerId)) return { triggerIds: [...ids, triggerId], triggerMode: 'any' };
-  if (modeOf(step) === 'any') return { triggerIds: [...ids], triggerMode: 'all' };
-  return { triggerIds: without, triggerMode: modeOf(step) };
+  const next = ids.includes(triggerId)
+    ? ids.filter((id) => id !== triggerId)
+    : [...ids, triggerId];
+  const keepsMode = next.length > 1 && ids.length > 1;
+  return { triggerIds: next, triggerMode: keepsMode ? modeOf(step) : 'any' };
 }
 
 // A step's assigned triggers, in the ROADMAP's declaration order (so the chips

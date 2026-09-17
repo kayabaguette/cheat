@@ -38,6 +38,15 @@ const headRow: CSSProperties = {
   gap: '12px',
   marginBottom: '22px',
 };
+// Mirrors the Library's — the two head rows read as one control.
+const resetLink: CSSProperties = {
+  cursor: 'pointer',
+  border: 'none',
+  background: 'transparent',
+  color: 'var(--faint)',
+  fontSize: '11.5px',
+  fontFamily: 'inherit',
+};
 const groupsWrap: CSSProperties = { display: 'flex', flexDirection: 'column', gap: '30px' };
 const groupHead: CSSProperties = {
   display: 'flex',
@@ -149,11 +158,11 @@ export function Techniques() {
     categories,
     cheatsheets,
     activeSheet,
-    activeSnipCat,
-    activeSnipTag,
+    activeTqCat,
+    activeTqTag,
     localValues,
-    setActiveSnipTag,
-    setActiveSnipCat,
+    setActiveTqTag,
+    setActiveTqCat,
     setQuery,
     setLocalValue,
     openEditTechnique,
@@ -177,8 +186,8 @@ export function Techniques() {
   const filtered = useMemo<Technique[]>(() => {
     const tokens = fold(query).split(/\s+/).filter(Boolean);
     return techniques.filter((tq) => {
-      if (activeSnipCat && tq.category !== activeSnipCat) return false;
-      if (activeSnipTag && !tq.tags.includes(activeSnipTag)) return false;
+      if (activeTqCat && tq.category !== activeTqCat) return false;
+      if (activeTqTag && !tq.tags.includes(activeTqTag)) return false;
       if (tokens.length) {
         const catLabel = catByKey.get(tq.category)?.label ?? tq.category;
         const hay = fold(
@@ -194,7 +203,7 @@ export function Techniques() {
       }
       return true;
     });
-  }, [techniques, catByKey, activeSnipCat, activeSnipTag, query]);
+  }, [techniques, catByKey, activeTqCat, activeTqTag, query]);
 
   const groups = useMemo<CatGroup[]>(() => {
     const out: CatGroup[] = [];
@@ -215,17 +224,19 @@ export function Techniques() {
     return out;
   }, [filtered, categories]);
 
-  const scopeLabel = activeSnipCat
-    ? (catByKey.get(activeSnipCat)?.label ?? activeSnipCat)
-    : activeSnipTag
-      ? '#' + activeSnipTag
+  const scopeLabel = activeTqCat
+    ? (catByKey.get(activeTqCat)?.label ?? activeTqCat)
+    : activeTqTag
+      ? '#' + activeTqTag
       : '';
 
   const reset = () => {
-    setActiveSnipCat(null);
-    setActiveSnipTag(null);
+    setActiveTqCat(null);
+    setActiveTqTag(null);
     setQuery('');
   };
+
+  const filtering = !!(activeTqCat || activeTqTag || query.trim());
 
   const askDelete = (tq: Technique) => {
     if (window.confirm('Supprimer la technique « ' + tq.title + ' » ?')) deleteTechnique(tq.id);
@@ -239,19 +250,14 @@ export function Techniques() {
             <span style={{ color: 'var(--text)', fontWeight: 600 }}>{filtered.length}</span> technique(s)
           </div>
           {scopeLabel && <div style={{ fontSize: '12.5px', color: 'var(--faint)' }}>{scopeLabel}</div>}
-          <button
-            onClick={reset}
-            style={{
-              cursor: 'pointer',
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--faint)',
-              fontSize: '11.5px',
-              fontFamily: 'inherit',
-            }}
-          >
-            réinitialiser
-          </button>
+          {/* Same wording and same visibility rule as the Library's: it clears
+              filters, it says so, and it stays out of the way when there is
+              nothing to clear. */}
+          {filtering && (
+            <button onClick={reset} style={resetLink}>
+              réinitialiser les filtres
+            </button>
+          )}
         </div>
 
         {groups.length > 0 ? (
@@ -370,7 +376,7 @@ export function Techniques() {
                           {tq.tags.map((t) => (
                             <button
                               key={t}
-                              onClick={() => setActiveSnipTag(activeSnipTag === t ? null : t)}
+                              onClick={() => setActiveTqTag(activeTqTag === t ? null : t)}
                               style={tagBtn}
                             >
                               #{t}

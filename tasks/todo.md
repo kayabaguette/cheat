@@ -1001,3 +1001,227 @@ premier autosave — **la migration one-shot devient redondante, je la retire**.
   étapes / locals / liens intacts, aucune clé legacy réécrite en base.
 - La base de dév de l'utilisateur (`cheat-data`) n'a pas été touchée.
 
+
+---
+
+# 0.17.0 — Déclencheurs : bascule OU/ET, et la couleur dit le bon état
+
+Deux choses, liées par le même malentendu : en mode édition, l'affichage parle de
+**progression** là où il devrait parler de **structure**.
+
+## Le bug
+
+`Methodology.tsx` lignes 1450 et 1781, les deux pickers :
+
+```js
+chipStyle(mode !== 'off' && !!activeTriggers[t.id], mode)
+```
+
+La couleur vient de `activeTriggers` — « ce service tourne sur la cible » — et non
+de « ce déclencheur est choisi pour cette étape ». Conséquence : une puce choisie
+mais non détectée reste grise. Sur une étape dont aucun déclencheur n'est détecté,
+les cinq puces du picker sont **indiscernables** et la sélection est invisible.
+Quand ça semble marcher, c'est une coïncidence : la puce est verte parce qu'elle
+est détectée, pas parce qu'elle est choisie.
+
+Précédent qui tranche : la 0.15.0 a retiré le grisé en mode édition au motif que
+l'état de progression n'a rien à dire sur l'édition de la structure. Même règle
+ici.
+
+## L'opérateur
+
+Aujourd'hui il ne s'écrit nulle part dans l'éditeur : il tient dans le style de
+bordure d'une puce de 10px (pointillés = inutilisé, tirets = OU, plein = ET), et
+le clic cycle sur trois états en changeant le mode de **toute l'étape**. Décision
+utilisateur : une **bascule segmentée `OU | ET`**, contrôle séparé, à partir de
+2 déclencheurs choisis (avec 0 ou 1, ET et OU disent la même condition).
+
+## Étapes
+
+### 1. `frontend/src/lib/triggers.ts`
+- [x] `cycleStepTrigger` → `toggleStepTrigger(step, triggerId)` : ajoute ou
+      retire, le mode est préservé. La puce redevient un oui/non.
+- [x] Normalisation : si le résultat a moins de 2 déclencheurs, le mode retombe à
+      `'any'`. Sans ça un `'all'` resterait stocké pendant que la bascule est
+      masquée, et ressortirait tout seul à l'ajout d'un deuxième déclencheur.
+- [x] `stepTriggerMode` devient **mort** (ses deux seuls appelants sont les
+      pickers) → supprimé avec ses tests. Le picker n'a plus besoin que de
+      « choisi ou non », et la ligne lit son mode via `modeOf`.
+- [x] Pas de nouvel helper pour le mode : la vue appelle directement
+      `setStepTriggers(rm.id, ph.id, st.id, st.triggerIds ?? [], mode)`.
+
+### 2. `frontend/src/components/views/Methodology.tsx`
+- [x] Séparer les deux sens de la couleur au lieu d'un `chipStyle` à double
+      usage :
+      - `chipStyle(detected, mode)` — hors édition, inchangé (couleur = détecté,
+        bordure = opérateur)
+      - `pickChipStyle(selected)` — dans l'éditeur (couleur = choisi, bordure
+        neutre : c'est la bascule qui porte l'opérateur)
+- [x] Picker d'étape existante : puces en bascule simple + contrôle `OU | ET`
+      rendu à partir de 2 déclencheurs choisis.
+- [x] Picker du brouillon « nouvelle étape » : idem, sur `d.triggerIds` /
+      `d.triggerMode`.
+- [x] Puces à gauche du libellé : en mode édition elles rendent « choisi »
+      (accent), plus de couleur de détection. Hors édition, inchangé.
+- [x] Infobulles : plus de « Cliquer : passer toute l'étape en ET ». La puce dit
+      « ajouter à l'étape » / « retirer de l'étape », la bascule porte la sienne.
+      L'info « détecté sur la cible » reste dans l'infobulle en mode édition,
+      donc rien n'est perdu.
+- [x] Style : reprendre l'idiome `segBase` / `segOn` de `TopBar.tsx` à l'échelle
+      de la puce (10px, MONO) plutôt que d'inventer un contrôle.
+
+### 3. `frontend/src/lib/triggers.test.ts`
+- [x] Réécrire le bloc `stepTriggerMode / cycleStepTrigger` pour
+      `toggleStepTrigger` : ajout, retrait, mode préservé, mode normalisé
+      sous 2 déclencheurs.
+- [x] Épingler la disparition du quirk : ajouter un déclencheur à une étape en ET
+      la **laisse** en ET (l'ancien test épinglait le contraire).
+
+### 4. Docs
+- [x] `README.md` : la section « Several triggers on one step combine as OR *or*
+      AND » décrit le cycle à trois états et son quirk — réécrite.
+- [x] `CHANGELOG.md` : entrée 0.17.0.
+- [x] `SPEC.md` : item 20 (les items 1–19 ne sont pas réécrits).
+
+### 5. Vérification
+- [x] `make down` d'abord
+- [x] `make test` (Go + typecheck + vitest)
+- [x] Passe navigateur sur une **instance jetable** avec un jeu de déclencheurs :
+      sélection visible quel que soit l'état de détection, bascule OU/ET,
+      apparition/disparition de la bascule au 2e déclencheur, brouillon de
+      nouvelle étape, rendu hors édition inchangé
+- [x] `make down` après
+
+## Hors périmètre
+
+Le rendu **hors** mode édition ne bouge pas : la bordure y porte toujours
+l'opérateur, et le sous-en-tête de groupe l'écrit déjà en toutes lettres
+(`── SMB OU FTP ──`). C'est la *gestion* du ET/OU qui était demandée, pas sa
+lecture.
+
+## Écart par rapport au plan validé
+
+**La normalisation du mode se fait dans les deux sens, pas seulement à la
+descente.** Le plan disait « si le résultat a moins de 2 déclencheurs, le mode
+retombe à `'any'` ». Un test l'a pris en défaut : une étape d'avant la 0.17
+portant un seul déclencheur et un `'all'` stocké — l'ancien cycle pouvait la
+produire en retirant une puce — ressuscitait en ET à l'ajout d'un deuxième, soit
+exactement l'état invisible que la normalisation devait empêcher. La règle
+devient : le mode ne survit que tant que l'étape **reste** à 2 déclencheurs ou
+plus, c'est-à-dire tant que la bascule est à l'écran.
+
+`TriggerMode` a été supprimé en plus de `stepTriggerMode` : c'était son type de
+retour, sans autre usage.
+
+## Résultat
+
+- `make test` : 98 assertions (94 + 4), typecheck, `go test ./...` — tout vert.
+- Passe navigateur sur instance jetable (port 8790, volume dédié, détruits après) :
+  - picker : `SMB` / `FTP` en accent, les trois autres en gris, bascule `OU|ET`
+    en fin de ligne
+  - clic sur `ET` → le sous-en-tête passe de `SMB OU FTP` à `SMB ET FTP`
+  - retrait de `FTP` → la bascule disparaît, le sous-en-tête tombe à `SMB`
+  - `FTP` remis → la bascule revient sur **OU**, l'ancien ET n'est pas ressuscité
+  - brouillon de nouvelle étape : `SMB` et `MySQL` choisis apparaissent en accent
+    alors qu'aucun n'est détecté, `HTTP/HTTPS` et `SSH` détectés restent gris —
+    l'inversion demandée
+  - rendu hors édition identique à avant
+- La base de dév de l'utilisateur n'a pas été touchée.
+
+
+---
+
+# 0.18.0 — « réinitialiser » dit ce qu'il fait, et la bibliothèque peut être vidée
+
+## Constat
+
+`réinitialiser` (`Library.tsx:318`) appelle `clearFilters` : catégorie, outil, tag,
+favoris, recherche, arbre replié. Il n'a jamais touché aux commandes. Ce n'est pas
+une panne, c'est le libellé qui ment par omission — l'état vide de la même vue dit
+déjà « Modifie ta recherche ou réinitialise **les filtres** » (`Library.tsx:461`).
+
+Aggravant : le bouton est affiché en permanence. Sans filtre actif, le clic ne
+produit rien à l'écran, ce qui ressemble à un bouton cassé.
+
+Décision utilisateur : **les deux** — clarifier le libellé ET ajouter un vrai
+vidage, pour que les deux ne puissent plus être confondus.
+
+## Étapes
+
+### 1. Le libellé
+- [x] `Library.tsx` et `Techniques.tsx` : « réinitialiser » → « réinitialiser les
+      filtres ».
+- [x] Masqué tant qu'aucun filtre n'est actif. Prédicat sur les filtres
+      seulement (catégorie, outil, tag, favoris, recherche) — pas sur l'arbre
+      déplié, qui n'est pas un filtre et a ses propres bascules.
+
+### 2. Vider la bibliothèque
+- [x] `store.tsx` : action `clearCommands()`, même cascade que `deleteCommand`
+      mais en gros :
+      - `commands` → `[]`
+      - chaque cheatsheet : `commandIds` → `[]`
+      - chaque étape de méthodologie : `commandId` → `undefined`
+      - `notes` purgées (elles ne sont clavetées que par id de commande)
+- [x] **Les catégories sont conservées.** Supprimer aujourd'hui la dernière
+      commande d'une catégorie ne supprime pas la catégorie ; le vidage en gros
+      suit la même règle plutôt que d'en inventer une autre.
+- [x] `Library.tsx` : bouton « Vider la bibliothèque » poussé à droite de la
+      ligne d'en-tête (`marginLeft: auto`), séparé du reset de filtres — les
+      coller serait recréer la confusion qu'on corrige.
+- [x] Confirmation énonçant le **total** et la cascade. Elle porte toujours sur
+      toute la bibliothèque, jamais sur le sous-ensemble filtré : le compte
+      affiché dans l'en-tête est celui des commandes filtrées, et faire porter
+      l'action dessus serait le piège suivant.
+
+### 3. Reliquats du renommage 0.16.0
+- [x] `activeSnipCat`/`activeSnipTag`/`setActiveSnip*` (store), `selectSnipAll`/
+      `selectSnipCat`/`toggleSnipTag` (Sidebar) et leurs 14 usages dans
+      `Techniques.tsx` → préfixe `tq`, celui déjà retenu en 0.16.0 (`tqById`,
+      `tqItems`, `tqTagList`). Mon regex d'alors exigeait une frontière de mot
+      avant `snip` et a manqué le `Snip` capitalisé en milieu d'identifiant.
+      État interne uniquement : rien d'affiché, rien de persisté.
+
+### 4. Docs
+- [x] `README.md` : la section Bibliothèque décrit-elle le bouton ? à vérifier,
+      et documenter le vidage.
+- [x] `CHANGELOG.md` : entrée 0.18.0.
+- [x] `SPEC.md` : item 21.
+
+### 5. Vérification
+- [x] `make down` d'abord
+- [x] `make test`
+- [x] Passe navigateur sur **instance jetable**, avec des cheatsheets et une
+      méthodologie qui référencent des commandes :
+      - le bouton de filtres n'apparaît qu'avec un filtre actif, et son libellé
+        dit « les filtres »
+      - vidage : confirmation, puis bibliothèque vide, cheatsheets délestées de
+        leurs commandes, étapes déliées, notes parties, catégories conservées,
+        techniques / références / méthodologies intactes
+      - annuler la confirmation ne touche à rien
+- [x] `make down` après
+
+## Pas de test unitaire
+
+La cascade vit dans le store, et le projet ne teste unitairement que la logique
+pure de `lib/` — les actions du store sont couvertes par la passe navigateur.
+Je suis la convention plutôt que d'extraire une fonction pour la seule occasion.
+
+## Résultat
+
+- `make test` : 98 assertions, typecheck, `go test ./...` — tout vert.
+- Passe navigateur sur instance jetable (port 8791, volume dédié, détruits après),
+  avec un jeu où deux cheatsheets, deux étapes de méthodologie et deux notes
+  pointent vers les commandes :
+  - sans filtre : pas de lien de reset, « Vider la bibliothèque » seul à droite
+  - avec le filtre Recon : « réinitialiser les filtres » apparaît, les deux
+    contrôles aux deux bouts de la ligne
+  - confirmation annulée → 3 commandes, 2 notes, liens intacts : rien touché
+  - confirmation acceptée → 0 commande, notes `{}`, `commandIds` des deux
+    cheatsheets vidés, `commandId` des trois étapes délié
+  - **préservés** : les 2 catégories (et toujours proposées par le formulaire
+    d'ajout), la technique, la référence, la méthodologie, et les
+    `techniqueIds` / `techniqueId` qui cohabitaient avec les commandes
+  - Cheatsheet et Méthodologie se rendent sans casse après le vidage
+  - vue Techniques : même libellé, même règle d'apparition
+- La base de dév de l'utilisateur n'a pas été touchée.
+
