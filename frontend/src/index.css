@@ -51,7 +51,7 @@ a:hover{color:var(--acc)}
   .tb-search{width:200px;flex:0 1 200px}
 }
 @media (max-width:1200px){
-  /* Five tabs (0.9.0 added Snippets) no longer fit with the long labels: the
+  /* Five tabs (0.9.0 added Techniques) no longer fit with the long labels: the
      incompressible bar measures 1312px that way, so it overflowed the page
      between ~940 and ~1150px. Switching to the short forms early keeps the
      search box from being squeezed instead. */

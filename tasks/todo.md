@@ -818,3 +818,186 @@ Console propre.
 
 - L'édition écrit à chaque frappe, comme le renommage de phase existant. Pas de
   debounce local : l'autosave du store est déjà débouncé à 500 ms.
+
+---
+
+## Mission RT — methodology generated from the RT mindmap (2026-09-14)
+
+Source: `RT-Checklist-TEMPLATE.json` (mindmap export, 200 nodes / 196 edges,
+4 disconnected roots, depth up to 8, 33 wiki/repo links).
+
+Decisions locked with the user:
+
+- **Destination**: a new roadmap `Mission RT` appended to the **`Red Team`
+  profile**, alongside `Méthodologie OSCP`. Delivered as an importable
+  `AppState` JSON built from that profile's current state (import = full replace
+  of the active profile, so the file must carry everything it already had).
+- **Split**: ~12 fine-grained phases (operational milestones), not the 6 raw
+  mindmap branches. Level below = steps, everything deeper = substeps.
+- **Links & notes**: the 33 URLs become `references` entries tagged `mission-rt`;
+  the executable snippets carried in the mindmap notes become `commands` in the
+  Library, linked to their step via `commandId`.
+
+### Tasks
+
+- [x] Parse the mindmap into a clean tree (label / links / notes separated)
+- [x] Map the tree onto the ~12 phases, steps and substeps
+- [x] Extract the URLs into `references` (tag `mission-rt`)
+- [x] Extract the executable snippets into `commands` + link them to their step
+- [x] Build the export file from the live `Red Team` profile state
+- [x] Validate against `frontend/src/types.ts` (ids unique, commandId resolvable)
+- [x] Report: counts, how to import, what was dropped
+
+### Results
+
+| Sortie | Volume |
+|---|---|
+| Méthodologie `Mission RT` | 13 phases / 83 étapes / 104 sous-étapes |
+| Commandes ajoutées (`rt1`–`rt24`) | 24, dont 21 liées à une étape |
+| Références ajoutées (`rtr1`–`rtr35`) | 35 — les 35 URL distinctes de la mindmap, taguées `mission-rt` |
+| Profil Red Team après import | 405 commandes (381 + 24), 64 références (29 + 35), 2 méthodologies |
+
+Couverture : les 200 nœuds de la mindmap sont représentés. 15 remontent
+« non appariés » par le contrôle automatique : ce sont des nœuds de structure
+absorbés dans un libellé de phase (`RT-Checklist`, `💼 Préparation d'un exercice`,
+`📽️ Scénarios`, `🔎 Reconnaissance du poste de travail infecté`) ou des
+reformulations (`Au niveau de nos PDT` → « Au niveau de nos postes de travail »).
+
+Deux libertés prises, à valider :
+
+1. `🎯 Accès initial au S.I` est un nœud **sans enfant** dans la mindmap (présent
+   deux fois, en séparateur visuel). Rendu en phase à une seule étape-jalon —
+   c'est le trou à combler dans la mindmap source.
+2. Le C² MultiCC, Sherpa, PS-Share-listing, TechRecon, Anystack, PEST et Pingo
+   sont des outils internes : aucune ligne de commande n'est dans la mindmap,
+   donc aucune commande créée. Seules les références pointent vers leur repo.
+
+Vérification : import testé sur une **copie** de la base dans une instance
+isolée (port 8788, image reconstruite depuis les sources, volume jetable).
+Round-trip backend intact (13/83/104, 0 `commandId` orphelin), rendu confirmé
+dans l'interface. Instance et volume détruits après le test ; la base et les
+images de l'utilisateur n'ont pas été touchées.
+
+> L'image `cheat:latest` installée date de 7 semaines et **ignore les
+> sous-étapes** (ajoutées en v0.13.0) : elles sont silencieusement supprimées à
+> l'import. Un `make build` est nécessaire avant d'importer.
+
+---
+
+# 0.16.0 — Renommage « snippets » → « Techniques »
+
+Décision utilisateur : renommage **total** — libellés UI, identifiants de code
+ET format JSON (tags des DTO). Libellé FR : « Techniques » / « technique »
+(féminin : « Nouvelle technique », « Technique ajoutée »).
+
+## Constats de cartographie
+
+- 329 occurrences de `snippet` dans le code (18 fichiers), 78 dans les docs.
+- Les 3 datasets à la racine (`mission-rt.cheat.json`, `oscp-solis.cheat.json`,
+  `RT-Checklist-TEMPLATE.json`) **n'ont aucune clé `snippets`** → aucune
+  conversion de fichier à faire.
+- Les valeurs de variables locales sont mémoire-seule (D7) : les clés de
+  contexte `snippetId` / `sheetId:snippetId` ne sont jamais persistées.
+- Seule donnée réellement à risque : les blobs `AppState` en base SQLite
+  (profils ayant des snippets créés depuis 0.9.0) et tout export fait depuis
+  l'app après 0.9.0.
+
+## Stratégie de compatibilité
+
+Un **alias de lecture côté Go** plutôt qu'une migration SQLite : trois
+`UnmarshalJSON` custom (`AppState`, `CheatsheetDTO`, `StepDTO`) qui acceptent
+l'ancienne clé quand la nouvelle est absente. C'est le point de passage unique
+de `GET /state`, `PUT /state` et `POST /import`, donc ça couvre d'un coup les
+blobs existants et les vieux exports. Le blob se ré-écrit aux nouvelles clés au
+premier autosave — **la migration one-shot devient redondante, je la retire**.
+
+## Étapes
+
+### 1. Backend — `backend/store.go`
+- [x] `SnippetDTO` → `TechniqueDTO`, `SnippetStepDTO` → `TechniqueStepDTO`,
+      `SnippetLocalDTO` → `TechniqueLocalDTO`
+- [x] `AppState.Snippets` → `Techniques`, tag `json:"techniques"`
+- [x] `CheatsheetDTO.SnippetIDs` → `TechniqueIDs`, tag `json:"techniqueIds"`
+- [x] `StepDTO.SnippetID` → `TechniqueID`, tag `json:"techniqueId"`
+- [x] `emptyState()`, `nonNilState()`, `legacyLoadState()` suivent
+- [x] 3 × `UnmarshalJSON` (alias legacy `snippets` / `snippetIds` / `snippetId`)
+- [x] Commentaires de section (`--- Snippets (v0.9.0) ---`) réécrits
+
+### 2. Frontend — contrat `frontend/src/types.ts`
+- [x] `Snippet` → `Technique`, `SnippetStep` → `TechniqueStep`,
+      `SnippetLocal` → `TechniqueLocal`
+- [x] `Cheatsheet.snippetIds` → `techniqueIds`, `Step.snippetId` → `techniqueId`,
+      `AppState.snippets` → `techniques`
+- [x] `ViewKey: 'snippets'` → `'techniques'`
+
+### 3. Frontend — `frontend/src/store.tsx` (116 occ.)
+- [x] Slices : `snippets`/`setSnippets`/`snippetsRef`, `addingSnippet`,
+      `editingSnippetId` → équivalents `technique*`
+- [x] Actions : `addSnippet`, `updateSnippet`, `deleteSnippet`,
+      `setAddingSnippet`, `openEditSnippet`, `toggleSnippetInSheet`,
+      `removeSnippetFromSheet`, `moveSnippetInSheet` → `*Technique*`
+- [x] `persistableState` / `hydrateFromState` alignés sur les nouvelles clés
+- [x] Flashes FR : « Technique ajoutée / modifiée / supprimée »
+
+### 4. Frontend — composants et vues
+- [x] `git mv components/AddSnippet.tsx components/AddTechnique.tsx`
+- [x] `git mv components/views/Snippets.tsx components/views/Techniques.tsx`
+- [x] `TopBar.tsx` : onglet `label: 'Techniques'`, `short: 'Tech'`, bouton
+      d'ajout contextuel
+- [x] `Sidebar.tsx` : « Toutes les techniques », facette de tags
+- [x] `Cheatsheet.tsx` : chapitre « Techniques », export MD `# Techniques`,
+      texte vide « Ajoute des commandes ou des techniques… »
+- [x] `PrintRoot.tsx` : `<h2>Techniques</h2>`
+- [x] `App.tsx`, `Methodology.tsx`, `CodeBlock.tsx`, `CommandLine.tsx`
+- [x] `DataMenu.tsx` : `arrayKeys` accepte `techniques` **et** `snippets`
+      (un vieux fichier doit continuer à passer le contrôle de forme)
+- [x] `lib/vars.ts`, `lib/varsets.ts`, `lib/vars.test.ts`, `index.css` (commentaire)
+- [x] Identifiants locaux : `sn`→`tq`, `sns`→`tqs`, `snipById`→`tqById`,
+      `snipItems`→`tqItems`, `snipStep*`/`snipCap*` → `tqStep*`/`tqCap*`
+      ⚠ jamais de `sed` aveugle sur `sn` : `snapshot` et `snmp` collisionnent
+
+### 5. Docs
+- [x] `README.md` (31 lignes) et `SPEC.md` (12 lignes) mis à jour
+- [x] `CHANGELOG.md` : nouvelle entrée 0.16.0. Les entrées passées ne sont
+      **pas** réécrites — elles décrivent ce qui s'est passé à l'époque.
+
+### 6. Vérification
+- [x] `make down` avant toute chose (rien ne doit tourner sur :8787)
+- [x] `make test` : `go test ./...` + `npm run typecheck` + vitest (94 assertions)
+- [x] `make build && make up`, passe navigateur : onglet Techniques,
+      création / édition / suppression, chapitre Cheatsheet, export MD, impression
+- [x] Round-trip export → import JSON
+- [x] Import d'un export **legacy** portant `snippets` → doit charger sans perte
+- [x] `make down` après les tests
+
+## Branche
+
+`feature/rename-techniques` → commit conventionnel `refactor:` → PR gitea.
+
+## Écarts par rapport au plan validé
+
+1. **SPEC.md n'est pas réécrit.** Ses 12 occurrences étaient toutes dans le
+   journal « Implementation status » (items 1–18), daté version par version :
+   réécrire l'item 11 aurait falsifié ce que la v0.9 avait livré. Il reçoit un
+   **item 19** à la place, et l'en-tête passe à « v0.2–v0.16 ». Même traitement
+   que le CHANGELOG, pour la même raison.
+2. **Le préfixe d'id reste `sn`.** Non prévu au plan, découvert en route :
+   `mint('sn')` produit des ids persistés. Les renommer aurait coupé l'espace
+   d'ids en deux sans rien apporter — ils sont opaques et jamais affichés.
+3. **Aucune conversion des trois `.cheat.json`** : la cartographie a montré
+   qu'aucun ne porte de clé `snippets`. Rien à convertir.
+4. **4 tests Go ajoutés** (`backend/store_legacykeys_test.go`) — pas au plan, mais
+   l'alias legacy était la pièce la plus risquée et n'avait aucun filet.
+
+## Résultat
+
+- `make test` : 94 assertions vitest + typecheck + `go test ./...` — tout vert.
+- Passe navigateur sur une instance jetable (port 8788, volume dédié, détruits
+  après) : onglet « Techniques », création, chapitre Cheatsheet, étape de
+  méthodologie liée, modale « Nouvelle technique », dropdowns
+  « — aucune technique liée — ».
+- Import d'un dataset **legacy** (clés `snippets` / `snippetIds` / `snippetId`)
+  par le chemin client complet : contrôle de forme franchi, conversion correcte,
+  étapes / locals / liens intacts, aucune clé legacy réécrite en base.
+- La base de dév de l'utilisateur (`cheat-data`) n'a pas été touchée.
+

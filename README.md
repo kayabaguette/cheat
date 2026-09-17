@@ -21,7 +21,7 @@ own machine — no cloud, no accounts, no telemetry. The UI is in **French**.
 
 - [Why Cheat?](#why-cheat)
 - [Highlights](#highlights)
-- [Snippets](#snippets)
+- [Techniques](#techniques)
 - [Conditional steps](#conditional-steps)
 - [Live variables](#live-variables)
 - [Quick start](#quick-start)
@@ -55,17 +55,17 @@ across notes.
 - **Méthodologie** — reusable **roadmaps** of phases and checkable steps with
   per-phase and global progress. A step can link a command, shown expanded and
   resolved inline. Edit mode edits a step in place — label, linked command,
-  linked snippet, triggers — with drag-and-drop reordering (including across
+  linked technique, triggers — with drag-and-drop reordering (including across
   phases) and a progress reset. Steps can be **conditional**: tick what discovery
   found on the target and only the relevant branches apply (see below).
-- **Snippets** — reusable **chains of commands** for the goals a single command
+- **Techniques** — reusable **chains of commands** for the goals a single command
   cannot reach (forge a silver ticket, kerberoast → crack → reuse). Ordered steps
-  with inline templates, a copy button on every line, and per-snippet variables
+  with inline templates, a copy button on every line, and per-technique variables
   fed from the previous step's output (see below).
 - **Références** — external links with auto-extracted domain and tags, full-text
   and tag filtering, and URL validation on add/edit.
 - **Cheatsheet** — assemble named, target-scoped cheatsheets from library
-  commands **and snippets** (two chapters), then **export to Markdown or PDF** — both emit raw `$TOKEN`s by
+  commands **and techniques** (two chapters), then **export to Markdown or PDF** — both emit raw `$TOKEN`s by
   default; a single opt-in toggle resolves the values into either format, and a
   confirmation guards any resolved export that would write a sensitive value
   (`$PASS`) to disk.
@@ -81,10 +81,10 @@ across notes.
   local SQLite database and survives restarts.
 - **Import / export** — back up or move your whole dataset as a single JSON file.
 
-## Snippets
+## Techniques
 
 Some results take several commands, where each one needs something the previous
-one produced. A **snippet** captures that as a reusable technique:
+one produced. A **technique** captures that as a reusable chain:
 
 ```
 01  Dump the service account's hash     mimikatz # sekurlsa::logonpasswords     → $svc_ntlm
@@ -106,7 +106,7 @@ one produced. A **snippet** captures that as a reusable technique:
   leaves the app as a raw token. They hold precisely what shouldn't be persisted
   (a hash, a ticket, a SID), so they live in memory only and reset on reload. The
   clipboard does resolve them, which is the whole point.
-- **One value set per place.** The same snippet used in two methodology steps
+- **One value set per place.** The same technique used in two methodology steps
   keeps two independent sets of local values, so two targets never mix.
 - **Shell variables are left alone.** `$env:USERNAME`, `$PSVersionTable`, `$_`,
   `$f` and friends are ordinary shell text, never Cheat variables, so PowerShell
@@ -122,7 +122,7 @@ nothing else:
 - a **hint** — the placeholder text of its capture field, reminding you what to
   paste there (« hash NTLM du compte de service ») ;
 - the **« produit » anchor** — pick the local on the step that *yields* it, and
-  its capture field moves directly under that step in the Snippets view, so you
+  its capture field moves directly under that step in the Techniques view, so you
   paste the output where it was produced and the lines below resolve.
 
 Two ways to declare one, in the add/edit form:
@@ -135,14 +135,14 @@ Two ways to declare one, in the add/edit form:
    (`svc_ntlm`) plus an optional hint.
 
 The per-step **« produit »** dropdown only lists locals that already exist, so on
-a fresh snippet its only option is `(rien)` until you declare one.
+a fresh technique its only option is `(rien)` until you declare one.
 
 A declared local that no step produces still gets a field, grouped in a
-**« Variables locales »** strip at the top of the snippet card.
+**« Variables locales »** strip at the top of the technique card.
 
-Snippets carry a category and tags (no tool), can be linked from a methodology
+Techniques carry a category and tags (no tool), can be linked from a methodology
 step — on their own or alongside a command — and go into a cheatsheet's
-« Snippets » chapter.
+« Techniques » chapter.
 
 ## Conditional steps
 
@@ -260,9 +260,9 @@ as a source of truth.
 ### Editing, and resetting
 
 **« ✎ Modifier » edits a step in place**: its label becomes an input, its linked
-command and snippet become dropdowns, and its triggers a chip picker. The step
+command and technique become dropdowns, and its triggers a chip picker. The step
 keeps its identity through all of it, so **its checkbox, its pasted result and its
-snippet-local values survive an edit** — which was not true of the only previous
+technique-local values survive an edit** — which was not true of the only previous
 way to change a label, deleting and recreating the step.
 
 Nothing is dimmed in edit mode either: the greying of an inactive step reports
@@ -308,7 +308,7 @@ includes it.
 - **Rename cascades**: renaming a variable rewrites `$OLD → $NEW` across every
   command that uses it.
 
-### `$locales` — scoped to one category, or one snippet
+### `$locales` — scoped to one category, or one technique
 
 A `$lowercase` token is a **local**. It isn't app-wide: it belongs to one place.
 `$share` means something in *Active Directory*, nothing in *Web applications*.
@@ -319,8 +319,8 @@ A `$lowercase` token is a **local**. It isn't app-wide: it belongs to one place.
   `$share`, a `$spn`, a `$wordlist` describes the target or the goal, not the tool
   that consumes it.
 
-  For a **snippet** the scope is that snippet, with one independent value set per
-  place it appears (the same snippet linked from two methodology steps keeps two,
+  For a **technique** the scope is that technique, with one independent value set per
+  place it appears (the same technique linked from two methodology steps keeps two,
   so two targets never mix).
 
 - **Two ways to set one.** **Double-click the token in the command** — it turns
@@ -430,11 +430,11 @@ run on a machine you control.
   never written to the database, `localStorage`, or the JSON export; they reset
   on reload. They are **global to the session** and are **kept unchanged when you
   switch profiles** (a profile scopes content, not variable values).
-- **Snippet-local values go one step further** — a `$lowercase` local holds what
+- **Technique-local values go one step further** — a `$lowercase` local holds what
   you just captured (an NTLM hash, a SID, a ticket), so on top of being
   memory-only it is **never substituted into a file export**, even when
   « résoudre les variables » is enabled: it always leaves as a raw token. Only
-  the clipboard resolves it. Each place a snippet appears keeps its own value set.
+  the clipboard resolves it. Each place a technique appears keeps its own value set.
 - **No at-rest encryption** — the database stores your commands, methodology,
   references, free-text notes/targets/URLs and any **captured command output**
   (methodology step results, which can contain credentials, hashes or other
@@ -453,7 +453,7 @@ scoped to the **active profile**. Import is a **full REPLACE** of the active
 profile (it overwrites everything in it, so export first to back up); it does not
 touch other profiles. Variable *values* are never part of the file. The easiest way to get a valid
 file is to **Export** one and edit it. Every top-level key must be present (arrays
-may be empty, maps `{}`) except `snippets` and `activeTriggers`, which are optional
+may be empty, maps `{}`) except `techniques` and `activeTriggers`, which are optional
 so older exports stay valid; import rejects a file whose `commands` is not an array.
 
 ```json
@@ -462,8 +462,8 @@ so older exports stay valid; import rejects a file whose `commands` is not an ar
   "commands":    [{ "id": "n1", "category": "infogathering", "tool": "nmap", "title": "Scan complet TCP", "template": "nmap -p- $RHOST", "desc": "Tous les ports", "tags": ["recon"], "favorite": true }],
   "references":  [{ "id": "r1", "title": "HackTricks", "url": "https://book.hacktricks.xyz", "desc": "", "tags": ["general"] }],
   "roadmaps":    [{ "id": "services", "label": "Machine — Services", "triggers": [{ "id": "tg1", "label": "SMB" }], "phases": [{ "id": "p1", "label": "Reconnaissance", "steps": [{ "id": "s1", "text": "Scan TCP complet", "commandId": "n1" }, { "id": "s2", "text": "Lister les partages", "triggerIds": ["tg1"] }] }] }],
-  "cheatsheets": [{ "id": "cs1", "title": "Cheatsheet — HTB Lab", "target": "", "commandIds": ["n1"], "snippetIds": ["sn1"] }],
-  "snippets":    [{ "id": "sn1", "category": "ad", "title": "Silver ticket (CIFS)", "desc": "", "tags": ["kerberos"], "steps": [{ "id": "ss1", "label": "Dump du hash", "template": "mimikatz # sekurlsa::logonpasswords", "produces": "svc_ntlm" }, { "id": "ss2", "template": "mimikatz # kerberos::golden /rc4:$svc_ntlm /domain:$DOMAIN /ptt" }], "locals": [{ "name": "svc_ntlm", "hint": "hash NTLM du compte de service" }] }],
+  "cheatsheets": [{ "id": "cs1", "title": "Cheatsheet — HTB Lab", "target": "", "commandIds": ["n1"], "techniqueIds": ["sn1"] }],
+  "techniques":  [{ "id": "sn1", "category": "ad", "title": "Silver ticket (CIFS)", "desc": "", "tags": ["kerberos"], "steps": [{ "id": "ss1", "label": "Dump du hash", "template": "mimikatz # sekurlsa::logonpasswords", "produces": "svc_ntlm" }, { "id": "ss2", "template": "mimikatz # kerberos::golden /rc4:$svc_ntlm /domain:$DOMAIN /ptt" }], "locals": [{ "name": "svc_ntlm", "hint": "hash NTLM du compte de service" }] }],
   "notes":       { "n1": "note perso attachée à la commande n1" },
   "checks":      { "s1": true },
   "openSteps":   { "s1": false },
@@ -478,9 +478,9 @@ so older exports stay valid; import rejects a file whose `commands` is not an ar
 | `categories[]` | `{ key, label, color }` | `color` is a CSS hex; the 18 built-ins keep their canonical keys/labels. |
 | `commands[]` | `{ id, category, tool, title, template, desc, tags[], favorite? }` | `category` is a `categories[].key`; `template` may contain `$VAR` tokens; a command's own tool is never one of its tags; `favorite` (optional bool, default `false`) pins the command to the top of its tool group. |
 | `references[]` | `{ id, title, url, desc, tags[] }` | `url` should be `http(s)`/`mailto`. |
-| `roadmaps[]` | `{ id, label, phases[], triggers? }` | `phases[] = { id, label, steps[] }`, `steps[] = { id, text, commandId?, snippetId?, triggerIds? }` — a step may link a command, a snippet, or **both**. `triggers[] = { id, label }` (optional, absent from pre-0.11 exports) is the roadmap's condition vocabulary; a step's `triggerIds` are **OR'd**, and an empty/absent list means the step always applies. A `triggerId` pointing at a trigger the roadmap does not declare is dropped on load. |
-| `snippets[]` | `{ id, category, title, desc, tags[], steps[], locals[] }` | Optional key (absent from pre-0.9 exports). `steps[] = { id, label?, template, produces? }` — `template` is **inline** (never a command id); `produces` names the local a step yields. `locals[] = { name, hint? }` are **definitions only**: `name` must be lower case `^[a-z][a-z0-9_]*$`, and the *values* are never in the file. A snippet has no `tool`. |
-| `cheatsheets[]` | `{ id, title, target, commandIds[], snippetIds? }` | each `commandIds` entry → a `commands[].id`; `snippetIds` (optional) → a `snippets[].id`, rendered as the sheet's second chapter. |
+| `roadmaps[]` | `{ id, label, phases[], triggers? }` | `phases[] = { id, label, steps[] }`, `steps[] = { id, text, commandId?, techniqueId?, triggerIds? }` — a step may link a command, a technique, or **both**. `triggers[] = { id, label }` (optional, absent from pre-0.11 exports) is the roadmap's condition vocabulary; a step's `triggerIds` are **OR'd**, and an empty/absent list means the step always applies. A `triggerId` pointing at a trigger the roadmap does not declare is dropped on load. |
+| `techniques[]` | `{ id, category, title, desc, tags[], steps[], locals[] }` | Optional key (absent from pre-0.9 exports). `steps[] = { id, label?, template, produces? }` — `template` is **inline** (never a command id); `produces` names the local a step yields. `locals[] = { name, hint? }` are **definitions only**: `name` must be lower case `^[a-z][a-z0-9_]*$`, and the *values* are never in the file. A technique has no `tool`. |
+| `cheatsheets[]` | `{ id, title, target, commandIds[], techniqueIds? }` | each `commandIds` entry → a `commands[].id`; `techniqueIds` (optional) → a `techniques[].id`, rendered as the sheet's second chapter. |
 | `notes` | `{ [commandId]: string }` | per-command note. |
 | `checks` / `openSteps` | `{ [stepId]: boolean }` | methodology progress / expanded state. |
 | `results` | `{ [stepId]: string }` | saved command output/result captured per methodology step. |
@@ -488,15 +488,19 @@ so older exports stay valid; import rejects a file whose `commands` is not an ar
 | `settings` | `{ theme, activeRoadmap, activeSheet }` | `theme` = `"dark"`\|`"light"`; `activeRoadmap` = a roadmap id or `null`; `activeSheet` = a cheatsheet id. |
 
 - **IDs** are arbitrary unique strings; keep cross-references consistent
-  (`steps[].commandId`, `steps[].snippetId`, `steps[].triggerIds`,
-  `cheatsheets[].commandIds` / `snippetIds`, and the
+  (`steps[].commandId`, `steps[].techniqueId`, `steps[].triggerIds`,
+  `cheatsheets[].commandIds` / `techniqueIds`, and the
   `notes`/`checks`/`openSteps`/`results`/`activeTriggers` keys). References to a
   missing id are dropped.
 - Variable **values** (`$RHOST`, `$PASS`, …) are **not** in the file — they are
-  memory-only and reset on load. The same holds for **snippet-local values**: only
+  memory-only and reset on load. The same holds for **technique-local values**: only
   the `locals[]` declarations are stored.
-- A file produced by an older version (no `snippets`, no `triggers`/`triggerIds`,
+- A file produced by an older version (no `techniques`, no `triggers`/`triggerIds`,
   no `activeTriggers`) imports unchanged: every one of those is optional.
+- A file produced **before v0.16.0** spells techniques `snippets`, `snippetIds`
+  and `snippetId`. Those keys are still **read** — the backend falls back to them
+  when the current one is absent, so an old export imports with nothing lost. They
+  are never written back: the next save emits the current spelling only.
 
 ## Tests
 
@@ -520,7 +524,7 @@ What is covered:
 - `frontend/src/lib/vars.test.ts` — the **variable tokenizer**, which every view
   renders through and which decides what counts as a variable inside arbitrary
   shell text. It asserts the two name classes, the four render states, both
-  extractors, and two invariants worth pinning down: that a snippet **local is
+  extractors, and two invariants worth pinning down: that a technique **local is
   never substituted by the globals map** (the rule that keeps a captured hash out
   of a Markdown/PDF export), and that no shipped seed command references anything
   but the built-in variables. The two bugs it was born from are pinned as named

@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { resolve } from '../lib/vars';
 import { MONO } from '../lib/ui';
-import type { Command, Snippet } from '../types';
+import type { Command, Technique } from '../types';
 
 // PrintRoot — the print-only rendering of the ACTIVE cheatsheet. It is hidden on
 // screen and revealed only under `@media print` (the `.printroot` rules in
@@ -13,7 +13,7 @@ import type { Command, Snippet } from '../types';
 // OPSEC (SPEC §9.6): commands are emitted RAW ($TOKEN) by default; `resolveValues`
 // (driven by the shared Cheatsheet export toggle) opts in to substituting the
 // GLOBAL store.values, and the value meta strip is shown only then.
-// v0.9.0 — snippet LOCALS are NEVER substituted here, whatever `resolveValues`
+// v0.9.0 — technique LOCALS are NEVER substituted here, whatever `resolveValues`
 // says: their values are memory-only by design (D7) and must not reach a printed
 // artifact. Passing `values` (globals only) to resolve() is what enforces it.
 
@@ -62,7 +62,7 @@ const entryNote: CSSProperties = {
 };
 
 export function PrintRoot({ resolveValues = false }: { resolveValues?: boolean }) {
-  const { values, commands, snippets, notes, categories, cheatsheets, activeSheet } = useStore();
+  const { values, commands, techniques, notes, categories, cheatsheets, activeSheet } = useStore();
 
   const sheet = cheatsheets.find((s) => s.id === activeSheet) ?? null;
   const cmdById = new Map(commands.map((c) => [c.id, c]));
@@ -74,11 +74,11 @@ export function PrintRoot({ resolveValues = false }: { resolveValues?: boolean }
         .filter((c): c is Command => c !== undefined)
     : [];
 
-  const snipById = new Map(snippets.map((sn) => [sn.id, sn]));
-  const snipItems: Snippet[] = sheet
-    ? (sheet.snippetIds ?? [])
-        .map((id) => snipById.get(id))
-        .filter((sn): sn is Snippet => sn !== undefined)
+  const tqById = new Map(techniques.map((tq) => [tq.id, tq]));
+  const tqItems: Technique[] = sheet
+    ? (sheet.techniqueIds ?? [])
+        .map((id) => tqById.get(id))
+        .filter((tq): tq is Technique => tq !== undefined)
     : [];
 
   const metaChips = META_KEYS.map((k) => ({ k, v: values[k] ?? '' })).filter((x) => x.v);
@@ -113,19 +113,19 @@ export function PrintRoot({ resolveValues = false }: { resolveValues?: boolean }
             </div>
           );
         })}
-        {snipItems.length > 0 && (
+        {tqItems.length > 0 && (
           <>
             {items.length > 0 && <hr style={rule} />}
-            <h2 style={h2}>Snippets</h2>
-            {snipItems.map((sn, i) => {
-              const catLabel = catByKey.get(sn.category)?.label ?? sn.category;
+            <h2 style={h2}>Techniques</h2>
+            {tqItems.map((tq, i) => {
+              const catLabel = catByKey.get(tq.category)?.label ?? tq.category;
               return (
-                <div key={sn.id} style={entry}>
+                <div key={tq.id} style={entry}>
                   <div style={entryTitle}>
-                    {i + 1}. {sn.title} <span style={entryBadge}>— {catLabel}</span>
+                    {i + 1}. {tq.title} <span style={entryBadge}>— {catLabel}</span>
                   </div>
-                  {sn.desc && <div style={entryDesc}>{sn.desc}</div>}
-                  {sn.steps.map((ss, k) => (
+                  {tq.desc && <div style={entryDesc}>{tq.desc}</div>}
+                  {tq.steps.map((ss, k) => (
                     <div key={ss.id}>
                       <div style={stepLine}>
                         {k + 1}. {ss.label ?? ''}

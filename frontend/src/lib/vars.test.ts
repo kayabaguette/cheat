@@ -335,14 +335,14 @@ describe('commandContext', () => {
     expect(commandContext(webNxc)).not.toBe(commandContext(nxc));
   });
 
-  // A snippet's contexts are ids of its own (snippetId / stepId /
-  // sheetId:snippetId). The prefix is what keeps a command context from ever
+  // A technique's contexts are ids of its own (techniqueId / stepId /
+  // sheetId:techniqueId). The prefix is what keeps a command context from ever
   // colliding with one, whatever a category key happens to be — the job the old
   // '||' separator did for free.
-  it('can never collide with a snippet context key', () => {
-    const looksLikeASnippetId = 'sn0f8c1e2a-4b7d-4e21-9a55-7c3f1b0d9e42';
-    const ctx = commandContext({ ...nxc, category: looksLikeASnippetId });
-    expect(ctx).not.toBe(looksLikeASnippetId);
+  it('can never collide with a technique context key', () => {
+    const looksLikeATechniqueId = 'sn0f8c1e2a-4b7d-4e21-9a55-7c3f1b0d9e42';
+    const ctx = commandContext({ ...nxc, category: looksLikeATechniqueId });
+    expect(ctx).not.toBe(looksLikeATechniqueId);
     expect(ctx.startsWith('cat:')).toBe(true);
   });
 });

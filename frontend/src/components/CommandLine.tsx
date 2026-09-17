@@ -4,14 +4,14 @@ import { codeWrap } from '../lib/ui';
 import { CodeBlock } from './CodeBlock';
 import { CopyButton } from './CopyButton';
 
-// One line of a snippet chain.
+// One line of a technique chain.
 //
 // v0.10.0 — THE COPY BUTTON IS BACK and clicking the line does nothing. 0.9.0 had
 // made the whole line a copy target; that spent the line's click gesture, and a
 // local variable is now edited by DOUBLE-CLICKING it right there in the command —
 // a double-click being two clicks, entering the editor would have copied the line
 // twice on the way in. The button is the shared `.copy-btn` of the Library and the
-// Cheatsheet, so a snippet line and a command card now copy the same way, and the
+// Cheatsheet, so a technique line and a command card now copy the same way, and the
 // two guards 0.9.0 needed for a whole-line target (don't hijack a text selection,
 // don't fake success without navigator.clipboard) collapse into <CopyButton>'s own
 // single, already-tested clipboard path.

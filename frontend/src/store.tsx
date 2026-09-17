@@ -8,10 +8,10 @@ import type {
   ProfileMeta,
   Reference,
   Roadmap,
-  Snippet,
-  SnippetLocal,
+  Technique,
+  TechniqueLocal,
   Trigger,
-  SnippetStep,
+  TechniqueStep,
   ThemeName,
   ViewKey,
 } from './types';
@@ -68,13 +68,13 @@ function dropToolTag(tags: string[], tool: string): string[] {
 // ids stay literal and are never regenerated.
 const mint = (prefix: string): string => prefix + crypto.randomUUID();
 
-// Keep only well-formed, de-duplicated snippet-local DEFINITIONS. A name outside
+// Keep only well-formed, de-duplicated technique-local DEFINITIONS. A name outside
 // the local token class (lib/vars.ts) could never resolve, so storing it would
 // just be a dead declaration. Module-scope and pure, like cleanTags/dropToolTag,
 // so the load-time normaliser can use it from a stable useCallback.
-function cleanLocals(locals: SnippetLocal[]): SnippetLocal[] {
+function cleanLocals(locals: TechniqueLocal[]): TechniqueLocal[] {
   const seen = new Set<string>();
-  const out: SnippetLocal[] = [];
+  const out: TechniqueLocal[] = [];
   for (const l of locals) {
     const name = (l.name || '').trim();
     if (!isLocalName(name) || seen.has(name)) continue;
@@ -85,9 +85,9 @@ function cleanLocals(locals: SnippetLocal[]): SnippetLocal[] {
   return out;
 }
 
-// Drop empty snippet steps and normalise the optional fields, so `label` and
+// Drop empty technique steps and normalise the optional fields, so `label` and
 // `produces` are either a meaningful string or absent (never '').
-function cleanSteps(steps: SnippetStep[]): SnippetStep[] {
+function cleanSteps(steps: TechniqueStep[]): TechniqueStep[] {
   return steps
     .map((st) => {
       const template = (st.template || '').trim();
@@ -252,22 +252,22 @@ export interface StoreState {
   addingRef: boolean;
   // null = add reference, an id = editing that reference.
   editingRefId: string | null;
-  // --- v0.9.0: Snippets (reusable ordered command chains) ---
-  snippets: Snippet[];
-  // Own facet state, like activeRefTag: the Snippets view filters independently
+  // --- v0.9.0: Techniques (reusable ordered command chains) ---
+  techniques: Technique[];
+  // Own facet state, like activeRefTag: the Techniques view filters independently
   // of the Library so switching tabs never cross-contaminates the filters.
   activeSnipCat: string | null;
   activeSnipTag: string | null;
-  addingSnippet: boolean;
-  // null = add snippet, an id = editing that snippet.
-  editingSnippetId: string | null;
-  // Snippet-local variable VALUES. MEMORY-ONLY: excluded from persistableState,
+  addingTechnique: boolean;
+  // null = add technique, an id = editing that technique.
+  editingTechniqueId: string | null;
+  // Technique-local variable VALUES. MEMORY-ONLY: excluded from persistableState,
   // never sent to the API, never exported (D7 — they hold captured secrets such
   // as an NTLM hash). Keyed by USAGE CONTEXT then by local name, so the same
-  // snippet used in two places has two independent value sets:
-  //   snippetId              -> the Snippets view
+  // technique used in two places has two independent value sets:
+  //   techniqueId              -> the Techniques view
   //   stepId                 -> a Methodology step
-  //   sheetId + ':' + snipId -> a Cheatsheet entry
+  //   sheetId + ':' + tqId -> a Cheatsheet entry
   localValues: Record<string, Record<string, string>>;
 }
 
@@ -317,7 +317,7 @@ export interface StoreActions {
     phaseId: string,
     text: string,
     commandId?: string,
-    snippetId?: string,
+    techniqueId?: string,
     triggerIds?: string[],
     triggerMode?: 'any' | 'all',
   ) => void;
@@ -334,7 +334,7 @@ export interface StoreActions {
     roadmapId: string,
     phaseId: string,
     stepId: string,
-    patch: { text?: string; commandId?: string; snippetId?: string },
+    patch: { text?: string; commandId?: string; techniqueId?: string },
   ) => void;
   deleteStep: (roadmapId: string, phaseId: string, stepId: string) => void;
   moveStep: (
@@ -414,21 +414,21 @@ export interface StoreActions {
   toggleInSheet: (commandId: string) => void;
   removeFromSheet: (sheetId: string, commandId: string) => void;
   moveInSheet: (sheetId: string, commandId: string, dir: -1 | 1) => void;
-  // --- v0.9.0: Snippets ---
+  // --- v0.9.0: Techniques ---
   setActiveSnipCat: (k: string | null) => void;
   setActiveSnipTag: (t: string | null) => void;
-  setAddingSnippet: (b: boolean) => void;
-  openEditSnippet: (id: string) => void;
-  addSnippet: (input: {
+  setAddingTechnique: (b: boolean) => void;
+  openEditTechnique: (id: string) => void;
+  addTechnique: (input: {
     category: string;
     newCategory?: string;
     title: string;
     desc: string;
     tags: string[];
-    steps: SnippetStep[];
-    locals: SnippetLocal[];
+    steps: TechniqueStep[];
+    locals: TechniqueLocal[];
   }) => boolean;
-  updateSnippet: (
+  updateTechnique: (
     id: string,
     patch: {
       category?: string;
@@ -436,17 +436,17 @@ export interface StoreActions {
       title?: string;
       desc?: string;
       tags?: string[];
-      steps?: SnippetStep[];
-      locals?: SnippetLocal[];
+      steps?: TechniqueStep[];
+      locals?: TechniqueLocal[];
     },
   ) => boolean;
-  deleteSnippet: (id: string) => void;
+  deleteTechnique: (id: string) => void;
   // Set one local's value in one usage context (memory-only).
   setLocalValue: (contextId: string, name: string, val: string) => void;
-  // Cheatsheet « Snippets » chapter — mirrors the command chapter's three actions.
-  toggleSnippetInSheet: (snippetId: string) => void;
-  removeSnippetFromSheet: (sheetId: string, snippetId: string) => void;
-  moveSnippetInSheet: (sheetId: string, snippetId: string, dir: -1 | 1) => void;
+  // Cheatsheet « Techniques » chapter — mirrors the command chapter's three actions.
+  toggleTechniqueInSheet: (techniqueId: string) => void;
+  removeTechniqueFromSheet: (sheetId: string, techniqueId: string) => void;
+  moveTechniqueInSheet: (sheetId: string, techniqueId: string, dir: -1 | 1) => void;
 }
 
 export type Store = StoreState & StoreActions;
@@ -529,12 +529,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [newRmOpen, setNewRmOpen] = useState<boolean>(false);
   const [references, setReferences] = useState<Reference[]>(() => REFERENCES.slice());
   const [activeRefTag, setActiveRefTag] = useState<string | null>(null);
-  // --- v0.9.0 snippet state (localValues is memory-only, see StoreState) ---
-  const [snippets, setSnippets] = useState<Snippet[]>([]);
+  // --- v0.9.0 technique state (localValues is memory-only, see StoreState) ---
+  const [techniques, setTechniques] = useState<Technique[]>([]);
   const [activeSnipCat, setActiveSnipCat] = useState<string | null>(null);
   const [activeSnipTag, setActiveSnipTag] = useState<string | null>(null);
-  const [addingSnippet, setAddingSnippetState] = useState<boolean>(false);
-  const [editingSnippetId, setEditingSnippetId] = useState<string | null>(null);
+  const [addingTechnique, setAddingTechniqueState] = useState<boolean>(false);
+  const [editingTechniqueId, setEditingTechniqueId] = useState<string | null>(null);
   const [localValues, setLocalValues] = useState<Record<string, Record<string, string>>>({});
   const [addingRef, setAddingRefState] = useState<boolean>(false);
   const [editingRefId, setEditingRefId] = useState<string | null>(null);
@@ -554,8 +554,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   activeSheetRef.current = activeSheet;
   const referencesRef = useRef(references);
   referencesRef.current = references;
-  const snippetsRef = useRef(snippets);
-  snippetsRef.current = snippets;
+  const techniquesRef = useRef(techniques);
+  techniquesRef.current = techniques;
   const valuesRef = useRef(values);
   valuesRef.current = values;
   const notesRef = useRef(notes);
@@ -790,7 +790,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       phaseId: string,
       text: string,
       commandId?: string,
-      snippetId?: string,
+      techniqueId?: string,
       triggerIds?: string[],
       triggerMode?: 'any' | 'all',
     ) => {
@@ -799,13 +799,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setRoadmaps((rms) => {
         const next = cloneRoadmaps(rms);
         const p = next.find((x) => x.id === roadmapId)?.phases.find((ph) => ph.id === phaseId);
-        // A step may link a command, a snippet, or both (cumulative).
+        // A step may link a command, a technique, or both (cumulative).
         if (p)
           p.steps.push({
             id: mint('st'),
             text: t,
             commandId: commandId || undefined,
-            snippetId: snippetId || undefined,
+            techniqueId: techniqueId || undefined,
             // Absent/empty = unconditional, which is the default (v0.11.0).
             triggerIds: triggerIds && triggerIds.length ? triggerIds : undefined,
             triggerMode:
@@ -818,7 +818,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   // Edit an EXISTING step's text or its links (v0.15.0). The step keeps its id,
-  // and therefore its checks, its pasted result and its snippet-local values —
+  // and therefore its checks, its pasted result and its technique-local values —
   // all three of which a delete-and-recreate would drop. An empty string in the
   // patch UNLINKS, the same convention addStep uses at creation.
   //
@@ -830,7 +830,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       roadmapId: string,
       phaseId: string,
       stepId: string,
-      patch: { text?: string; commandId?: string; snippetId?: string },
+      patch: { text?: string; commandId?: string; techniqueId?: string },
     ) => {
       setRoadmaps((rms) => {
         const next = cloneRoadmaps(rms);
@@ -842,7 +842,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ...st,
             ...(patch.text !== undefined ? { text: patch.text } : {}),
             ...(patch.commandId !== undefined ? { commandId: patch.commandId || undefined } : {}),
-            ...(patch.snippetId !== undefined ? { snippetId: patch.snippetId || undefined } : {}),
+            ...(patch.techniqueId !== undefined ? { techniqueId: patch.techniqueId || undefined } : {}),
           };
         });
         return next;
@@ -1064,7 +1064,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Attach/detach a step's triggers WITHOUT recreating the step: its id carries
-  // its checks, its result and its snippet-local values, so delete-and-recreate
+  // its checks, its result and its technique-local values, so delete-and-recreate
   // would silently drop all three. This is the narrow action the feature needs —
   // there is still no generic updateStep.
   const setStepTriggers = useCallback(
@@ -1350,7 +1350,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         title: (title || '').trim() || 'Nouvelle cheatsheet',
         target: '',
         commandIds: [],
-        snippetIds: [],
+        techniqueIds: [],
       },
     ]);
     setActiveSheetState(id);
@@ -1419,29 +1419,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
 
-  // --- v0.9.0: Snippet actions ---
+  // --- v0.9.0: Technique actions ---
 
   // Opening OR closing the add form clears any edit target, so the modal always
   // reopens in add mode (mirrors setAdding/openEditCommand).
-  const setAddingSnippet = useCallback((b: boolean) => {
-    setAddingSnippetState(b);
-    setEditingSnippetId(null);
+  const setAddingTechnique = useCallback((b: boolean) => {
+    setAddingTechniqueState(b);
+    setEditingTechniqueId(null);
   }, []);
 
-  const openEditSnippet = useCallback((id: string) => {
-    setEditingSnippetId(id);
-    setAddingSnippetState(true);
+  const openEditTechnique = useCallback((id: string) => {
+    setEditingTechniqueId(id);
+    setAddingTechniqueState(true);
   }, []);
 
-  const addSnippet = useCallback(
+  const addTechnique = useCallback(
     (input: {
       category: string;
       newCategory?: string;
       title: string;
       desc: string;
       tags: string[];
-      steps: SnippetStep[];
-      locals: SnippetLocal[];
+      steps: TechniqueStep[];
+      locals: TechniqueLocal[];
     }): boolean => {
       const title = input.title.trim();
       const steps = cleanSteps(input.steps);
@@ -1450,9 +1450,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return false;
       }
       const category = resolveCategory(input.category, input.newCategory);
+      // Prefix kept at 'sn' through the v0.16.0 rename: ids are opaque and every
+      // technique already stored carries one, so changing it would only split the
+      // id space in two for no gain.
       const id = mint('sn');
-      setSnippets((sns) => [
-        ...sns,
+      setTechniques((tqs) => [
+        ...tqs,
         {
           id,
           category,
@@ -1463,13 +1466,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           locals: cleanLocals(input.locals),
         },
       ]);
-      flash('Snippet ajouté');
+      flash('Technique ajoutée');
       return true;
     },
     [flash, resolveCategory],
   );
 
-  const updateSnippet = useCallback(
+  const updateTechnique = useCallback(
     (
       id: string,
       patch: {
@@ -1478,11 +1481,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         title?: string;
         desc?: string;
         tags?: string[];
-        steps?: SnippetStep[];
-        locals?: SnippetLocal[];
+        steps?: TechniqueStep[];
+        locals?: TechniqueLocal[];
       },
     ): boolean => {
-      const cur = snippetsRef.current.find((sn) => sn.id === id);
+      const cur = techniquesRef.current.find((tq) => tq.id === id);
       if (!cur) return false;
       const title = patch.title !== undefined ? patch.title.trim() : cur.title;
       const steps = patch.steps !== undefined ? cleanSteps(patch.steps) : cur.steps;
@@ -1496,37 +1499,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         patch.category !== undefined || patch.newCategory !== undefined
           ? resolveCategory(patch.category ?? cur.category, patch.newCategory)
           : cur.category;
-      setSnippets((sns) =>
-        sns.map((sn) =>
-          sn.id === id
+      setTechniques((tqs) =>
+        tqs.map((tq) =>
+          tq.id === id
             ? {
-                ...sn,
+                ...tq,
                 category,
                 title,
-                desc: patch.desc !== undefined ? patch.desc.trim() : sn.desc,
-                tags: patch.tags !== undefined ? cleanTags(patch.tags) : sn.tags,
+                desc: patch.desc !== undefined ? patch.desc.trim() : tq.desc,
+                tags: patch.tags !== undefined ? cleanTags(patch.tags) : tq.tags,
                 steps,
-                locals: patch.locals !== undefined ? cleanLocals(patch.locals) : sn.locals,
+                locals: patch.locals !== undefined ? cleanLocals(patch.locals) : tq.locals,
               }
-            : sn,
+            : tq,
         ),
       );
-      flash('Snippet modifié');
+      flash('Technique modifiée');
       return true;
     },
     [flash, resolveCategory],
   );
 
-  const deleteSnippet = useCallback(
+  const deleteTechnique = useCallback(
     (id: string) => {
-      setSnippets((sns) => sns.filter((sn) => sn.id !== id));
-      // CASCADE, mirroring deleteCommand: drop from every cheatsheet's snippet
+      setTechniques((tqs) => tqs.filter((tq) => tq.id !== id));
+      // CASCADE, mirroring deleteCommand: drop from every cheatsheet's technique
       // chapter, unlink from every roadmap step, and forget the memory-only local
       // values of every context that used it.
       setCheatsheets((shs) =>
         shs.map((sh) =>
-          (sh.snippetIds ?? []).includes(id)
-            ? { ...sh, snippetIds: (sh.snippetIds ?? []).filter((x) => x !== id) }
+          (sh.techniqueIds ?? []).includes(id)
+            ? { ...sh, techniqueIds: (sh.techniqueIds ?? []).filter((x) => x !== id) }
             : sh,
         ),
       );
@@ -1535,20 +1538,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         for (const r of next)
           for (const ph of r.phases)
             ph.steps = ph.steps.map((st) =>
-              st.snippetId === id ? { ...st, snippetId: undefined } : st,
+              st.techniqueId === id ? { ...st, techniqueId: undefined } : st,
             );
         return next;
       });
       setLocalValues((lv) => {
         const out: Record<string, Record<string, string>> = {};
         for (const k of Object.keys(lv)) {
-          // Contexts are keyed by snippetId, by stepId, or by 'sheetId:snippetId'.
+          // Contexts are keyed by techniqueId, by stepId, or by 'sheetId:techniqueId'.
           if (k === id || k.endsWith(':' + id)) continue;
           out[k] = lv[k];
         }
         return out;
       });
-      flash('Snippet supprimé');
+      flash('Technique supprimée');
     },
     [flash],
   );
@@ -1558,21 +1561,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setLocalValues((lv) => ({ ...lv, [contextId]: { ...(lv[contextId] ?? {}), [name]: val } }));
   }, []);
 
-  // --- Cheatsheet « Snippets » chapter (mirrors toggleInSheet/removeFromSheet/moveInSheet) ---
+  // --- Cheatsheet « Techniques » chapter (mirrors toggleInSheet/removeFromSheet/moveInSheet) ---
 
-  const toggleSnippetInSheet = useCallback(
-    (snippetId: string) => {
+  const toggleTechniqueInSheet = useCallback(
+    (techniqueId: string) => {
       const sid = activeSheetRef.current;
       if (!sid) return;
       const cur = cheatsheetsRef.current.find((sh) => sh.id === sid);
-      const has = cur ? (cur.snippetIds ?? []).includes(snippetId) : false;
+      const has = cur ? (cur.techniqueIds ?? []).includes(techniqueId) : false;
       setCheatsheets((shs) =>
         shs.map((sh) => {
           if (sh.id !== sid) return sh;
-          const ids = sh.snippetIds ?? [];
+          const ids = sh.techniqueIds ?? [];
           return {
             ...sh,
-            snippetIds: has ? ids.filter((x) => x !== snippetId) : [...ids, snippetId],
+            techniqueIds: has ? ids.filter((x) => x !== techniqueId) : [...ids, techniqueId],
           };
         }),
       );
@@ -1581,26 +1584,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [flash],
   );
 
-  const removeSnippetFromSheet = useCallback((sheetId: string, snippetId: string) => {
+  const removeTechniqueFromSheet = useCallback((sheetId: string, techniqueId: string) => {
     setCheatsheets((shs) =>
       shs.map((sh) =>
         sh.id === sheetId
-          ? { ...sh, snippetIds: (sh.snippetIds ?? []).filter((x) => x !== snippetId) }
+          ? { ...sh, techniqueIds: (sh.techniqueIds ?? []).filter((x) => x !== techniqueId) }
           : sh,
       ),
     );
   }, []);
 
-  const moveSnippetInSheet = useCallback((sheetId: string, snippetId: string, dir: -1 | 1) => {
+  const moveTechniqueInSheet = useCallback((sheetId: string, techniqueId: string, dir: -1 | 1) => {
     setCheatsheets((shs) =>
       shs.map((sh) => {
         if (sh.id !== sheetId) return sh;
-        const a = (sh.snippetIds ?? []).slice();
-        const i = a.indexOf(snippetId);
+        const a = (sh.techniqueIds ?? []).slice();
+        const i = a.indexOf(techniqueId);
         const j = i + dir;
         if (i < 0 || j < 0 || j >= a.length) return sh;
         [a[i], a[j]] = [a[j], a[i]];
-        return { ...sh, snippetIds: a };
+        return { ...sh, techniqueIds: a };
       }),
     );
   }, []);
@@ -1616,7 +1619,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       references,
       roadmaps,
       cheatsheets,
-      snippets,
+      techniques,
       notes,
       checks,
       openSteps,
@@ -1630,7 +1633,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       references,
       roadmaps,
       cheatsheets,
-      snippets,
+      techniques,
       notes,
       checks,
       openSteps,
@@ -1671,18 +1674,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // vocabulary that steps reference by id, so they go through a normaliser like
     // commands' tags and references' URLs.
     setRoadmaps(cleanRoadmaps(state.roadmaps));
-    // A pre-0.9.0 sheet has no snippet chapter: normalise it to [] on load so
-    // every consumer can treat snippetIds as present.
-    setCheatsheets(state.cheatsheets.map((sh) => ({ ...sh, snippetIds: sh.snippetIds ?? [] })));
+    // A pre-0.9.0 sheet has no technique chapter: normalise it to [] on load so
+    // every consumer can treat techniqueIds as present.
+    setCheatsheets(state.cheatsheets.map((sh) => ({ ...sh, techniqueIds: sh.techniqueIds ?? [] })));
     // Absent from every pre-0.9.0 dataset. Steps/locals are re-normalised on load
     // (mirrors the command tag / reference URL normalisation above) so a
     // hand-edited or imported dataset cannot inject an unusable local name.
-    setSnippets(
-      (state.snippets ?? []).map((sn) => ({
-        ...sn,
-        tags: cleanTags(sn.tags ?? []),
-        steps: cleanSteps(sn.steps ?? []),
-        locals: cleanLocals(sn.locals ?? []),
+    setTechniques(
+      (state.techniques ?? []).map((tq) => ({
+        ...tq,
+        tags: cleanTags(tq.tags ?? []),
+        steps: cleanSteps(tq.steps ?? []),
+        locals: cleanLocals(tq.locals ?? []),
       })),
     );
     setNotes(state.notes ?? {});
@@ -1865,7 +1868,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             id: mint('ph'),
             label: p.label,
             // Every linked/optional field has to be listed here or it is silently
-            // lost on copy. `snippetId` WAS being dropped since 0.9.0 — fixed
+            // lost on copy. `techniqueId` WAS being dropped since 0.9.0 — fixed
             // while adding `triggerIds` (0.11.0). Trigger ids stay valid because
             // the cloned roadmap keeps the same trigger objects, ids included:
             // only the roadmap/phase/step ids are re-minted, so the references
@@ -1874,7 +1877,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               id: mint('st'),
               text: s.text,
               commandId: s.commandId,
-              snippetId: s.snippetId,
+              techniqueId: s.techniqueId,
               triggerIds: s.triggerIds,
               triggerMode: s.triggerMode,
               // Fresh substep ids for the same reason as the step's: they are
@@ -1987,11 +1990,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeRefTag,
       addingRef,
       editingRefId,
-      snippets,
+      techniques,
       activeSnipCat,
       activeSnipTag,
-      addingSnippet,
-      editingSnippetId,
+      addingTechnique,
+      editingTechniqueId,
       localValues,
       toggleTheme,
       toggleSidebar,
@@ -2032,15 +2035,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       moveInSheet,
       setActiveSnipCat,
       setActiveSnipTag,
-      setAddingSnippet,
-      openEditSnippet,
-      addSnippet,
-      updateSnippet,
-      deleteSnippet,
+      setAddingTechnique,
+      openEditTechnique,
+      addTechnique,
+      updateTechnique,
+      deleteTechnique,
       setLocalValue,
-      toggleSnippetInSheet,
-      removeSnippetFromSheet,
-      moveSnippetInSheet,
+      toggleTechniqueInSheet,
+      removeTechniqueFromSheet,
+      moveTechniqueInSheet,
       setActiveRoadmap,
       toggleMethodEdit,
       setHideInactiveSteps,
@@ -2112,11 +2115,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeRefTag,
       addingRef,
       editingRefId,
-      snippets,
+      techniques,
       activeSnipCat,
       activeSnipTag,
-      addingSnippet,
-      editingSnippetId,
+      addingTechnique,
+      editingTechniqueId,
       localValues,
       toggleTheme,
       toggleSidebar,
@@ -2179,15 +2182,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updateReference,
       deleteReference,
       restoreReference,
-      setAddingSnippet,
-      openEditSnippet,
-      addSnippet,
-      updateSnippet,
-      deleteSnippet,
+      setAddingTechnique,
+      openEditTechnique,
+      addTechnique,
+      updateTechnique,
+      deleteTechnique,
       setLocalValue,
-      toggleSnippetInSheet,
-      removeSnippetFromSheet,
-      moveSnippetInSheet,
+      toggleTechniqueInSheet,
+      removeTechniqueFromSheet,
+      moveTechniqueInSheet,
     ],
   );
 

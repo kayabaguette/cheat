@@ -42,9 +42,9 @@ import type { Step } from '../../types';
 // Transient drag state lives in local React state, never the store.
 //
 // v0.15.0 — a step is EDITABLE IN PLACE in edit mode: its label is an input, its
-// command and snippet links are dropdowns, and its triggers a chip picker. All of
+// command and technique links are dropdowns, and its triggers a chip picker. All of
 // it goes through `updateStep` / `setStepTriggers`, which patch the step and leave
-// its id alone — so its checks, its pasted result and its snippet-local values
+// its id alone — so its checks, its pasted result and its technique-local values
 // survive an edit, which a delete-and-recreate would have destroyed. (This
 // replaces the M1 note that said step text was deliberately not an input because
 // the store exposed no action for it.)
@@ -583,29 +583,29 @@ function ReorderControls({
   );
 }
 
-// Embedded snippet chain inside a methodology step panel — same scale as the
-// Snippets view, on the compact code block the panel already uses.
-const snipStepHead: CSSProperties = {
+// Embedded technique chain inside a methodology step panel — same scale as the
+// Techniques view, on the compact code block the panel already uses.
+const tqStepHead: CSSProperties = {
   display: 'flex',
   alignItems: 'baseline',
   gap: '8px',
   margin: '9px 0 4px',
 };
-const snipStepNum: CSSProperties = {
+const tqStepNum: CSSProperties = {
   fontFamily: MONO,
   fontSize: '11px',
   color: 'var(--acc)',
   flex: 'none',
 };
-const snipStepLabel: CSSProperties = { fontSize: '12px', color: 'var(--text)', lineHeight: 1.4 };
-const snipCapRow: CSSProperties = {
+const tqStepLabel: CSSProperties = { fontSize: '12px', color: 'var(--text)', lineHeight: 1.4 };
+const tqCapRow: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: '8px',
   marginTop: '6px',
 };
-const snipCapName: CSSProperties = { fontFamily: MONO, fontSize: '11.5px', flex: 'none' };
-const snipCapInput: CSSProperties = {
+const tqCapName: CSSProperties = { fontFamily: MONO, fontSize: '11.5px', flex: 'none' };
+const tqCapInput: CSSProperties = {
   flex: 1,
   minWidth: 0,
   background: 'var(--code)',
@@ -619,8 +619,8 @@ const snipCapInput: CSSProperties = {
 interface StepDraft {
   text: string;
   commandId: string;
-  // A step may link a command, a snippet, or both (cumulative).
-  snippetId: string;
+  // A step may link a command, a technique, or both (cumulative).
+  techniqueId: string;
   // The draft's triggers, in the same shape a Step uses: one list plus one
   // step-wide operator (v0.14.0).
   triggerIds: string[];
@@ -639,7 +639,7 @@ export function Methodology() {
   const {
     values,
     commands,
-    snippets,
+    techniques,
     localValues,
     roadmaps,
     activeRoadmap,
@@ -716,15 +716,15 @@ export function Methodology() {
       ),
     [commands],
   );
-  // Same for snippets: lookup for step→snippet links + an alphabetical list for
+  // Same for techniques: lookup for step→technique links + an alphabetical list for
   // the picker (mirrors the command sort of PR #20).
-  const snipById = useMemo(() => new Map(snippets.map((sn) => [sn.id, sn])), [snippets]);
-  const sortedSnippets = useMemo(
+  const tqById = useMemo(() => new Map(techniques.map((tq) => [tq.id, tq])), [techniques]);
+  const sortedTechniques = useMemo(
     () =>
-      [...snippets].sort((a, b) =>
+      [...techniques].sort((a, b) =>
         a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }),
       ),
-    [snippets],
+    [techniques],
   );
 
   const rm = roadmaps.find((r) => r.id === activeRoadmap) ?? roadmaps[0] ?? null;
@@ -748,7 +748,7 @@ export function Methodology() {
     stepDrafts[phaseId] ?? {
       text: '',
       commandId: '',
-      snippetId: '',
+      techniqueId: '',
       triggerIds: [],
       triggerMode: 'any',
     };
@@ -765,13 +765,13 @@ export function Methodology() {
       phaseId,
       text,
       d.commandId || undefined,
-      d.snippetId || undefined,
+      d.techniqueId || undefined,
       d.triggerIds.length ? d.triggerIds : undefined,
       d.triggerMode,
     );
     setStepDrafts((s) => ({
       ...s,
-      [phaseId]: { text: '', commandId: '', snippetId: '', triggerIds: [], triggerMode: 'any' },
+      [phaseId]: { text: '', commandId: '', techniqueId: '', triggerIds: [], triggerMode: 'any' },
     }));
   };
 
@@ -797,12 +797,12 @@ export function Methodology() {
   };
 
   // Attach/detach one trigger on an EXISTING step. The step keeps its id, and
-  // therefore its checks, its pasted result and its snippet-local values — which
+  // therefore its checks, its pasted result and its technique-local values — which
   // a delete-and-recreate would silently drop (there is no updateStep action).
   // One click on a chip advances it: unused → OU → ET → unused. The operator is a
   // property of the STEP, so the middle step of that cycle restyles every chip of
   // the step at once. The step keeps its id, and therefore its checks, its result
-  // and its snippet-local values — which a delete-and-recreate would drop.
+  // and its technique-local values — which a delete-and-recreate would drop.
   const cycleStepTriggerOn = (phaseId: string, step: Step, triggerId: string) => {
     if (!rm) return;
     const next = cycleStepTrigger(step, triggerId);
@@ -1211,11 +1211,11 @@ export function Methodology() {
                               const stepMode = modeOf(st);
                               const cond = describeStepTriggers(st, roadmapTriggers);
                               const cmd = st.commandId ? cmdById.get(st.commandId) : undefined;
-                              const snip = st.snippetId ? snipById.get(st.snippetId) : undefined;
+                              const tq = st.techniqueId ? tqById.get(st.techniqueId) : undefined;
                               // A linked command's LOCALS live in its own
                               // category+tool context (0.10.0) — the same one the
                               // Library uses — NOT in the step's context, which
-                              // belongs to the linked snippet below.
+                              // belongs to the linked technique below.
                               const cmdCtx = cmd ? commandContext(cmd) : '';
                               const cmdValues = cmd
                                 ? { ...values, ...(localValues[cmdCtx] ?? {}) }
@@ -1385,18 +1385,18 @@ export function Methodology() {
                                               ))}
                                             </select>
                                             <select
-                                              value={st.snippetId ?? ''}
+                                              value={st.techniqueId ?? ''}
                                               onChange={(e) =>
                                                 updateStep(rm.id, ph.id, st.id, {
-                                                  snippetId: e.target.value,
+                                                  techniqueId: e.target.value,
                                                 })
                                               }
                                               style={stepEditSelect}
                                             >
-                                              <option value="">— aucun snippet lié —</option>
-                                              {sortedSnippets.map((sn) => (
-                                                <option key={sn.id} value={sn.id}>
-                                                  {sn.title}
+                                              <option value="">— aucune technique liée —</option>
+                                              {sortedTechniques.map((tq) => (
+                                                <option key={tq.id} value={tq.id}>
+                                                  {tq.title}
                                                 </option>
                                               ))}
                                             </select>
@@ -1488,8 +1488,8 @@ export function Methodology() {
                                           ? 'masquer'
                                           : cmd
                                             ? '▸ ' + cmd.tool
-                                            : snip
-                                              ? '▸ snippet'
+                                            : tq
+                                              ? '▸ technique'
                                               : subs.length
                                                 ? '▸ sous-étapes'
                                                 : '▸ résultat'}
@@ -1569,7 +1569,7 @@ export function Methodology() {
                                                 </button>
                                               </div>
                                             )}
-                                            {(cmd || snip) && <hr style={subRule} />}
+                                            {(cmd || tq) && <hr style={subRule} />}
                                           </>
                                         )}
                                         {cmd && (
@@ -1590,16 +1590,16 @@ export function Methodology() {
                                             />
                                           </>
                                         )}
-                                        {snip && (
+                                        {tq && (
                                           <>
-                                            <div style={cmdTitleLine}>{snip.title}</div>
-                                            {snip.steps.map((ss, k) => (
+                                            <div style={cmdTitleLine}>{tq.title}</div>
+                                            {tq.steps.map((ss, k) => (
                                               <div key={ss.id}>
-                                                <div style={snipStepHead}>
-                                                  <span style={snipStepNum}>
+                                                <div style={tqStepHead}>
+                                                  <span style={tqStepNum}>
                                                     {String(k + 1).padStart(2, '0')}
                                                   </span>
-                                                  {ss.label && <span style={snipStepLabel}>{ss.label}</span>}
+                                                  {ss.label && <span style={tqStepLabel}>{ss.label}</span>}
                                                 </div>
                                                 <CommandLine
                                                   template={ss.template}
@@ -1611,10 +1611,10 @@ export function Methodology() {
                                                   }
                                                 />
                                                 {ss.produces && (
-                                                  <div style={snipCapRow}>
+                                                  <div style={tqCapRow}>
                                                     <span
                                                       style={{
-                                                        ...snipCapName,
+                                                        ...tqCapName,
                                                         color: (localValues[st.id] ?? {})[ss.produces]
                                                           ? 'var(--acc)'
                                                           : 'var(--muted)',
@@ -1628,14 +1628,14 @@ export function Methodology() {
                                                         setLocalValue(st.id, ss.produces!, e.target.value)
                                                       }
                                                       placeholder={
-                                                        snip.locals.find((l) => l.name === ss.produces)?.hint ||
+                                                        tq.locals.find((l) => l.name === ss.produces)?.hint ||
                                                         'valeur issue de la sortie…'
                                                       }
                                                       spellCheck="false"
                                                       autoComplete="off"
                                                       autoCorrect="off"
                                                       autoCapitalize="off"
-                                                      style={snipCapInput}
+                                                      style={tqCapInput}
                                                     />
                                                   </div>
                                                 )}
@@ -1738,14 +1738,14 @@ export function Methodology() {
                                     ))}
                                   </select>
                                   <select
-                                    value={d.snippetId}
-                                    onChange={(e) => setDraft(ph.id, { snippetId: e.target.value })}
+                                    value={d.techniqueId}
+                                    onChange={(e) => setDraft(ph.id, { techniqueId: e.target.value })}
                                     style={addStepSelect}
                                   >
-                                    <option value="">— aucun snippet lié —</option>
-                                    {sortedSnippets.map((sn) => (
-                                      <option key={sn.id} value={sn.id}>
-                                        {sn.title}
+                                    <option value="">— aucune technique liée —</option>
+                                    {sortedTechniques.map((tq) => (
+                                      <option key={tq.id} value={tq.id}>
+                                        {tq.title}
                                       </option>
                                     ))}
                                   </select>

@@ -1,7 +1,7 @@
 import type { Part } from '../types';
 
 // Token grammar: $NAME where NAME is [A-Za-z_][A-Za-z0-9_]* (SPEC §3.2.7, extended
-// in 0.9.0 for snippet locals). An escaped literal `\$` is NOT treated as a token
+// in 0.9.0 for technique locals). An escaped literal `\$` is NOT treated as a token
 // and renders as a plain '$'. The alternation matches an escaped dollar first,
 // otherwise a $TOKEN; when the escaped branch matches, capture group 1 is undefined.
 //
@@ -9,12 +9,12 @@ import type { Part } from '../types';
 //   • GLOBAL  — all upper case / digits / '_', AND at least one letter ($RHOST,
 //     $PASS). App-wide, edited in the sidebar.
 //   • LOCAL   — all lower case / digits / '_' ($share, $svc_ntlm). Scoped to one
-//     USAGE CONTEXT (a snippet, or a category+tool pair for a command) and edited
+//     USAGE CONTEXT (a technique, or a category+tool pair for a command) and edited
 //     in place by double-clicking it inside the command.
 //   • anything MIXED-case is not a token at all and stays plain text.
 //
 // 0.10.0 — A LOCAL NO LONGER HAS TO BE DECLARED (supersedes the 0.9.0 rule that a
-// $minuscule counted only when listed in its snippet's locals[]). That declaration
+// $minuscule counted only when listed in its technique's locals[]). That declaration
 // was what kept ordinary shell text out of the grammar, and commands have no such
 // list, so the guard is now a NAME BAN: the reserved list plus the two rules below.
 // That is what lets `$share` in a command be a variable while `$env:USERNAME` and
@@ -66,7 +66,7 @@ export const isGlobalName = (name: string): boolean =>
 // A local name must ALSO be longer than one character and not reserved. The
 // single-character rule covers the shell's own loop variables — `for f in …; do
 // cat "$f"; done`, `$i`, `$x` — which nobody ever wants to fill in. Applied to
-// DECLARATIONS too (store.cleanLocals, the snippet editor), so no form can mint a
+// DECLARATIONS too (store.cleanLocals, the technique editor), so no form can mint a
 // name the renderer would then refuse to treat as a variable.
 export const isLocalName = (name: string): boolean =>
   LOCAL_NAME.test(name) && name.length > 1 && !RESERVED_LOCALS.has(name);
@@ -111,7 +111,7 @@ export function extractTokens(template: string): string[] {
 }
 
 // Distinct LOCAL-class $token names referenced in a template, in first-seen order.
-// Mirror of extractTokens for the snippet editor, which offers to DECLARE a
+// Mirror of extractTokens for the technique editor, which offers to DECLARE a
 // lowercase token so it can carry a hint and a « produit » anchor. Since 0.10.0
 // declaring is optional — the token already resolves without it.
 export function extractLocalTokens(template: string): string[] {

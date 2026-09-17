@@ -6,12 +6,12 @@ import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { Library } from './components/views/Library';
 import { Methodology } from './components/views/Methodology';
-import { Snippets } from './components/views/Snippets';
+import { Techniques } from './components/views/Techniques';
 import { References } from './components/views/References';
 import { Cheatsheet } from './components/views/Cheatsheet';
 import { AddCommand } from './components/AddCommand';
 import { AddReference } from './components/AddReference';
-import { AddSnippet } from './components/AddSnippet';
+import { AddTechnique } from './components/AddTechnique';
 import { PrintRoot } from './components/PrintRoot';
 import { Toast } from './components/Toast';
 
@@ -77,7 +77,7 @@ export default function App() {
           <div style={{ flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'auto' }}>
             {view === 'library' && <Library />}
             {view === 'method' && <Methodology />}
-            {view === 'snippets' && <Snippets />}
+            {view === 'techniques' && <Techniques />}
             {view === 'refs' && <References />}
             {view === 'cheatsheet' && (
               <Cheatsheet exportResolve={exportResolve} setExportResolve={setExportResolve} />
@@ -87,7 +87,7 @@ export default function App() {
       </div>
       <AddCommand />
       <AddReference />
-      <AddSnippet />
+      <AddTechnique />
       <PrintRoot resolveValues={exportResolve} />
       <Toast />
     </div>
