@@ -269,6 +269,16 @@ const cmdTitleLine: CSSProperties = {
   marginBottom: '5px',
   fontFamily: MONO,
 };
+// 0.19.0 — the linked command's own description, which the Commandes view has always
+// shown and this view never did. Same 12px / --muted as the Library card's, UNDER
+// the code block: the command line is what the step is about, the description is
+// the gloss on it.
+const cmdDescLine: CSSProperties = {
+  fontSize: '12px',
+  color: 'var(--muted)',
+  lineHeight: 1.45,
+  marginTop: '6px',
+};
 const resultLabel: CSSProperties = {
   fontSize: '11px',
   color: 'var(--faint)',
@@ -1676,6 +1686,9 @@ export function Methodology() {
                                                 setLocalValue(cmdCtx, name, val)
                                               }
                                             />
+                                            {cmd.desc && (
+                                              <div style={cmdDescLine}>{cmd.desc}</div>
+                                            )}
                                           </>
                                         )}
                                         {tq && (

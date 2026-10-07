@@ -1,9 +1,15 @@
 import type { CSSProperties, ReactNode } from 'react';
 
 // Shared modal shell for the AddCommand and AddReference forms (finding cross-7):
-// a click-outside-to-close overlay + centered panel + header (title + close btn) +
-// body slot + optional footer slot. The overlay / panel / header / close / body
-// styles are reproduced VERBATIM from AddCommand.tsx and AddReference.tsx.
+// an overlay + centered panel + header (title + close btn) + body slot +
+// optional footer slot. The overlay / panel / header / close / body styles are
+// reproduced VERBATIM from AddCommand.tsx and AddReference.tsx.
+//
+// 0.19.0 — the overlay NO LONGER closes on click. These panels hold forms that
+// take minutes to fill (a command with its template, a technique with its
+// steps), and a missed click outside threw the lot away with no undo. Closing is
+// now explicit only: the header's ✕, or the footer's Annuler / submit button —
+// every caller supplies both.
 //
 // The two forms differ in exactly two ways, exposed as props so both stay
 // byte-identical:
@@ -89,8 +95,8 @@ export function Modal({
   sticky = false,
 }: ModalProps) {
   return (
-    <div onClick={onClose} style={overlay}>
-      <div onClick={(e) => e.stopPropagation()} style={panelStyle(maxWidth)}>
+    <div style={overlay}>
+      <div style={panelStyle(maxWidth)}>
         <div style={headerStyle(sticky)}>
           <div style={titleStyle}>{title}</div>
           <button onClick={onClose} style={closeBtn}>

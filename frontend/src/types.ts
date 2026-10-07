@@ -92,7 +92,7 @@ export interface Trigger {
 }
 
 // v0.13.0 — one item of a step's checklist. Made for the enumeration steps whose
-// content is a dozen one-liners too trivial to earn a Bibliothèque entry, but
+// content is a dozen one-liners too trivial to earn a Commandes entry, but
 // worth ticking off one by one. Its DONE state lives in AppState.checks under its
 // own id, exactly like a step's, so the whole purge/reset machinery applies to it
 // unchanged.

@@ -17,7 +17,7 @@ import { ProfileMenu } from './ProfileMenu';
 // `short` is the abbreviated label swapped in on narrow viewports (CSS only —
 // both spans are rendered, media queries decide which one shows).
 const TABS: { key: ViewKey; label: string; short: string }[] = [
-  { key: 'library', label: 'Bibliothèque', short: 'Biblio' },
+  { key: 'library', label: 'Commandes', short: 'Cmds' },
   { key: 'method', label: 'Méthodologie', short: 'Métho' },
   { key: 'techniques', label: 'Techniques', short: 'Tech' },
   { key: 'refs', label: 'Références', short: 'Réfs' },
