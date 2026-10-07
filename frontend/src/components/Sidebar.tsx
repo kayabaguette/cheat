@@ -230,7 +230,7 @@ export function Sidebar() {
   // The $minuscules the ACTIVE category's commands reference — i.e. exactly the
   // contents of the « Variables locales » form. DERIVED from the templates and
   // never stored, so adding or editing a command updates the form for free.
-  // Empty unless a category is picked in the Bibliothèque, which is also what
+  // Empty unless a category is picked in the Commandes view, which is also what
   // gates the panel.
   const catLocals = useMemo(() => {
     if (!isLibrary || !activeCat) return [];

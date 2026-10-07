@@ -1225,3 +1225,131 @@ Je suis la convention plutôt que d'extraire une fonction pour la seule occasion
   - vue Techniques : même libellé, même règle d'apparition
 - La base de dév de l'utilisateur n'a pas été touchée.
 
+
+---
+
+# 0.19.0 — Quatre retouches d'ergonomie (modales, `:` dans les locales, description en méthodo, onglet)
+
+## Constats (utilisateur)
+
+1. Les modales (nouvelle commande, technique, référence, profil) se ferment au
+   clic à côté — une saisie longue part à la poubelle sur un clic manqué.
+2. `$ipserver:$port` ne détecte qu'**une** locale (`$port`). Le `:` qui suit
+   `$ipserver` le disqualifie.
+3. Écran Méthodologie : une étape à commande n'affiche jamais la `desc` de la
+   commande, alors que la Bibliothèque la montre.
+4. L'onglet « Bibliothèque » doit s'appeler « Commandes ».
+
+## Étapes
+
+### 1. Modales : fermeture explicite uniquement
+- [x] `components/Modal.tsx` : retirer le `onClick={onClose}` de l'overlay.
+      Le `stopPropagation` du panneau n'a alors plus d'objet → retiré aussi.
+      Restent la croix et les boutons du `footer`, qui sont déjà fournis par
+      les 4 appelants (`AddCommand`, `AddTechnique`, `AddReference`,
+      `ProfileMenu`). Aucun appelant à modifier.
+- [x] Pas de gestion d'Échap : il n'y en a jamais eu, et l'ajouter serait
+      rouvrir la porte qu'on ferme.
+
+### 2. Le `:` ne casse plus la détection des locales
+- [x] `lib/vars.ts`, `isLocalTokenAt` : la garde positionnelle bannit
+      aujourd'hui **tout** token minuscule suivi de `:`. Elle visait les
+      préfixes de portée PowerShell (`$env:USERNAME`, `$global:x`), dont la
+      forme est toujours `$portée:<nom>`. On la **restreint** au cas où le `:`
+      est suivi d'un début de nom `[A-Za-z_]`.
+      - `$ipserver:$port` → `:` suivi de `$` → les deux locales détectées ✅
+      - `$lhost:4444` → `:` suivi d'un chiffre → locale détectée ✅
+      - `$env:USERNAME`, `$global:x`, `$file:x` → inchangés ✅
+- [x] Mêmes conséquences partout : `resolve`, `toParts`, `extractLocalTokens`
+      passent tous par cette fonction — un seul point à toucher.
+- [x] `lib/vars.test.ts` : ajouter les cas `$ipserver:$port` et `$lhost:4444`
+      (détection + substitution + `toParts`), garder les cas PowerShell.
+
+### 3. Méthodologie : la description de la commande
+- [x] `components/views/Methodology.tsx`, bloc `{cmd && (…)}` : ajouter
+      `{cmd.desc && <div style={cmdDescLine}>{cmd.desc}</div>}` **sous** le
+      `<CodeBlock>` (« sous le champ de commande »).
+- [x] Nouveau style `cmdDescLine` calqué sur le `cardDesc` de la Bibliothèque
+      (12px, `--muted`), avec la marge haute qui le détache du bloc de code.
+- [x] Rien pour les étapes à technique : l'utilisateur n'en parle pas.
+
+### 4. « Bibliothèque » → « Commandes », partout
+- [x] `components/TopBar.tsx`, `TABS[0]` : `label: 'Commandes'`,
+      `short: 'Cmds'` (remplace « Biblio »).
+- [x] **Étendu après validation** — l'utilisateur a demandé le renommage
+      complet, pas seulement l'onglet :
+      - `Library.tsx` : bouton « Vider la bibliothèque » → « Vider les
+        commandes ».
+      - `Library.tsx` : la confirmation disait « Supprimer les N commandes de
+        la bibliothèque ? ». Le groupe nominal portait la **totalité** sur
+        laquelle 0.18.0 insistait — il devient « Supprimer la totalité des N
+        commandes ? », qui l'énonce au lieu de l'impliquer.
+      - Commentaires nommant l'onglet (`Methodology.tsx`, `types.ts`,
+        `Sidebar.tsx`, `store.tsx` ×2) → « the Commandes view ».
+      - `README.md` ×2.
+- [x] Ce qui ne bouge **pas** : la clé de vue (`library`), le composant
+      (`Library.tsx`), les ids et tout ce qui est persisté. Aucun migration :
+      il n'y a aucune chaîne stockée.
+
+### 5. Docs
+- [x] `CHANGELOG.md` : entrée 0.19.0.
+- [x] `README.md` : l'onglet est nommé dans la doc → aligner.
+- [x] `SPEC.md` : item 22.
+
+### 6. Vérification
+- [x] `make down` d'abord
+- [x] `make test`
+- [x] Passe navigateur sur instance jetable :
+      - une modale ne se ferme plus au clic à côté, se ferme par la croix et
+        par Annuler / Valider
+      - `$ipserver:$port` dans une commande → deux locales éditables
+      - une étape de méthodologie à commande montre la description sous le code
+      - l'onglet dit « Commandes »
+- [x] `make down` après
+
+## Écart par rapport au plan validé
+
+Aucun. Les quatre points ont été livrés tels que décrits ; la règle du `:` est
+celle validée (le `:` ne disqualifie que s'il précède un début de nom).
+
+## Résultat
+
+- `make test` : 101 assertions (98 + 3 nouvelles), `tsc --noEmit`, `go test ./...`
+  — tout vert.
+- Passe navigateur sur **instance jetable** (image `cheat:0.19.0-test`, port 8791
+  en loopback, volume `cheat-t19-data` dédié — conteneur, volume et image
+  détruits après ; `cheat-data`, la base de dév, n'a pas été touchée) :
+  - **Modale** « Nouvelle commande » ouverte, clic sur l'overlay à (150, 450) :
+    l'élément touché est bien l'overlay (z-index 80) et la modale reste ouverte.
+    Fermeture par ✕ / Annuler / Ajouter inchangée.
+  - **Locales** : commande de test
+    `nc -nv $ipserver:$port && curl http://$ipserver:$port/admin && echo $env:USERNAME`
+    → 4 `span.var-local` (`$ipserver` ×2, `$port` ×2), chacune avec son
+    infobulle de double-clic ; `$env:USERNAME` reste du texte brut. Valeurs
+    saisies en ligne → `nc -nv 10.10.10.5:8080 && curl http://10.10.10.5:8080/admin
+    && echo $env:USERNAME`.
+  - **Méthodologie** : étape « Scan TCP complet de tous les ports » dépliée →
+    « Tous les ports, détection service + scripts par défaut. » s'affiche sous le
+    bloc de code, au-dessus de « Résultat ».
+  - **Onglet** : « Commandes » dans la barre du haut.
+- `make down` avant et après ; aucun conteneur `cheat` ne tourne.
+
+## Seconde passe — le renommage complet
+
+Demandé après la validation du plan (« renomme partout »). `make test` : 101
+assertions, typecheck et `go test ./...` toujours verts — aucun test ne portait
+sur ces chaînes.
+
+Passe navigateur sur une seconde instance jetable (même recette : image
+`cheat:0.19.0-test`, port 8791 en loopback, volume `cheat-t19-data` — détruits
+après) :
+
+- onglet « Commandes » / « Cmds »
+- bouton « **Vider les commandes** », infobulle « Supprimer toutes les
+  commandes » (inchangée)
+- confirmation : « **Supprimer la totalité des 27 commandes ?** » suivie de la
+  cascade, mot pour mot comme en 0.18.0
+- annulation → les 27 commandes sont toujours là
+
+`make down` après ; seuls `cheat-data` (ta base de dév) et les volumes de cache
+de build subsistent.

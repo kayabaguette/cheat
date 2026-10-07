@@ -201,7 +201,7 @@ export interface StoreState {
   activeCat: string | null;
   activeTool: string | null;
   activeTag: string | null;
-  // v0.11.0 — the « Favoris » scope of the Bibliothèque. A pseudo-category, so
+  // v0.11.0 — the « Favoris » scope of the Commandes view. A pseudo-category, so
   // it is its own flag rather than a sentinel activeCat that would match no
   // command and break the category → tool grouping.
   favOnly: boolean;
@@ -922,7 +922,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // --- v0.13.0: a step's checklist ------------------------------------------
   // Made for the enumeration steps whose content is a dozen one-liners too
-  // trivial for the Bibliothèque but worth ticking off. An item's done state goes
+  // trivial for the Commandes view but worth ticking off. An item's done state goes
   // in `checks` under its own id, so nothing new is persisted.
 
   const addSubstep = useCallback(

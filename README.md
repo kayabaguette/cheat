@@ -15,7 +15,7 @@ It's built for **OSCP** prep (the Offensive Security Certified Professional exam
 and hands-on pentest work, and runs as a **single self-contained binary** on your
 own machine — no cloud, no accounts, no telemetry. The UI is in **French**.
 
-![Cheat — the Bibliothèque view](docs/screenshot.png)
+![Cheat — the Commandes view](docs/screenshot.png)
 
 ## Contents
 
@@ -46,14 +46,14 @@ across notes.
 
 ## Highlights
 
-- **Bibliothèque** — a searchable command library grouped by **category → tool**
+- **Commandes** — a searchable command library grouped by **category → tool**
   (tools sorted alphabetically). Tokenized, accent-insensitive search; filter by
   category, tool or tag; full create/edit/delete with on-the-fly
   categories/tools/tags; per-command notes; one-click copy of the *resolved*
   command; **star a command** to pin it to the top of its tool group and reach it
   from the **★ Favoris** scope in the sidebar. « réinitialiser les filtres »
   clears the facets and the search — it shows up only when something is actually
-  filtering. « Vider la bibliothèque », at the other end of that row, is the
+  filtering. « Vider les commandes », at the other end of that row, is the
   destructive one: it deletes **every** command (confirmation first), drops them
   from every cheatsheet and methodology step, and erases their notes. Categories,
   techniques, references and methodologies are left alone.
@@ -211,7 +211,7 @@ Détecté sur la cible :  [✓ FTP] [✓ SMB] [ HTTP ] [ LDAP ]
 
 ### Sub-steps — a checklist inside a step
 
-An enumeration step is a dozen one-liners too trivial to earn a Bibliothèque
+An enumeration step is a dozen one-liners too trivial to earn a Commandes
 entry, but you still want to tick them off. Any step can carry a checklist.
 
 ```

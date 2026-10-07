@@ -71,13 +71,23 @@ export const isGlobalName = (name: string): boolean =>
 export const isLocalName = (name: string): boolean =>
   LOCAL_NAME.test(name) && name.length > 1 && !RESERVED_LOCALS.has(name);
 
-// A lower-case token immediately followed by ':' is a PowerShell scope or drive
-// prefix — $env:USERNAME, $global:x, $script:y, $using:v, $private:z. The colon is
-// the tell, so this one syntactic rule covers all of them, present and future.
-// POSITIONAL, hence not expressible in isLocalName: `end` is the index just past
-// the token in `template`.
+// A lower-case token followed by ':NAME' is a PowerShell scope or drive prefix —
+// $env:USERNAME, $global:x, $function:prompt, $alias:ls. POSITIONAL, hence not
+// expressible in isLocalName: `end` is the index just past the token in
+// `template`.
+//
+// 0.19.0 — the colon ALONE is not the tell. It used to be, and it ate the single
+// most common shape a pentester writes: `$ipserver:$port`, `$lhost:4444`,
+// `http://$target:8080/`. A scope prefix is always `$scope:` followed by the NAME
+// it qualifies, so the guard now also requires a name-start character after the
+// colon. `$ipserver:$port` has a '$' there and `$lhost:4444` a digit, so both keep
+// their local; `$env:USERNAME` and `$file:x` are unchanged.
+const NAME_START = /[A-Za-z_]/;
+const isScopePrefixAt = (template: string, end: number): boolean =>
+  template[end] === ':' && NAME_START.test(template[end + 1] ?? '');
+
 const isLocalTokenAt = (name: string, template: string, end: number): boolean =>
-  isLocalName(name) && template[end] !== ':';
+  isLocalName(name) && !isScopePrefixAt(template, end);
 
 // Neither class -> the match is ordinary text and must render untouched.
 const isTokenAt = (name: string, template: string, end: number): boolean =>

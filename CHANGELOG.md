@@ -4,6 +4,59 @@ All notable changes to **Cheat** are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); this project is in initial
 development (pre-1.0).
 
+## [0.19.0] — 2026-10-07
+
+### Fixed
+- **A missed click outside a modal threw the form away.** The shared modal shell
+  closed on any click on its overlay, and the four forms behind it — new command,
+  new technique, new reference, new profile — are the ones you spend minutes in.
+  Closing is now **explicit only**: the header's ✕, or the footer's Annuler /
+  submit button. Every caller already supplied both, so nothing else changed, and
+  no Escape handler was added: there never was one, and it would reopen the door
+  we are closing.
+
+- **`$ipserver:$port` only ever yielded one variable.** The tokenizer banned any
+  lower-case `$token` immediately followed by `:`, a rule meant for PowerShell's
+  scope and drive prefixes (`$env:USERNAME`, `$global:x`). The colon alone turned
+  out to be the wrong tell: it also ate `host:port`, which is the single most
+  common shape in a pentester's command line.
+
+  A scope prefix always qualifies a **name**, so the guard now also requires a
+  name-start character after the colon:
+
+  | template | before | after |
+  |---|---|---|
+  | `$ipserver:$port` | `port` | `ipserver`, `port` |
+  | `$lhost:4444` | — | `lhost` |
+  | `http://$target:8080/` | — | `target` |
+  | `$env:USERNAME` | — | — |
+  | `$file:x` | — | — |
+
+  One function (`isLocalTokenAt`), so `resolve`, `toParts` and
+  `extractLocalTokens` all move together — detection, substitution and the
+  double-click edit span alike.
+
+- **Méthodologie never showed a linked command's description.** The Bibliothèque
+  has always shown it; a step that linked the very same command showed only its
+  title and the command line. It is now rendered **under** the code block, in the
+  Library card's own 12px / `--muted`: the command is what the step is about, the
+  description is the gloss on it.
+
+### Changed
+- **« Bibliothèque » is now « Commandes », everywhere it was shown.** The tab
+  reads « Commandes » (« Cmds » on narrow viewports, replacing « Biblio »), and
+  the view's own wording follows: « Vider la bibliothèque » → « Vider les
+  commandes ». That button's confirm said « Supprimer les N commandes de la
+  bibliothèque ? », where the trailing phrase carried the *totality* 0.18.0
+  insisted on — it now says « Supprimer la totalité des N commandes ? », which
+  states it outright instead of implying it.
+
+  Name only. The view key stays `library`, the component stays `Library.tsx`,
+  and nothing persisted moves — there is no stored string to migrate. The
+  rationale: the module *is* the command catalogue, and « Bibliothèque » named
+  the container while every sibling tab (« Techniques », « Références ») names
+  the content.
+
 ## [0.18.0] — 2026-09-17
 
 ### Fixed

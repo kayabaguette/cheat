@@ -345,9 +345,9 @@ export function Library() {
     if (!commands.length) return;
     const n = commands.length;
     const msg =
-      'Supprimer les ' +
+      'Supprimer la totalité des ' +
       n +
-      ' commandes de la bibliothèque ?\n\n' +
+      ' commandes ?\n\n' +
       'Elles quitteront aussi les cheatsheets et les étapes de méthodologie qui ' +
       'les utilisent, et leurs notes personnelles seront effacées. Les catégories, ' +
       'les techniques, les références et les méthodologies restent.\n\n' +
@@ -368,11 +368,11 @@ export function Library() {
           </button>
         )}
         {/* Pushed to the far end, and worded in full. Sitting next to the filter
-            reset is what made « réinitialiser » read as « vider la
-            bibliothèque » in the first place. */}
+            reset is what made « réinitialiser » read as « vider les
+            commandes » in the first place. */}
         {commands.length > 0 && (
           <button onClick={askClear} style={clearBtn} title="Supprimer toutes les commandes">
-            Vider la bibliothèque
+            Vider les commandes
           </button>
         )}
       </div>

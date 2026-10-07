@@ -23,9 +23,13 @@ import type { Command, Part } from '../types';
 // mid-word (0.9.0) and `$_` being offered as a variable (0.9.1).
 //
 // v0.10.0 rewrote the local class: a $minuscule no longer has to be DECLARED to be
-// recognised, so the NAME BANS (single character, reserved list, colon prefix) are
+// recognised, so the NAME BANS (single character, reserved list, scope prefix) are
 // now the only thing keeping ordinary shell text out of the grammar — and they are
 // asserted here as such.
+//
+// v0.19.0 narrowed the scope-prefix ban: `$name:` only disqualifies when the colon
+// is followed by a NAME, which is the shape a PowerShell scope or drive prefix
+// always takes. `$ipserver:$port` and `$lhost:4444` therefore keep their locals.
 
 const STD = STANDARD_VARS.map((v) => v.name);
 
@@ -161,6 +165,19 @@ describe('resolve', () => {
     expect(resolve('cat $file', poisoned)).toBe('cat boom');
   });
 
+  // 0.19.0 — the colon alone used to be the tell, and it ate `host:port`, the
+  // single most common shape in the corpus. A scope prefix always qualifies a
+  // NAME, so a colon followed by anything else leaves the local alone.
+  it('substitutes both halves of a host:port pair', () => {
+    const withLocals = { ...values, ipserver: '10.10.10.5', port: '8080', lhost: '10.10.14.7' };
+    expect(resolve('nc $ipserver:$port', withLocals)).toBe('nc 10.10.10.5:8080');
+    expect(resolve('curl http://$ipserver:$port/admin', withLocals)).toBe(
+      'curl http://10.10.10.5:8080/admin',
+    );
+    // A literal port after the colon is a digit, not a name start — same rule.
+    expect(resolve('$lhost:4444', withLocals)).toBe('10.10.14.7:4444');
+  });
+
   it('substitutes a local when its value is supplied', () => {
     const withLocal = { ...values, svc_ntlm: 'b4b9b02e' };
     expect(resolve('/rc4:$svc_ntlm', withLocal)).toBe('/rc4:b4b9b02e');
@@ -220,6 +237,26 @@ describe('toParts render states', () => {
       { text: '$env:A ', state: 'plain' },
       { text: '$share', state: 'empty', name: 'share', local: true },
       { text: ' $_', state: 'plain' },
+    ]);
+  });
+
+  // 0.19.0 — each half of a host:port pair gets its OWN editable span. Before the
+  // fix the left one was swallowed into the surrounding plain run, so there was
+  // nothing to double-click.
+  it('emits an editable span for each half of a host:port pair', () => {
+    expect(toParts('nc $ipserver:$port', values, globals)).toEqual([
+      { text: 'nc ', state: 'plain' },
+      { text: '$ipserver', state: 'empty', name: 'ipserver', local: true },
+      { text: ':', state: 'plain' },
+      { text: '$port', state: 'empty', name: 'port', local: true },
+    ]);
+    expect(
+      toParts('nc $ipserver:$port', { ...values, ipserver: '10.10.10.5', port: '8080' }, globals),
+    ).toEqual([
+      { text: 'nc ', state: 'plain' },
+      { text: '10.10.10.5', state: 'resolved', name: 'ipserver', local: true },
+      { text: ':', state: 'plain' },
+      { text: '8080', state: 'resolved', name: 'port', local: true },
     ]);
   });
 
@@ -292,8 +329,18 @@ describe('extractLocalTokens (local class only)', () => {
     expect(extractLocalTokens('$RHOST $PSVersionTable $_ $_foo')).toEqual([]);
   });
 
-  it('never returns a banned or colon-prefixed name', () => {
+  it('never returns a banned or scope-prefixed name', () => {
     expect(extractLocalTokens('$env:USERNAME $global:x $f $i $true $file:x')).toEqual([]);
+  });
+
+  // The 0.19.0 report: `$ipserver:$port` yielded `port` alone.
+  it('returns both locals of a host:port pair', () => {
+    expect(extractLocalTokens('$ipserver:$port')).toEqual(['ipserver', 'port']);
+    expect(extractLocalTokens('curl http://$ipserver:$port/admin')).toEqual([
+      'ipserver',
+      'port',
+    ]);
+    expect(extractLocalTokens('$lhost:4444')).toEqual(['lhost']);
   });
 });
 
